@@ -3,36 +3,38 @@ import FormModal from '../components/FormModal';
 import { Badge } from '@/components/ui/badge';
 import { useState } from 'react';
 
-// TODO: Remove mock data functionality
+// Current Onyx Houseware product catalog
 const mockItems = [
-  { id: 1, name: 'Steel Plate 10mm', sku: 'SP-10', product_type: 'Steel', size_mm: 10, price: 25.50, safety_stock: 50, is_active: true },
-  { id: 2, name: 'Aluminum Sheet', sku: 'AS-01', product_type: 'Aluminum', size_mm: 5, price: 15.75, safety_stock: 30, is_active: true },
-  { id: 3, name: 'Copper Wire', sku: 'CW-05', product_type: 'Copper', size_mm: 2, price: 8.25, safety_stock: 25, is_active: false },
-  { id: 4, name: 'Brass Fitting', sku: 'BF-12', product_type: 'Brass', size_mm: 15, price: 12.00, safety_stock: 15, is_active: true }
+  { id: 1, name: 'Tawa', sku: 'TWA-280', product_type: 'Cookware', size_specification: '280mm', price: 850.00, safety_stock: 20, is_active: true },
+  { id: 2, name: 'Fry Pan', sku: 'FP-240', product_type: 'Cookware', size_specification: '240mm', price: 650.00, safety_stock: 15, is_active: true },
+  { id: 3, name: 'Kadai', sku: 'KD-240', product_type: 'Cookware', size_specification: '240mm', price: 750.00, safety_stock: 15, is_active: true },
+  { id: 4, name: 'Casserole', sku: 'CS-220', product_type: 'Cookware', size_specification: '220mm', price: 950.00, safety_stock: 10, is_active: true },
+  { id: 5, name: 'Casserole', sku: 'CS-240', product_type: 'Cookware', size_specification: '240mm', price: 1050.00, safety_stock: 10, is_active: true },
+  { id: 6, name: 'Paniyaram', sku: 'PN-12', product_type: 'Cookware', size_specification: '12 pits', price: 450.00, safety_stock: 8, is_active: true },
+  { id: 7, name: 'Paniyaram', sku: 'PN-7', product_type: 'Cookware', size_specification: '7 pits', price: 350.00, safety_stock: 5, is_active: false, notes: 'Still developing' },
+  { id: 8, name: 'Appachety', sku: 'AP-01', product_type: 'Cookware', size_specification: 'Standard', price: 400.00, safety_stock: 12, is_active: true }
 ];
 
 const itemFields = [
-  { name: 'name', label: 'Name', type: 'text' as const, required: true, placeholder: 'Enter item name' },
-  { name: 'sku', label: 'SKU', type: 'text' as const, placeholder: 'Enter SKU (optional)' },
+  { name: 'name', label: 'Product Name', type: 'text' as const, required: true, placeholder: 'Enter product name' },
+  { name: 'sku', label: 'SKU', type: 'text' as const, placeholder: 'Enter SKU code' },
   { name: 'product_type', label: 'Product Type', type: 'select' as const, required: true, options: [
-    { value: 'steel', label: 'Steel' },
-    { value: 'aluminum', label: 'Aluminum' },
-    { value: 'copper', label: 'Copper' },
-    { value: 'brass', label: 'Brass' }
+    { value: 'Cookware', label: 'Cookware' },
+    { value: 'Utensils', label: 'Utensils' },
+    { value: 'Accessories', label: 'Accessories' }
   ]},
-  { name: 'size_mm', label: 'Size (mm)', type: 'number' as const, placeholder: 'Size in millimeters' },
-  { name: 'ib_plate_size', label: 'IB Plate Size', type: 'text' as const, placeholder: 'IB plate size (optional)' },
-  { name: 'price', label: 'Price', type: 'number' as const, placeholder: '0.00' },
+  { name: 'size_specification', label: 'Size/Specification', type: 'text' as const, placeholder: 'e.g., 280mm, 12 pits, Standard' },
+  { name: 'price', label: 'Price (₹)', type: 'number' as const, placeholder: '0.00' },
   { name: 'safety_stock', label: 'Safety Stock', type: 'number' as const, placeholder: '0', required: true },
-  { name: 'notes', label: 'Notes', type: 'textarea' as const, placeholder: 'Additional notes...' }
+  { name: 'notes', label: 'Notes', type: 'textarea' as const, placeholder: 'Additional notes (e.g., still developing)...' }
 ];
 
 const itemColumns = [
-  { key: 'name', label: 'Name' },
+  { key: 'name', label: 'Product Name' },
   { key: 'sku', label: 'SKU' },
   { key: 'product_type', label: 'Type' },
-  { key: 'size_mm', label: 'Size (mm)' },
-  { key: 'price', label: 'Price', render: (value: number) => value ? `$${value.toFixed(2)}` : '-' },
+  { key: 'size_specification', label: 'Size/Spec' },
+  { key: 'price', label: 'Price', render: (value: number) => value ? `₹${value.toFixed(2)}` : '-' },
   { key: 'safety_stock', label: 'Safety Stock' },
   { 
     key: 'is_active', 

@@ -7,9 +7,7 @@ import {
   FileText, 
   ClipboardList,
   LogOut,
-  Menu,
-  Sun,
-  Moon
+  Menu
 } from "lucide-react";
 import { useState } from "react";
 import { Link, useLocation } from "wouter";
@@ -28,14 +26,7 @@ const menuItems = [
 
 export default function Sidebar({ className }: SidebarProps) {
   const [isCollapsed, setIsCollapsed] = useState(false);
-  const [isDarkMode, setIsDarkMode] = useState(false);
   const [location] = useLocation();
-
-  const toggleTheme = () => {
-    setIsDarkMode(!isDarkMode);
-    document.documentElement.classList.toggle('dark');
-    console.log('Theme toggled');
-  };
 
   const handleLogout = () => {
     console.log('Logout triggered');
@@ -87,20 +78,7 @@ export default function Sidebar({ className }: SidebarProps) {
       </nav>
 
       {/* Footer */}
-      <div className="p-4 border-t border-sidebar-border space-y-2">
-        <Button
-          variant="ghost"
-          onClick={toggleTheme}
-          className={cn(
-            "w-full justify-start hover-elevate",
-            isCollapsed && "justify-center px-2"
-          )}
-          data-testid="button-theme-toggle"
-        >
-          {isDarkMode ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
-          {!isCollapsed && <span className="ml-3">Toggle Theme</span>}
-        </Button>
-        
+      <div className="p-4 border-t border-sidebar-border">
         <Button
           variant="ghost"
           onClick={handleLogout}

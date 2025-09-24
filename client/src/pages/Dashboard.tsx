@@ -4,12 +4,13 @@ import MonthPicker from '../components/MonthPicker';
 import { Badge } from '@/components/ui/badge';
 import { useState } from 'react';
 
-// TODO: Remove mock data functionality
+// Current Onyx Houseware inventory status  
 const mockTopItems = [
-  { name: 'Steel Plate 10mm', pendingQty: 120, safetyStock: 50, status: 'Critical' },
-  { name: 'Aluminum Sheet', pendingQty: 85, safetyStock: 30, status: 'Low' },
-  { name: 'Copper Wire', pendingQty: 45, safetyStock: 25, status: 'Good' },
-  { name: 'Brass Fitting', pendingQty: 30, safetyStock: 15, status: 'Good' }
+  { name: 'Tawa 280mm', pendingQty: 45, safetyStock: 20, status: 'Critical' },
+  { name: 'Casserole 240mm', pendingQty: 32, safetyStock: 10, status: 'Critical' },
+  { name: 'Kadai 240mm', pendingQty: 28, safetyStock: 15, status: 'Low' },
+  { name: 'Fry Pan 240mm', pendingQty: 18, safetyStock: 15, status: 'Good' },
+  { name: 'Paniyaram 12 pits', pendingQty: 12, safetyStock: 8, status: 'Good' }
 ];
 
 const topItemsColumns = [
