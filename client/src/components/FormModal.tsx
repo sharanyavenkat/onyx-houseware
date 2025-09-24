@@ -16,7 +16,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 
 interface FormField {
   name: string;
@@ -49,6 +49,12 @@ export default function FormModal({
   isLoading = false
 }: FormModalProps) {
   const [formData, setFormData] = useState<Record<string, any>>(initialData);
+  const formRef = useRef<HTMLFormElement>(null);
+
+  // Update form data when initialData changes (for editing)
+  useEffect(() => {
+    setFormData(initialData);
+  }, [initialData]);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
   const handleInputChange = (name: string, value: any) => {
@@ -137,12 +143,13 @@ export default function FormModal({
 
   return (
     <Dialog open={isOpen} onOpenChange={handleClose}>
-      <DialogContent className="sm:max-w-[425px]" data-testid="modal-form">
+      <DialogContent className="sm:max-w-[600px] max-h-[80vh]" data-testid="modal-form">
         <DialogHeader>
           <DialogTitle data-testid="text-modal-title">{title}</DialogTitle>
         </DialogHeader>
         
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <div className="max-h-[60vh] overflow-y-auto pr-2">
+          <form ref={formRef} onSubmit={handleSubmit} className="space-y-4">
           {fields.map((field) => (
             <div key={field.name} className="space-y-2">
               <Label htmlFor={field.name} className="text-sm font-medium">
@@ -157,25 +164,27 @@ export default function FormModal({
               )}
             </div>
           ))}
-          
-          <DialogFooter>
-            <Button 
-              type="button" 
-              variant="outline" 
-              onClick={handleClose}
-              data-testid="button-cancel"
-            >
-              Cancel
-            </Button>
-            <Button 
-              type="submit" 
-              disabled={isLoading}
-              data-testid="button-submit"
-            >
-              {isLoading ? 'Saving...' : submitLabel}
-            </Button>
-          </DialogFooter>
-        </form>
+          </form>
+        </div>
+        
+        <DialogFooter>
+          <Button 
+            type="button" 
+            variant="outline" 
+            onClick={handleClose}
+            data-testid="button-cancel"
+          >
+            Cancel
+          </Button>
+          <Button 
+            type="button" 
+            disabled={isLoading}
+            onClick={() => formRef.current?.requestSubmit()}
+            data-testid="button-submit"
+          >
+            {isLoading ? 'Saving...' : submitLabel}
+          </Button>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );
