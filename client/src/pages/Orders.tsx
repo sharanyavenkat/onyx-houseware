@@ -1,5 +1,6 @@
 import DataTable from '../components/DataTable';
 import FormModal from '../components/FormModal';
+import ConfirmationDialog from '../components/ConfirmationDialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -58,6 +59,12 @@ export default function Orders() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingOrder, setEditingOrder] = useState<any>(null);
   const [viewingOrder, setViewingOrder] = useState<any>(null);
+  const [confirmationDialog, setConfirmationDialog] = useState<{
+    isOpen: boolean;
+    title: string;
+    description: string;
+    onConfirm: () => void;
+  }>({ isOpen: false, title: '', description: '', onConfirm: () => {} });
 
   const handleAdd = () => {
     setEditingOrder(null);
@@ -75,8 +82,21 @@ export default function Orders() {
   };
 
   const handleDelete = (order: any) => {
-    console.log('Delete order:', order);
-    setOrders(orders.filter(o => o.id !== order.id));
+    let description = `Are you sure you want to delete order "${order.po_number}"? This action cannot be undone.`;
+    
+    if (order.status === 'confirmed') {
+      description = `Order "${order.po_number}" is confirmed. Deleting it may affect customer expectations. Are you sure you want to proceed?`;
+    }
+    
+    setConfirmationDialog({
+      isOpen: true,
+      title: 'Delete Order',
+      description,
+      onConfirm: () => {
+        console.log('Delete order:', order);
+        setOrders(orders.filter(o => o.id !== order.id));
+      }
+    });
   };
 
   const handleSubmit = (data: any) => {
@@ -165,6 +185,16 @@ export default function Orders() {
           </CardContent>
         </Card>
       )}
+      
+      <ConfirmationDialog
+        isOpen={confirmationDialog.isOpen}
+        onClose={() => setConfirmationDialog(prev => ({ ...prev, isOpen: false }))}
+        onConfirm={confirmationDialog.onConfirm}
+        title={confirmationDialog.title}
+        description={confirmationDialog.description}
+        confirmLabel="Delete Order"
+        isDestructive={true}
+      />
     </div>
   );
 }

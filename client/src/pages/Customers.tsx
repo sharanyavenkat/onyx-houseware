@@ -1,5 +1,6 @@
 import DataTable from '../components/DataTable';
 import FormModal from '../components/FormModal';
+import ConfirmationDialog from '../components/ConfirmationDialog';
 import { useState } from 'react';
 
 // TODO: Remove mock data functionality
@@ -29,10 +30,24 @@ const customerColumns = [
   { key: 'po_number', label: 'PO Number' }
 ];
 
+// Mock orders data to check dependencies
+const mockOrders = [
+  { id: 1, customer_name: 'ABC Manufacturing', status: 'draft' },
+  { id: 2, customer_name: 'XYZ Industries', status: 'confirmed' },
+  { id: 3, customer_name: 'Metal Works Inc', status: 'fulfilled' },
+  { id: 4, customer_name: 'ABC Manufacturing', status: 'cancelled' }
+];
+
 export default function Customers() {
   const [customers, setCustomers] = useState(mockCustomers);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingCustomer, setEditingCustomer] = useState<any>(null);
+  const [confirmationDialog, setConfirmationDialog] = useState<{
+    isOpen: boolean;
+    title: string;
+    description: string;
+    onConfirm: () => void;
+  }>({ isOpen: false, title: '', description: '', onConfirm: () => {} });
 
   const handleAdd = () => {
     setEditingCustomer(null);
@@ -45,8 +60,30 @@ export default function Customers() {
   };
 
   const handleDelete = (customer: any) => {
-    console.log('Delete customer:', customer);
-    setCustomers(customers.filter(c => c.id !== customer.id));
+    // Check for unfulfilled orders
+    const unfulfilledOrders = mockOrders.filter(
+      order => order.customer_name === customer.name && 
+      !['fulfilled', 'cancelled'].includes(order.status)
+    );
+    
+    let title = 'Delete Customer';
+    let description = `Are you sure you want to delete "${customer.name}"? This action cannot be undone.`;
+    
+    if (unfulfilledOrders.length > 0) {
+      title = 'Warning: Customer Has Unfulfilled Orders';
+      description = `"${customer.name}" has ${unfulfilledOrders.length} unfulfilled order(s). Deleting this customer will also remove all non-fulfilled orders. Are you sure you want to proceed?`;
+    }
+    
+    setConfirmationDialog({
+      isOpen: true,
+      title,
+      description,
+      onConfirm: () => {
+        console.log('Delete customer:', customer);
+        // In a real app, this would also delete related unfulfilled orders
+        setCustomers(customers.filter(c => c.id !== customer.id));
+      }
+    });
   };
 
   const handleSubmit = (data: any) => {
@@ -90,6 +127,16 @@ export default function Customers() {
         fields={customerFields}
         initialData={editingCustomer || {}}
         submitLabel={editingCustomer ? 'Update Customer' : 'Add Customer'}
+      />
+      
+      <ConfirmationDialog
+        isOpen={confirmationDialog.isOpen}
+        onClose={() => setConfirmationDialog(prev => ({ ...prev, isOpen: false }))}
+        onConfirm={confirmationDialog.onConfirm}
+        title={confirmationDialog.title}
+        description={confirmationDialog.description}
+        confirmLabel="Delete Customer"
+        isDestructive={true}
       />
     </div>
   );
