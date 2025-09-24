@@ -26,6 +26,10 @@ const itemFields = [
   { name: 'size_specification', label: 'Size/Specification', type: 'text' as const, placeholder: 'e.g., 280mm, 12 pits, Standard' },
   { name: 'price', label: 'Price (₹)', type: 'number' as const, placeholder: '0.00' },
   { name: 'safety_stock', label: 'Safety Stock', type: 'number' as const, placeholder: '0', required: true },
+  { name: 'is_active', label: 'Status', type: 'select' as const, required: true, options: [
+    { value: 'true', label: 'Active' },
+    { value: 'false', label: 'Inactive' }
+  ]},
   { name: 'notes', label: 'Notes', type: 'textarea' as const, placeholder: 'Additional notes (e.g., still developing)...' }
 ];
 
@@ -68,17 +72,22 @@ export default function Items() {
   };
 
   const handleSubmit = (data: any) => {
+    // Convert string status to boolean
+    const processedData = {
+      ...data,
+      is_active: data.is_active === 'true'
+    };
+    
     if (editingItem) {
       // Edit existing item
       setItems(items.map(item => 
-        item.id === editingItem.id ? { ...item, ...data } : item
+        item.id === editingItem.id ? { ...item, ...processedData } : item
       ));
     } else {
       // Add new item
       const newItem = {
         id: Math.max(...items.map(i => i.id)) + 1,
-        ...data,
-        is_active: true
+        ...processedData
       };
       setItems([...items, newItem]);
     }
@@ -107,7 +116,10 @@ export default function Items() {
         onSubmit={handleSubmit}
         title={editingItem ? 'Edit Item' : 'Add New Item'}
         fields={itemFields}
-        initialData={editingItem || {}}
+        initialData={editingItem ? {
+          ...editingItem,
+          is_active: editingItem.is_active ? 'true' : 'false'
+        } : { is_active: 'true' }}
         submitLabel={editingItem ? 'Update Item' : 'Add Item'}
       />
     </div>
