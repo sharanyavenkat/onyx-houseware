@@ -4,7 +4,7 @@ import { Badge } from '@/components/ui/badge';
 import { useState } from 'react';
 
 // Current Onyx Houseware product catalog
-const mockItems = [
+export const mockItems = [
   { id: 1, name: 'Tawa', sku: 'TWA-280', product_type: 'Cookware', size_specification: '280mm', price: 850.00, safety_stock: 20, is_active: true },
   { id: 2, name: 'Fry Pan', sku: 'FP-240', product_type: 'Cookware', size_specification: '240mm', price: 650.00, safety_stock: 15, is_active: true },
   { id: 3, name: 'Kadai', sku: 'KD-240', product_type: 'Cookware', size_specification: '240mm', price: 750.00, safety_stock: 15, is_active: true },

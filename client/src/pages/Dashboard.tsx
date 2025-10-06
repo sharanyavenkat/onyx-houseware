@@ -2,7 +2,10 @@ import DashboardCards from '../components/DashboardCards';
 import DataTable from '../components/DataTable';
 import MonthPicker from '../components/MonthPicker';
 import { Badge } from '@/components/ui/badge';
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
+import { mockItems } from './Items';
+import { mockOrders } from './Orders';
+import { mockCustomers } from './Customers';
 
 // Function to calculate status based on pending quantity vs safety stock
 function calculateStatus(pendingQty: number, safetyStock: number): string {
@@ -46,6 +49,13 @@ export default function Dashboard() {
   const currentMonth = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}`;
   const [selectedMonth, setSelectedMonth] = useState(currentMonth);
 
+  const dashboardData = useMemo(() => ({
+    totalOrders: mockOrders.length,
+    pendingOrders: mockOrders.filter(o => o.status === 'draft' || o.status === 'confirmed').length,
+    totalItems: mockItems.length,
+    totalCustomers: mockCustomers.length
+  }), []);
+
   return (
     <div className="space-y-6" data-testid="page-dashboard">
       {/* Header */}
@@ -58,7 +68,7 @@ export default function Dashboard() {
       </div>
 
       {/* Cards */}
-      <DashboardCards />
+      <DashboardCards data={dashboardData} />
 
       {/* Top Items by Pending Quantity */}
       <DataTable 

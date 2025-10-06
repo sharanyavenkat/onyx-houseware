@@ -9,7 +9,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { useLocation } from 'wouter';
 
 // TODO: Remove mock data functionality
-const mockOrders = [
+export const mockOrders = [
   { id: 1, po_number: 'ORD-2025-001', customer_name: 'ABC Manufacturing', status: 'draft', order_date: '2025-01-15', total_items: 3 },
   { id: 2, po_number: 'ORD-2025-002', customer_name: 'XYZ Industries', status: 'confirmed', order_date: '2025-01-14', total_items: 2 },
   { id: 3, po_number: 'ORD-2025-003', customer_name: 'Metal Works Inc', status: 'fulfilled', order_date: '2025-01-13', total_items: 5 },

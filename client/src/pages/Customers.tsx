@@ -4,7 +4,7 @@ import ConfirmationDialog from '../components/ConfirmationDialog';
 import { useState } from 'react';
 
 // TODO: Remove mock data functionality
-const mockCustomers = [
+export const mockCustomers = [
   { id: 1, name: 'ABC Manufacturing', contact_name: 'John Smith', email: 'john@abc.com', phone: '555-0101', po_number: 'PO-2025-001' },
   { id: 2, name: 'XYZ Industries', contact_name: 'Jane Doe', email: 'jane@xyz.com', phone: '555-0102', po_number: 'PO-2025-002' },
   { id: 3, name: 'Metal Works Inc', contact_name: 'Bob Johnson', email: 'bob@metalworks.com', phone: '555-0103', po_number: 'PO-2025-003' }
