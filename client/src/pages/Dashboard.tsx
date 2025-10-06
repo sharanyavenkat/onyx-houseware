@@ -52,7 +52,7 @@ export default function Dashboard() {
   const dashboardData = useMemo(() => ({
     totalOrders: mockOrders.length,
     pendingOrders: mockOrders.filter(o => o.status === 'draft' || o.status === 'confirmed').length,
-    totalItems: mockItems.length,
+    totalItems: mockItems.filter(item => item.is_active).length,
     totalCustomers: mockCustomers.length
   }), []);
 
