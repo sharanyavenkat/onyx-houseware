@@ -5,7 +5,8 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Eye } from 'lucide-react';
-import { useState } from 'react';
+import { useState, useEffect, useMemo } from 'react';
+import { useLocation } from 'wouter';
 
 // TODO: Remove mock data functionality
 const mockOrders = [
@@ -55,6 +56,7 @@ const orderColumns = [
 ];
 
 export default function Orders() {
+  const [location] = useLocation();
   const [orders, setOrders] = useState(mockOrders);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingOrder, setEditingOrder] = useState<any>(null);
@@ -65,6 +67,19 @@ export default function Orders() {
     description: string;
     onConfirm: () => void;
   }>({ isOpen: false, title: '', description: '', onConfirm: () => {} });
+
+  // Parse URL search params to check for filter
+  const searchParams = new URLSearchParams(location.split('?')[1] || '');
+  const filter = searchParams.get('filter');
+
+  // Filter orders based on URL parameter
+  const filteredOrders = useMemo(() => {
+    if (filter === 'pending') {
+      // Pending orders are those with status 'draft' or 'confirmed'
+      return orders.filter(order => order.status === 'draft' || order.status === 'confirmed');
+    }
+    return orders;
+  }, [orders, filter]);
 
   const handleAdd = () => {
     setEditingOrder(null);
@@ -141,8 +156,8 @@ export default function Orders() {
     <div className="space-y-6" data-testid="page-orders">
       <DataTable 
         columns={enhancedColumns}
-        data={orders}
-        title="Orders"
+        data={filteredOrders}
+        title={filter === 'pending' ? 'Pending Orders' : 'Orders'}
         addButtonLabel="Add Order"
         onAdd={handleAdd}
         onEdit={handleEdit}
