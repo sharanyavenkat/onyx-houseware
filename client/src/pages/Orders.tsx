@@ -1,69 +1,15 @@
 import DataTable from '../components/DataTable';
 import OrderFormModal from '../components/OrderFormModal';
-import ConfirmationDialog from '../components/ConfirmationDialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Eye } from 'lucide-react';
 import { useState, useEffect, useMemo } from 'react';
 import { useLocation } from 'wouter';
-
-// TODO: Remove mock data functionality
-export const mockOrders = [
-  { 
-    id: 1, 
-    po_number: 'ORD-2025-001', 
-    customer_name: 'ABC Manufacturing', 
-    status: 'draft', 
-    order_date: '2025-01-15', 
-    line_items: [
-      { item_id: 1, item_name: 'Tawa', sku: 'TWA-280', quantity: 10 },
-      { item_id: 3, item_name: 'Kadai', sku: 'KD-240', quantity: 5 },
-      { item_id: 5, item_name: 'Casserole', sku: 'CS-240', quantity: 8 }
-    ]
-  },
-  { 
-    id: 2, 
-    po_number: 'ORD-2025-002', 
-    customer_name: 'XYZ Industries', 
-    status: 'confirmed', 
-    order_date: '2025-01-14', 
-    line_items: [
-      { item_id: 2, item_name: 'Fry Pan', sku: 'FP-240', quantity: 15 },
-      { item_id: 6, item_name: 'Paniyaram', sku: 'PN-12', quantity: 10 }
-    ]
-  },
-  { 
-    id: 3, 
-    po_number: 'ORD-2025-003', 
-    customer_name: 'Metal Works Inc', 
-    status: 'fulfilled', 
-    order_date: '2025-01-13', 
-    line_items: [
-      { item_id: 1, item_name: 'Tawa', sku: 'TWA-280', quantity: 20 },
-      { item_id: 2, item_name: 'Fry Pan', sku: 'FP-240', quantity: 15 },
-      { item_id: 3, item_name: 'Kadai', sku: 'KD-240', quantity: 12 },
-      { item_id: 4, item_name: 'Casserole', sku: 'CS-220', quantity: 8 },
-      { item_id: 8, item_name: 'Appachety', sku: 'AP-01', quantity: 10 }
-    ]
-  },
-  { 
-    id: 4, 
-    po_number: 'ORD-2025-004', 
-    customer_name: 'ABC Manufacturing', 
-    status: 'cancelled', 
-    order_date: '2025-01-12', 
-    line_items: [
-      { item_id: 5, item_name: 'Casserole', sku: 'CS-240', quantity: 5 }
-    ]
-  }
-];
-
-const mockCustomers = [
-  { value: '1', label: 'ABC Manufacturing' },
-  { value: '2', label: 'XYZ Industries' },
-  { value: '3', label: 'Metal Works Inc' }
-];
+import { useQuery, useMutation } from '@tanstack/react-query';
+import { queryClient, apiRequest } from '@/lib/queryClient';
+import { useToast } from '@/hooks/use-toast';
+import type { Order, Item, Customer } from '@shared/schema';
 
 const orderColumns = [
   { key: 'po_number', label: 'PO Number' },
@@ -96,16 +42,22 @@ const orderColumns = [
 
 export default function Orders() {
   const [location] = useLocation();
-  const [orders, setOrders] = useState(mockOrders);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingOrder, setEditingOrder] = useState<any>(null);
   const [viewingOrder, setViewingOrder] = useState<any>(null);
-  const [confirmationDialog, setConfirmationDialog] = useState<{
-    isOpen: boolean;
-    title: string;
-    description: string;
-    onConfirm: () => void;
-  }>({ isOpen: false, title: '', description: '', onConfirm: () => {} });
+  const { toast } = useToast();
+
+  const { data: orders = [] } = useQuery<Order[]>({
+    queryKey: ['/api/orders'],
+  });
+
+  const { data: items = [] } = useQuery<Item[]>({
+    queryKey: ['/api/items'],
+  });
+
+  const { data: customers = [] } = useQuery<Customer[]>({
+    queryKey: ['/api/customers'],
+  });
 
   // Parse URL search params to check for filter
   const [filter, setFilter] = useState<string | null>(null);
@@ -115,14 +67,71 @@ export default function Orders() {
     setFilter(searchParams.get('filter'));
   }, [location]);
 
+  // Map customer data for dropdown
+  const customerOptions = useMemo(() => {
+    return customers.map(c => ({
+      value: c.id.toString(),
+      label: c.company_name
+    }));
+  }, [customers]);
+
+  // Map orders to include customer names
+  const ordersWithCustomerNames = useMemo(() => {
+    return orders.map(order => ({
+      ...order,
+      customer_name: customers.find(c => c.id === order.customer_id)?.company_name || 'Unknown'
+    }));
+  }, [orders, customers]);
+
   // Filter orders based on URL parameter
   const filteredOrders = useMemo(() => {
     if (filter === 'pending') {
-      // Pending orders are those with status 'draft' or 'confirmed'
-      return orders.filter(order => order.status === 'draft' || order.status === 'confirmed');
+      return ordersWithCustomerNames.filter(order => order.status === 'draft' || order.status === 'confirmed');
     }
-    return orders;
-  }, [orders, filter]);
+    return ordersWithCustomerNames;
+  }, [ordersWithCustomerNames, filter]);
+
+  const createMutation = useMutation({
+    mutationFn: async (data: any) => {
+      return await apiRequest('POST', '/api/orders', data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/orders'] });
+      toast({ title: 'Order created successfully' });
+      setIsModalOpen(false);
+    },
+    onError: (error: Error) => {
+      toast({ title: 'Error creating order', description: error.message, variant: 'destructive' });
+    },
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: number; data: any }) => {
+      return await apiRequest('PATCH', `/api/orders/${id}`, data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/orders'] });
+      toast({ title: 'Order updated successfully' });
+      setIsModalOpen(false);
+      setEditingOrder(null);
+    },
+    onError: (error: Error) => {
+      toast({ title: 'Error updating order', description: error.message, variant: 'destructive' });
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (id: number) => {
+      return await apiRequest('DELETE', `/api/orders/${id}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/orders'] });
+      toast({ title: 'Order deleted successfully' });
+    },
+    onError: (error: Error) => {
+      toast({ title: 'Error deleting order', description: error.message, variant: 'destructive' });
+    },
+  });
 
   const handleAdd = () => {
     setEditingOrder(null);
@@ -135,50 +144,21 @@ export default function Orders() {
   };
 
   const handleView = (order: any) => {
-    console.log('View order:', order);
     setViewingOrder(order);
   };
 
   const handleDelete = (order: any) => {
-    let description = `Are you sure you want to delete order "${order.po_number}"? This action cannot be undone.`;
-    
-    if (order.status === 'confirmed') {
-      description = `Order "${order.po_number}" is confirmed. Deleting it may affect customer expectations. Are you sure you want to proceed?`;
+    if (confirm(`Are you sure you want to delete order "${order.po_number}"? This action cannot be undone.`)) {
+      deleteMutation.mutate(order.id);
     }
-    
-    setConfirmationDialog({
-      isOpen: true,
-      title: 'Delete Order',
-      description,
-      onConfirm: () => {
-        console.log('Delete order:', order);
-        setOrders(orders.filter(o => o.id !== order.id));
-      }
-    });
   };
 
   const handleSubmit = (data: any) => {
     if (editingOrder) {
-      // Edit existing order
-      setOrders(orders.map(order => 
-        order.id === editingOrder.id ? { 
-          ...order, 
-          ...data,
-          customer_name: mockCustomers.find(c => c.value === data.customer_id)?.label || order.customer_name
-        } : order
-      ));
+      updateMutation.mutate({ id: editingOrder.id, data });
     } else {
-      // Add new order
-      const maxId = orders.length > 0 ? Math.max(...orders.map(o => o.id)) : 0;
-      const newOrder = {
-        id: maxId + 1,
-        ...data,
-        customer_name: mockCustomers.find(c => c.value === data.customer_id)?.label || 'Unknown'
-      };
-      setOrders([...orders, newOrder]);
+      createMutation.mutate(data);
     }
-    setIsModalOpen(false);
-    setEditingOrder(null);
   };
 
   const enhancedColumns = [
@@ -221,7 +201,8 @@ export default function Orders() {
         title={editingOrder ? 'Edit Order' : 'Add New Order'}
         initialData={editingOrder || {}}
         submitLabel={editingOrder ? 'Update Order' : 'Add Order'}
-        customers={mockCustomers}
+        customers={customerOptions}
+        items={items}
       />
       
       {viewingOrder && (
