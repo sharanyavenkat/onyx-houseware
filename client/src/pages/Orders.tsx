@@ -69,8 +69,12 @@ export default function Orders() {
   }>({ isOpen: false, title: '', description: '', onConfirm: () => {} });
 
   // Parse URL search params to check for filter
-  const searchParams = new URLSearchParams(location.split('?')[1] || '');
-  const filter = searchParams.get('filter');
+  const [filter, setFilter] = useState<string | null>(null);
+
+  useEffect(() => {
+    const searchParams = new URLSearchParams(window.location.search);
+    setFilter(searchParams.get('filter'));
+  }, [location]);
 
   // Filter orders based on URL parameter
   const filteredOrders = useMemo(() => {
