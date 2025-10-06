@@ -9,14 +9,14 @@ import type { Item } from '@shared/schema';
 
 const itemFields = [
   { name: 'name', label: 'Product Name', type: 'text' as const, required: true, placeholder: 'Enter product name' },
-  { name: 'sku', label: 'SKU', type: 'text' as const, placeholder: 'Enter SKU code' },
+  { name: 'sku', label: 'SKU', type: 'text' as const, required: true, placeholder: 'Enter SKU code' },
   { name: 'product_type', label: 'Product Type', type: 'select' as const, required: true, options: [
     { value: 'Cookware', label: 'Cookware' },
     { value: 'Utensils', label: 'Utensils' },
     { value: 'Accessories', label: 'Accessories' }
   ]},
-  { name: 'size_specification', label: 'Size/Specification', type: 'text' as const, placeholder: 'e.g., 280mm, 12 pits, Standard' },
-  { name: 'price', label: 'Price (₹)', type: 'number' as const, placeholder: '0.00' },
+  { name: 'size_specification', label: 'Size/Specification', type: 'text' as const, required: true, placeholder: 'e.g., 280mm, 12 pits, Standard' },
+  { name: 'price', label: 'Price (₹)', type: 'number' as const, required: true, placeholder: '0.00' },
   { name: 'safety_stock', label: 'Safety Stock', type: 'number' as const, placeholder: '0', required: true },
   { name: 'is_active', label: 'Status', type: 'select' as const, required: true, options: [
     { value: 'true', label: 'Active' },

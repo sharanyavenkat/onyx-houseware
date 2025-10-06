@@ -54,6 +54,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       await storage.deleteItem(parseInt(req.params.id));
       res.status(204).send();
     } catch (error: any) {
+      // Check if it's a foreign key constraint error
+      if (error.message && error.message.includes('foreign key constraint')) {
+        return res.status(400).json({ 
+          message: "Cannot delete this item because it is referenced in existing orders. Please delete the related orders first." 
+        });
+      }
       res.status(500).json({ message: error.message });
     }
   });
@@ -107,6 +113,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       await storage.deleteCustomer(parseInt(req.params.id));
       res.status(204).send();
     } catch (error: any) {
+      // Check if it's a foreign key constraint error
+      if (error.message && error.message.includes('foreign key constraint')) {
+        return res.status(400).json({ 
+          message: "Cannot delete this customer because they have existing orders. Please delete their orders first." 
+        });
+      }
       res.status(500).json({ message: error.message });
     }
   });
