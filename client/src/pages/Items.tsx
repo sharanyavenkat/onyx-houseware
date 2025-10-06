@@ -2,18 +2,10 @@ import DataTable from '../components/DataTable';
 import FormModal from '../components/FormModal';
 import { Badge } from '@/components/ui/badge';
 import { useState } from 'react';
-
-// Current Onyx Houseware product catalog
-export const mockItems = [
-  { id: 1, name: 'Tawa', sku: 'TWA-280', product_type: 'Cookware', size_specification: '280mm', price: 850.00, safety_stock: 20, is_active: true },
-  { id: 2, name: 'Fry Pan', sku: 'FP-240', product_type: 'Cookware', size_specification: '240mm', price: 650.00, safety_stock: 15, is_active: true },
-  { id: 3, name: 'Kadai', sku: 'KD-240', product_type: 'Cookware', size_specification: '240mm', price: 750.00, safety_stock: 15, is_active: true },
-  { id: 4, name: 'Casserole', sku: 'CS-220', product_type: 'Cookware', size_specification: '220mm', price: 950.00, safety_stock: 10, is_active: true },
-  { id: 5, name: 'Casserole', sku: 'CS-240', product_type: 'Cookware', size_specification: '240mm', price: 1050.00, safety_stock: 10, is_active: true },
-  { id: 6, name: 'Paniyaram', sku: 'PN-12', product_type: 'Cookware', size_specification: '12 pits', price: 450.00, safety_stock: 8, is_active: true },
-  { id: 7, name: 'Paniyaram', sku: 'PN-7', product_type: 'Cookware', size_specification: '7 pits', price: 350.00, safety_stock: 5, is_active: false, notes: 'Still developing' },
-  { id: 8, name: 'Appachety', sku: 'AP-01', product_type: 'Cookware', size_specification: 'Standard', price: 400.00, safety_stock: 12, is_active: true }
-];
+import { useQuery, useMutation } from '@tanstack/react-query';
+import { queryClient, apiRequest } from '@/lib/queryClient';
+import { useToast } from '@/hooks/use-toast';
+import type { Item } from '@shared/schema';
 
 const itemFields = [
   { name: 'name', label: 'Product Name', type: 'text' as const, required: true, placeholder: 'Enter product name' },
@@ -38,7 +30,7 @@ const itemColumns = [
   { key: 'sku', label: 'SKU' },
   { key: 'product_type', label: 'Type' },
   { key: 'size_specification', label: 'Size/Spec' },
-  { key: 'price', label: 'Price', render: (value: number) => value ? `₹${value.toFixed(2)}` : '-' },
+  { key: 'price', label: 'Price', render: (value: string) => value ? `₹${parseFloat(value).toFixed(2)}` : '-' },
   { key: 'safety_stock', label: 'Safety Stock' },
   { 
     key: 'is_active', 
@@ -52,47 +44,85 @@ const itemColumns = [
 ];
 
 export default function Items() {
-  const [items, setItems] = useState(mockItems);
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [editingItem, setEditingItem] = useState<any>(null);
+  const [editingItem, setEditingItem] = useState<Item | null>(null);
+  const { toast } = useToast();
+
+  const { data: items = [], isLoading } = useQuery<Item[]>({
+    queryKey: ['/api/items'],
+  });
+
+  const createMutation = useMutation({
+    mutationFn: async (data: any) => {
+      return await apiRequest('POST', '/api/items', data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/items'] });
+      toast({ title: 'Item created successfully' });
+      setIsModalOpen(false);
+    },
+    onError: (error: Error) => {
+      toast({ title: 'Error creating item', description: error.message, variant: 'destructive' });
+    },
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: number; data: any }) => {
+      return await apiRequest('PATCH', `/api/items/${id}`, data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/items'] });
+      toast({ title: 'Item updated successfully' });
+      setIsModalOpen(false);
+      setEditingItem(null);
+    },
+    onError: (error: Error) => {
+      toast({ title: 'Error updating item', description: error.message, variant: 'destructive' });
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (id: number) => {
+      return await apiRequest('DELETE', `/api/items/${id}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/items'] });
+      toast({ title: 'Item deleted successfully' });
+    },
+    onError: (error: Error) => {
+      toast({ title: 'Error deleting item', description: error.message, variant: 'destructive' });
+    },
+  });
 
   const handleAdd = () => {
     setEditingItem(null);
     setIsModalOpen(true);
   };
 
-  const handleEdit = (item: any) => {
+  const handleEdit = (item: Item) => {
     setEditingItem(item);
     setIsModalOpen(true);
   };
 
-  const handleDelete = (item: any) => {
-    console.log('Delete item:', item);
-    setItems(items.filter(i => i.id !== item.id));
+  const handleDelete = (item: Item) => {
+    if (confirm('Are you sure you want to delete this item?')) {
+      deleteMutation.mutate(item.id);
+    }
   };
 
   const handleSubmit = (data: any) => {
-    // Convert string status to boolean
     const processedData = {
       ...data,
-      is_active: data.is_active === 'true'
+      is_active: data.is_active === 'true',
+      price: parseFloat(data.price),
+      safety_stock: parseInt(data.safety_stock),
     };
     
     if (editingItem) {
-      // Edit existing item
-      setItems(items.map(item => 
-        item.id === editingItem.id ? { ...item, ...processedData } : item
-      ));
+      updateMutation.mutate({ id: editingItem.id, data: processedData });
     } else {
-      // Add new item
-      const newItem = {
-        id: Math.max(...items.map(i => i.id)) + 1,
-        ...processedData
-      };
-      setItems([...items, newItem]);
+      createMutation.mutate(processedData);
     }
-    setIsModalOpen(false);
-    setEditingItem(null);
   };
 
   return (

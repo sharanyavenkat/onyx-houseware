@@ -2,10 +2,9 @@ import DashboardCards from '../components/DashboardCards';
 import DataTable from '../components/DataTable';
 import MonthPicker from '../components/MonthPicker';
 import { Badge } from '@/components/ui/badge';
-import { useState, useMemo } from 'react';
-import { mockItems } from './Items';
-import { mockOrders } from './Orders';
-import { mockCustomers } from './Customers';
+import { useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import type { Item, Order, Customer } from '@shared/schema';
 
 // Function to calculate status based on pending quantity vs safety stock
 function calculateStatus(pendingQty: number, safetyStock: number): string {
@@ -49,12 +48,24 @@ export default function Dashboard() {
   const currentMonth = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}`;
   const [selectedMonth, setSelectedMonth] = useState(currentMonth);
 
-  const dashboardData = useMemo(() => ({
-    totalOrders: mockOrders.length,
-    pendingOrders: mockOrders.filter(o => o.status === 'draft' || o.status === 'confirmed').length,
-    totalItems: mockItems.filter(item => item.is_active).length,
-    totalCustomers: mockCustomers.length
-  }), []);
+  const { data: items = [] } = useQuery<Item[]>({
+    queryKey: ['/api/items'],
+  });
+
+  const { data: orders = [] } = useQuery<Order[]>({
+    queryKey: ['/api/orders'],
+  });
+
+  const { data: customers = [] } = useQuery<Customer[]>({
+    queryKey: ['/api/customers'],
+  });
+
+  const dashboardData = {
+    totalOrders: orders.length,
+    pendingOrders: orders.filter(o => o.status === 'draft' || o.status === 'confirmed').length,
+    totalItems: items.filter(item => item.is_active).length,
+    totalCustomers: customers.length
+  };
 
   return (
     <div className="space-y-6" data-testid="page-dashboard">

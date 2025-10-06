@@ -6,7 +6,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Textarea } from '@/components/ui/textarea';
 import { Plus, X } from 'lucide-react';
 import { useState, useEffect } from 'react';
-import { mockItems } from '../pages/Items';
+import type { Item } from '@shared/schema';
 
 interface OrderFormModalProps {
   isOpen: boolean;
@@ -16,6 +16,7 @@ interface OrderFormModalProps {
   initialData?: any;
   submitLabel: string;
   customers: Array<{ value: string; label: string }>;
+  items: Item[];
 }
 
 interface LineItem {
@@ -32,7 +33,8 @@ export default function OrderFormModal({
   title,
   initialData = {},
   submitLabel,
-  customers
+  customers,
+  items
 }: OrderFormModalProps) {
   const [poNumber, setPoNumber] = useState('');
   const [customerId, setCustomerId] = useState('');
@@ -42,7 +44,7 @@ export default function OrderFormModal({
   const [lineItems, setLineItems] = useState<LineItem[]>([]);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
-  const activeItems = mockItems.filter(item => item.is_active);
+  const activeItems = items.filter(item => item.is_active);
 
   useEffect(() => {
     if (isOpen) {
