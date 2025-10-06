@@ -34,7 +34,7 @@ export default function OrderFormModal({
   initialData = {},
   submitLabel,
   customers,
-  items
+  items = []
 }: OrderFormModalProps) {
   const [poNumber, setPoNumber] = useState('');
   const [customerId, setCustomerId] = useState('');
