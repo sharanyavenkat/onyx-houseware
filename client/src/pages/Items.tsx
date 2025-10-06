@@ -114,7 +114,7 @@ export default function Items() {
     const processedData = {
       ...data,
       is_active: data.is_active === 'true',
-      price: parseFloat(data.price),
+      price: String(data.price),
       safety_stock: parseInt(data.safety_stock),
     };
     
