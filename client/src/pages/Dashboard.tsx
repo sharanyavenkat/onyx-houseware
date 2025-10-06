@@ -2,32 +2,28 @@ import DashboardCards from '../components/DashboardCards';
 import DataTable from '../components/DataTable';
 import MonthPicker from '../components/MonthPicker';
 import { Badge } from '@/components/ui/badge';
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import type { Item, Order, Customer } from '@shared/schema';
 
+// Extended Order type with line_items from API
+type OrderWithLineItems = Order & {
+  line_items?: Array<{
+    item_id: number;
+    item_name: string;
+    sku: string;
+    quantity: number;
+  }>;
+};
+
 // Function to calculate status based on pending quantity vs safety stock
 function calculateStatus(pendingQty: number, safetyStock: number): string {
+  if (safetyStock === 0) return 'Good';
   const ratio = pendingQty / safetyStock;
   if (ratio >= 2) return 'Critical';
   if (ratio >= 1.5) return 'Low';
   return 'Good';
 }
-
-// Current Onyx Houseware inventory status  
-const mockTopItemsData = [
-  { name: 'Tawa 280mm', pendingQty: 45, safetyStock: 20 },
-  { name: 'Casserole 240mm', pendingQty: 32, safetyStock: 10 },
-  { name: 'Kadai 240mm', pendingQty: 28, safetyStock: 15 },
-  { name: 'Fry Pan 240mm', pendingQty: 18, safetyStock: 15 },
-  { name: 'Paniyaram 12 pits', pendingQty: 12, safetyStock: 8 }
-];
-
-// Add calculated status to each item
-const mockTopItems = mockTopItemsData.map(item => ({
-  ...item,
-  status: calculateStatus(item.pendingQty, item.safetyStock)
-}));
 
 const topItemsColumns = [
   { key: 'name', label: 'Item Name' },
@@ -52,7 +48,7 @@ export default function Dashboard() {
     queryKey: ['/api/items'],
   });
 
-  const { data: orders = [] } = useQuery<Order[]>({
+  const { data: orders = [] } = useQuery<OrderWithLineItems[]>({
     queryKey: ['/api/orders'],
   });
 
@@ -66,6 +62,44 @@ export default function Dashboard() {
     totalItems: items.filter(item => item.is_active).length,
     totalCustomers: customers.length
   };
+
+  // Calculate top items by pending quantity from real order data
+  const topItemsByPendingQty = useMemo(() => {
+    const itemPendingQtyMap = new Map<number, { name: string; pendingQty: number; safetyStock: number }>();
+    
+    // Aggregate pending quantities from orders
+    orders
+      .filter(order => order.status === 'draft' || order.status === 'confirmed')
+      .forEach(order => {
+        const lineItems = order.line_items ?? [];
+        lineItems.forEach(lineItem => {
+          const itemId = lineItem.item_id;
+          const item = items.find(i => i.id === itemId);
+          
+          if (item) {
+            const existing = itemPendingQtyMap.get(itemId);
+            if (existing) {
+              existing.pendingQty += lineItem.quantity;
+            } else {
+              itemPendingQtyMap.set(itemId, {
+                name: item.name,
+                pendingQty: lineItem.quantity,
+                safetyStock: item.safety_stock || 0
+              });
+            }
+          }
+        });
+      });
+    
+    // Convert to array, add status, sort by pending quantity, and take top 5
+    return Array.from(itemPendingQtyMap.values())
+      .map(item => ({
+        ...item,
+        status: calculateStatus(item.pendingQty, item.safetyStock)
+      }))
+      .sort((a, b) => b.pendingQty - a.pendingQty)
+      .slice(0, 5);
+  }, [orders, items]);
 
   return (
     <div className="space-y-6" data-testid="page-dashboard">
@@ -84,7 +118,7 @@ export default function Dashboard() {
       {/* Top Items by Pending Quantity */}
       <DataTable 
         columns={topItemsColumns}
-        data={mockTopItems}
+        data={topItemsByPendingQty}
         title="Top Items by Pending Quantity"
         searchable={false}
       />

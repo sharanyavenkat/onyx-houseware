@@ -5,40 +5,11 @@ import { Input } from '@/components/ui/input';
 import { Save } from 'lucide-react';
 import { useState } from 'react';
 
-// TODO: Remove mock data functionality
-const mockIndentData = [
-  { 
-    id: 1, 
-    item_name: 'Steel Plate 10mm', 
-    opening_balance: 100, 
-    expected_receipts: 50, 
-    pending_order_qty: 120, 
-    safety_stock: 50,
-    required_to_order: 20 // max(0, (120 + 50) - (100 + 50))
-  },
-  { 
-    id: 2, 
-    item_name: 'Aluminum Sheet', 
-    opening_balance: 75, 
-    expected_receipts: 25, 
-    pending_order_qty: 85, 
-    safety_stock: 30,
-    required_to_order: 15 // max(0, (85 + 30) - (75 + 25))
-  },
-  { 
-    id: 3, 
-    item_name: 'Copper Wire', 
-    opening_balance: 60, 
-    expected_receipts: 30, 
-    pending_order_qty: 45, 
-    safety_stock: 25,
-    required_to_order: 0 // max(0, (45 + 25) - (60 + 30))
-  }
-];
-
 export default function Indent() {
-  const [selectedMonth, setSelectedMonth] = useState('2025-01');
-  const [indentData, setIndentData] = useState(mockIndentData);
+  const currentDate = new Date();
+  const currentMonth = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}`;
+  const [selectedMonth, setSelectedMonth] = useState(currentMonth);
+  const [indentData, setIndentData] = useState<any[]>([]);
   const [editingCells, setEditingCells] = useState<Record<string, any>>({});
 
   const calculateRequiredToOrder = (pendingQty: number, safetyStock: number, openingBalance: number, expectedReceipts: number) => {

@@ -263,16 +263,6 @@ export default function Orders() {
           </CardContent>
         </Card>
       )}
-      
-      <ConfirmationDialog
-        isOpen={confirmationDialog.isOpen}
-        onClose={() => setConfirmationDialog(prev => ({ ...prev, isOpen: false }))}
-        onConfirm={confirmationDialog.onConfirm}
-        title={confirmationDialog.title}
-        description={confirmationDialog.description}
-        confirmLabel="Delete Order"
-        isDestructive={true}
-      />
     </div>
   );
 }
