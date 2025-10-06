@@ -70,14 +70,14 @@ const orderColumns = [
   { key: 'customer_name', label: 'Customer' },
   { key: 'order_date', label: 'Order Date' },
   { 
-    key: 'line_items', 
+    key: 'items_count', 
     label: 'Items', 
-    render: (value: any[]) => value?.length || 0
+    render: (_: any, row: any) => row.line_items?.length || 0
   },
   { 
-    key: 'line_items', 
+    key: 'total_pieces', 
     label: 'Total Pcs', 
-    render: (value: any[]) => value?.reduce((sum, item) => sum + item.quantity, 0) || 0
+    render: (_: any, row: any) => row.line_items?.reduce((sum: number, item: any) => sum + item.quantity, 0) || 0
   },
   { 
     key: 'status', 
@@ -169,8 +169,9 @@ export default function Orders() {
       ));
     } else {
       // Add new order
+      const maxId = orders.length > 0 ? Math.max(...orders.map(o => o.id)) : 0;
       const newOrder = {
-        id: Math.max(...orders.map(o => o.id)) + 1,
+        id: maxId + 1,
         ...data,
         customer_name: mockCustomers.find(c => c.value === data.customer_id)?.label || 'Unknown'
       };
