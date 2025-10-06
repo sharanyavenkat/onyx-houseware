@@ -1,10 +1,9 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Package, Users, FileText, TrendingUp } from "lucide-react";
 import { useLocation } from "wouter";
 
 interface DashboardCardsProps {
-  data?: {
+  data: {
     totalOrders: number;
     pendingOrders: number;
     totalItems: number;
@@ -12,15 +11,7 @@ interface DashboardCardsProps {
   };
 }
 
-// TODO: Remove mock data functionality
-const mockData = {
-  totalOrders: 47,
-  pendingOrders: 12,
-  totalItems: 156,
-  totalCustomers: 23
-};
-
-export default function DashboardCards({ data = mockData }: DashboardCardsProps) {
+export default function DashboardCards({ data }: DashboardCardsProps) {
   const [, setLocation] = useLocation();
 
   const cards = [
@@ -28,8 +19,7 @@ export default function DashboardCards({ data = mockData }: DashboardCardsProps)
       title: "Total Orders",
       value: data.totalOrders,
       icon: FileText,
-      description: "This month",
-      trend: "+12%",
+      description: "All orders",
       onClick: () => setLocation('/orders')
     },
     {
@@ -37,7 +27,6 @@ export default function DashboardCards({ data = mockData }: DashboardCardsProps)
       value: data.pendingOrders,
       icon: TrendingUp,
       description: "Needs attention",
-      trend: "+3",
       onClick: () => setLocation('/orders?filter=pending')
     },
     {
@@ -45,7 +34,6 @@ export default function DashboardCards({ data = mockData }: DashboardCardsProps)
       value: data.totalItems,
       icon: Package,
       description: "In inventory",
-      trend: "+8",
       onClick: () => setLocation('/items')
     },
     {
@@ -53,7 +41,6 @@ export default function DashboardCards({ data = mockData }: DashboardCardsProps)
       value: data.totalCustomers,
       icon: Users,
       description: "Active customers",
-      trend: "+2",
       onClick: () => setLocation('/customers')
     }
   ];
@@ -77,14 +64,9 @@ export default function DashboardCards({ data = mockData }: DashboardCardsProps)
             <div className="text-2xl font-bold" data-testid={`text-${card.title.toLowerCase().replace(' ', '-')}-value`}>
               {card.value}
             </div>
-            <div className="flex items-center justify-between">
-              <p className="text-xs text-muted-foreground">
-                {card.description}
-              </p>
-              <Badge variant="secondary" className="text-xs">
-                {card.trend}
-              </Badge>
-            </div>
+            <p className="text-xs text-muted-foreground mt-1">
+              {card.description}
+            </p>
           </CardContent>
         </Card>
       ))}
