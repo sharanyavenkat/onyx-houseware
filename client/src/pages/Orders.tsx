@@ -1,5 +1,5 @@
 import DataTable from '../components/DataTable';
-import FormModal from '../components/FormModal';
+import OrderFormModal from '../components/OrderFormModal';
 import ConfirmationDialog from '../components/ConfirmationDialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -10,10 +10,53 @@ import { useLocation } from 'wouter';
 
 // TODO: Remove mock data functionality
 export const mockOrders = [
-  { id: 1, po_number: 'ORD-2025-001', customer_name: 'ABC Manufacturing', status: 'draft', order_date: '2025-01-15', total_items: 3 },
-  { id: 2, po_number: 'ORD-2025-002', customer_name: 'XYZ Industries', status: 'confirmed', order_date: '2025-01-14', total_items: 2 },
-  { id: 3, po_number: 'ORD-2025-003', customer_name: 'Metal Works Inc', status: 'fulfilled', order_date: '2025-01-13', total_items: 5 },
-  { id: 4, po_number: 'ORD-2025-004', customer_name: 'ABC Manufacturing', status: 'cancelled', order_date: '2025-01-12', total_items: 1 }
+  { 
+    id: 1, 
+    po_number: 'ORD-2025-001', 
+    customer_name: 'ABC Manufacturing', 
+    status: 'draft', 
+    order_date: '2025-01-15', 
+    line_items: [
+      { item_id: 1, item_name: 'Tawa', sku: 'TWA-280', quantity: 10 },
+      { item_id: 3, item_name: 'Kadai', sku: 'KD-240', quantity: 5 },
+      { item_id: 5, item_name: 'Casserole', sku: 'CS-240', quantity: 8 }
+    ]
+  },
+  { 
+    id: 2, 
+    po_number: 'ORD-2025-002', 
+    customer_name: 'XYZ Industries', 
+    status: 'confirmed', 
+    order_date: '2025-01-14', 
+    line_items: [
+      { item_id: 2, item_name: 'Fry Pan', sku: 'FP-240', quantity: 15 },
+      { item_id: 6, item_name: 'Paniyaram', sku: 'PN-12', quantity: 10 }
+    ]
+  },
+  { 
+    id: 3, 
+    po_number: 'ORD-2025-003', 
+    customer_name: 'Metal Works Inc', 
+    status: 'fulfilled', 
+    order_date: '2025-01-13', 
+    line_items: [
+      { item_id: 1, item_name: 'Tawa', sku: 'TWA-280', quantity: 20 },
+      { item_id: 2, item_name: 'Fry Pan', sku: 'FP-240', quantity: 15 },
+      { item_id: 3, item_name: 'Kadai', sku: 'KD-240', quantity: 12 },
+      { item_id: 4, item_name: 'Casserole', sku: 'CS-220', quantity: 8 },
+      { item_id: 8, item_name: 'Appachety', sku: 'AP-01', quantity: 10 }
+    ]
+  },
+  { 
+    id: 4, 
+    po_number: 'ORD-2025-004', 
+    customer_name: 'ABC Manufacturing', 
+    status: 'cancelled', 
+    order_date: '2025-01-12', 
+    line_items: [
+      { item_id: 5, item_name: 'Casserole', sku: 'CS-240', quantity: 5 }
+    ]
+  }
 ];
 
 const mockCustomers = [
@@ -22,24 +65,20 @@ const mockCustomers = [
   { value: '3', label: 'Metal Works Inc' }
 ];
 
-const orderFields = [
-  { name: 'po_number', label: 'PO Number', type: 'text' as const, required: true, placeholder: 'Enter unique PO number' },
-  { name: 'customer_id', label: 'Customer', type: 'select' as const, required: true, options: mockCustomers },
-  { name: 'order_date', label: 'Order Date', type: 'text' as const, placeholder: 'YYYY-MM-DD' },
-  { name: 'status', label: 'Status', type: 'select' as const, required: true, options: [
-    { value: 'draft', label: 'Draft' },
-    { value: 'confirmed', label: 'Confirmed' },
-    { value: 'fulfilled', label: 'Fulfilled' },
-    { value: 'cancelled', label: 'Cancelled' }
-  ]},
-  { name: 'notes', label: 'Notes', type: 'textarea' as const, placeholder: 'Additional notes...' }
-];
-
 const orderColumns = [
   { key: 'po_number', label: 'PO Number' },
   { key: 'customer_name', label: 'Customer' },
   { key: 'order_date', label: 'Order Date' },
-  { key: 'total_items', label: 'Items' },
+  { 
+    key: 'line_items', 
+    label: 'Items', 
+    render: (value: any[]) => value?.length || 0
+  },
+  { 
+    key: 'line_items', 
+    label: 'Total Pcs', 
+    render: (value: any[]) => value?.reduce((sum, item) => sum + item.quantity, 0) || 0
+  },
   { 
     key: 'status', 
     label: 'Status', 
@@ -122,15 +161,18 @@ export default function Orders() {
     if (editingOrder) {
       // Edit existing order
       setOrders(orders.map(order => 
-        order.id === editingOrder.id ? { ...order, ...data } : order
+        order.id === editingOrder.id ? { 
+          ...order, 
+          ...data,
+          customer_name: mockCustomers.find(c => c.value === data.customer_id)?.label || order.customer_name
+        } : order
       ));
     } else {
       // Add new order
       const newOrder = {
         id: Math.max(...orders.map(o => o.id)) + 1,
         ...data,
-        customer_name: mockCustomers.find(c => c.value === data.customer_id)?.label || 'Unknown',
-        total_items: 0
+        customer_name: mockCustomers.find(c => c.value === data.customer_id)?.label || 'Unknown'
       };
       setOrders([...orders, newOrder]);
     }
@@ -168,7 +210,7 @@ export default function Orders() {
         onDelete={handleDelete}
       />
       
-      <FormModal
+      <OrderFormModal
         isOpen={isModalOpen}
         onClose={() => {
           setIsModalOpen(false);
@@ -176,9 +218,9 @@ export default function Orders() {
         }}
         onSubmit={handleSubmit}
         title={editingOrder ? 'Edit Order' : 'Add New Order'}
-        fields={orderFields}
         initialData={editingOrder || {}}
         submitLabel={editingOrder ? 'Update Order' : 'Add Order'}
+        customers={mockCustomers}
       />
       
       {viewingOrder && (
@@ -187,12 +229,47 @@ export default function Orders() {
             <CardTitle>Order Details: {viewingOrder.po_number}</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-2 gap-4 mb-6">
               <div><strong>Customer:</strong> {viewingOrder.customer_name}</div>
               <div><strong>Status:</strong> <Badge>{viewingOrder.status}</Badge></div>
               <div><strong>Order Date:</strong> {viewingOrder.order_date}</div>
-              <div><strong>Total Items:</strong> {viewingOrder.total_items}</div>
+              <div><strong>Total Items:</strong> {viewingOrder.line_items?.length || 0}</div>
             </div>
+
+            {viewingOrder.line_items && viewingOrder.line_items.length > 0 && (
+              <div className="border rounded-md">
+                <div className="bg-muted px-4 py-2 font-semibold text-sm">Order Items</div>
+                <div className="divide-y">
+                  {viewingOrder.line_items.map((item: any, index: number) => (
+                    <div 
+                      key={index} 
+                      className="px-4 py-3 flex justify-between items-center"
+                      data-testid={`order-detail-item-${index}`}
+                    >
+                      <div>
+                        <div className="font-medium">{item.item_name}</div>
+                        <div className="text-sm text-muted-foreground">SKU: {item.sku}</div>
+                      </div>
+                      <div className="text-right">
+                        <div className="font-semibold">{item.quantity} pcs</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <div className="bg-muted px-4 py-2 font-semibold text-sm flex justify-between">
+                  <span>Total Pieces:</span>
+                  <span>{viewingOrder.line_items.reduce((sum: number, item: any) => sum + item.quantity, 0)}</span>
+                </div>
+              </div>
+            )}
+
+            {viewingOrder.notes && (
+              <div className="mt-4">
+                <strong>Notes:</strong>
+                <p className="text-muted-foreground mt-1">{viewingOrder.notes}</p>
+              </div>
+            )}
+
             <Button 
               variant="outline" 
               className="mt-4" 
