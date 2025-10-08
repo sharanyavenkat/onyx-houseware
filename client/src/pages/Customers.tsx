@@ -11,6 +11,7 @@ const customerFields = [
   { name: 'contact_person', label: 'Contact Person', type: 'text' as const, required: true, placeholder: 'Contact person name' },
   { name: 'email', label: 'Email', type: 'email' as const, required: true, placeholder: 'company@example.com' },
   { name: 'phone', label: 'Phone', type: 'text' as const, required: true, placeholder: '555-0000' },
+  { name: 'po_number', label: 'PO Number', type: 'text' as const, placeholder: 'Customer PO number (optional)' },
   { name: 'address', label: 'Address', type: 'textarea' as const, required: true, placeholder: 'Complete address...' },
 ];
 
@@ -18,7 +19,8 @@ const customerColumns = [
   { key: 'company_name', label: 'Company' },
   { key: 'contact_person', label: 'Contact' },
   { key: 'email', label: 'Email' },
-  { key: 'phone', label: 'Phone' }
+  { key: 'phone', label: 'Phone' },
+  { key: 'po_number', label: 'PO Number', render: (value: string) => value || '-' }
 ];
 
 export default function Customers() {
