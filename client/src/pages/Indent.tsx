@@ -3,44 +3,108 @@ import MonthPicker from '../components/MonthPicker';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Save } from 'lucide-react';
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
+import { useQuery, useMutation } from '@tanstack/react-query';
+import { queryClient, apiRequest } from '@/lib/queryClient';
+import { useToast } from '@/hooks/use-toast';
+import type { Item, Indent, Order, OrderItem } from '@shared/schema';
 
-export default function Indent() {
+export default function IndentPage() {
   const currentDate = new Date();
   const currentMonth = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}`;
   const [selectedMonth, setSelectedMonth] = useState(currentMonth);
-  const [indentData, setIndentData] = useState<any[]>([]);
-  const [editingCells, setEditingCells] = useState<Record<string, any>>({});
+  const [editingCells, setEditingCells] = useState<Record<string, number>>({});
+  const { toast } = useToast();
 
-  const calculateRequiredToOrder = (pendingQty: number, safetyStock: number, openingBalance: number, expectedReceipts: number) => {
-    return Math.max(0, (pendingQty + safetyStock) - (openingBalance + expectedReceipts));
-  };
+  // Fetch all items
+  const { data: items = [] } = useQuery<Item[]>({
+    queryKey: ['/api/items'],
+  });
 
-  const handleCellEdit = (rowId: number, field: string, value: string) => {
-    const numValue = parseInt(value) || 0;
-    const key = `${rowId}-${field}`;
-    setEditingCells(prev => ({ ...prev, [key]: numValue }));
+  // Fetch indents for selected month
+  const { data: indents = [] } = useQuery<Indent[]>({
+    queryKey: ['/api/indents', selectedMonth],
+  });
 
-    // Update the data and recalculate
-    setIndentData(prev => prev.map(item => {
-      if (item.id === rowId) {
-        const updated = { ...item, [field]: numValue };
-        updated.required_to_order = calculateRequiredToOrder(
-          updated.pending_order_qty,
-          updated.safety_stock,
-          updated.opening_balance,
-          updated.expected_receipts
-        );
-        return updated;
+  // Fetch all orders
+  const { data: orders = [] } = useQuery<Order[]>({
+    queryKey: ['/api/orders'],
+  });
+
+  // Fetch all order items
+  const { data: allOrderItems = [] } = useQuery<OrderItem[]>({
+    queryKey: ['/api/order-items'],
+  });
+
+  // Calculate pending orders per item
+  const pendingOrdersByItem = useMemo(() => {
+    const pending: Record<number, number> = {};
+    
+    // Filter orders by draft or confirmed status
+    const activeOrders = orders.filter(o => o.status === 'draft' || o.status === 'confirmed');
+    const activeOrderIds = new Set(activeOrders.map(o => o.id));
+    
+    // Sum quantities for each item from active orders
+    allOrderItems.forEach(oi => {
+      if (activeOrderIds.has(oi.order_id)) {
+        pending[oi.item_id] = (pending[oi.item_id] || 0) + oi.quantity;
       }
-      return item;
-    }));
+    });
+    
+    return pending;
+  }, [orders, allOrderItems]);
+
+  // Merge data
+  const indentData = useMemo(() => {
+    return items.map(item => {
+      const indent = indents.find(i => i.item_id === item.id);
+      const openingBalance = editingCells[`${item.id}-opening_balance`] ?? indent?.opening_balance ?? 0;
+      const expectedReceipts = editingCells[`${item.id}-expected_receipts`] ?? indent?.expected_receipts ?? 0;
+      const pendingQty = pendingOrdersByItem[item.id] || 0;
+      const requiredToOrder = Math.max(0, (pendingQty + item.safety_stock) - (openingBalance + expectedReceipts));
+
+      return {
+        id: item.id,
+        item_name: item.name,
+        opening_balance: openingBalance,
+        expected_receipts: expectedReceipts,
+        pending_order_qty: pendingQty,
+        safety_stock: item.safety_stock,
+        required_to_order: requiredToOrder,
+      };
+    });
+  }, [items, indents, pendingOrdersByItem, editingCells]);
+
+  const saveMutation = useMutation({
+    mutationFn: async (data: { item_id: number; month: string; opening_balance: number; expected_receipts: number }[]) => {
+      await Promise.all(
+        data.map(indent => apiRequest('POST', '/api/indents', indent))
+      );
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/indents', selectedMonth] });
+      toast({ title: 'Indent saved successfully' });
+      setEditingCells({});
+    },
+    onError: (error: Error) => {
+      toast({ title: 'Error saving indent', description: error.message, variant: 'destructive' });
+    },
+  });
+
+  const handleCellEdit = (itemId: number, field: string, value: string) => {
+    const numValue = parseInt(value) || 0;
+    const key = `${itemId}-${field}`;
+    setEditingCells(prev => ({ ...prev, [key]: numValue }));
   };
 
   const handleSave = () => {
-    console.log('Saving indent data:', indentData);
-    setEditingCells({});
-    // TODO: Implement actual save functionality
+    const indentsToSave = indentData.map(row => ({
+      item_id: row.id,
+      month: selectedMonth,
+      opening_balance: row.opening_balance,
+      expected_receipts: row.expected_receipts,
+    }));
+    saveMutation.mutate(indentsToSave);
   };
 
   const indentColumns = [
@@ -51,7 +115,7 @@ export default function Indent() {
       render: (value: number, row: any) => (
         <Input
           type="number"
-          value={editingCells[`${row.id}-opening_balance`] ?? value}
+          value={value}
           onChange={(e) => handleCellEdit(row.id, 'opening_balance', e.target.value)}
           className="w-24"
           data-testid={`input-opening-balance-${row.id}`}
@@ -64,7 +128,7 @@ export default function Indent() {
       render: (value: number, row: any) => (
         <Input
           type="number"
-          value={editingCells[`${row.id}-expected_receipts`] ?? value}
+          value={value}
           onChange={(e) => handleCellEdit(row.id, 'expected_receipts', e.target.value)}
           className="w-24"
           data-testid={`input-expected-receipts-${row.id}`}
@@ -94,9 +158,9 @@ export default function Indent() {
         </div>
         <div className="flex items-center gap-4">
           <MonthPicker value={selectedMonth} onChange={setSelectedMonth} />
-          <Button onClick={handleSave} data-testid="button-save-indent">
+          <Button onClick={handleSave} disabled={saveMutation.isPending} data-testid="button-save-indent">
             <Save className="h-4 w-4 mr-2" />
-            Save Changes
+            {saveMutation.isPending ? 'Saving...' : 'Save Changes'}
           </Button>
         </div>
       </div>

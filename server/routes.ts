@@ -285,6 +285,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Order Items route (for fetching all order items)
+  app.get("/api/order-items", async (req, res) => {
+    try {
+      const allOrderItems: any[] = [];
+      const orders = await storage.getAllOrders();
+      
+      for (const order of orders) {
+        const items = await storage.getOrderItemsByOrderId(order.id);
+        allOrderItems.push(...items);
+      }
+      
+      res.json(allOrderItems);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
   // Indent routes
   app.get("/api/indents/:month", async (req, res) => {
     try {
