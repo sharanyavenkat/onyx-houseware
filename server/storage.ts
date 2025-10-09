@@ -11,11 +11,14 @@ import {
   type InsertOrder,
   type OrderItem,
   type InsertOrderItem,
+  type Indent,
+  type InsertIndent,
   users,
   items,
   customers,
   orders,
-  orderItems
+  orderItems,
+  indents
 } from "@shared/schema";
 
 export interface IStorage {
@@ -43,6 +46,9 @@ export interface IStorage {
   updateOrder(id: number, order: Partial<InsertOrder>): Promise<Order | undefined>;
   deleteOrder(id: number): Promise<void>;
   deleteOrderItems(orderId: number): Promise<void>;
+
+  getIndentsByMonth(month: string): Promise<Indent[]>;
+  upsertIndent(indent: InsertIndent): Promise<Indent>;
 }
 
 export class DbStorage implements IStorage {
@@ -141,6 +147,36 @@ export class DbStorage implements IStorage {
 
   async deleteOrderItems(orderId: number): Promise<void> {
     await db.delete(orderItems).where(eq(orderItems.order_id, orderId));
+  }
+
+  async getIndentsByMonth(month: string): Promise<Indent[]> {
+    return await db.select().from(indents).where(eq(indents.month, month));
+  }
+
+  async upsertIndent(insertIndent: InsertIndent): Promise<Indent> {
+    // Check if indent already exists for this item and month
+    const [existing] = await db.select().from(indents).where(
+      and(
+        eq(indents.item_id, insertIndent.item_id),
+        eq(indents.month, insertIndent.month)
+      )
+    );
+
+    if (existing) {
+      // Update existing indent
+      const [updated] = await db.update(indents)
+        .set({
+          opening_balance: insertIndent.opening_balance,
+          expected_receipts: insertIndent.expected_receipts
+        })
+        .where(eq(indents.id, existing.id))
+        .returning();
+      return updated;
+    } else {
+      // Create new indent
+      const [newIndent] = await db.insert(indents).values(insertIndent).returning();
+      return newIndent;
+    }
   }
 }
 
