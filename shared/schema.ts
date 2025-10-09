@@ -80,3 +80,18 @@ export const insertOrderItemSchema = createInsertSchema(orderItems).omit({
 
 export type InsertOrderItem = z.infer<typeof insertOrderItemSchema>;
 export type OrderItem = typeof orderItems.$inferSelect;
+
+export const indents = pgTable("indents", {
+  id: serial("id").primaryKey(),
+  item_id: integer("item_id").notNull().references(() => items.id),
+  month: text("month").notNull(),
+  opening_balance: integer("opening_balance").notNull().default(0),
+  expected_receipts: integer("expected_receipts").notNull().default(0),
+});
+
+export const insertIndentSchema = createInsertSchema(indents).omit({
+  id: true,
+});
+
+export type InsertIndent = z.infer<typeof insertIndentSchema>;
+export type Indent = typeof indents.$inferSelect;
