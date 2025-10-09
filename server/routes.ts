@@ -1,7 +1,7 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { insertItemSchema, insertCustomerSchema, insertOrderSchema, insertOrderItemSchema } from "@shared/schema";
+import { insertItemSchema, insertCustomerSchema, insertOrderSchema, insertOrderItemSchema, insertIndentSchema } from "@shared/schema";
 
 export async function registerRoutes(app: Express): Promise<Server> {
   
@@ -282,6 +282,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(204).send();
     } catch (error: any) {
       res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Indent routes
+  app.get("/api/indents/:month", async (req, res) => {
+    try {
+      const indents = await storage.getIndentsByMonth(req.params.month);
+      res.json(indents);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/indents", async (req, res) => {
+    try {
+      const validatedData = insertIndentSchema.parse(req.body);
+      const indent = await storage.upsertIndent(validatedData);
+      res.status(200).json(indent);
+    } catch (error: any) {
+      res.status(400).json({ message: error.message });
     }
   });
 
