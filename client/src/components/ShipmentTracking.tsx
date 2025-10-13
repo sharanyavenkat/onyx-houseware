@@ -4,7 +4,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Plus, Package, AlertTriangle } from 'lucide-react';
+import { Plus, Package, AlertTriangle, Edit } from 'lucide-react';
 import { useState, useMemo } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { queryClient, apiRequest } from '@/lib/queryClient';
@@ -29,7 +29,8 @@ export default function ShipmentTracking({
   orderedQuantity
 }: ShipmentTrackingProps) {
   const { toast } = useToast();
-  const [isAddingShipment, setIsAddingShipment] = useState(false);
+  const [isFormOpen, setIsFormOpen] = useState(false);
+  const [editingShipment, setEditingShipment] = useState<Shipment | null>(null);
   const [lotNumber, setLotNumber] = useState('');
   const [quantityShipped, setQuantityShipped] = useState('');
   const [shipmentDate, setShipmentDate] = useState('');
@@ -55,10 +56,26 @@ export default function ShipmentTracking({
       queryClient.invalidateQueries({ queryKey: ['/api/shipments/order-item', orderItemId] });
       toast({ title: 'Shipment recorded successfully' });
       resetForm();
-      setIsAddingShipment(false);
+      setIsFormOpen(false);
     },
     onError: (error: Error) => {
       toast({ title: 'Error recording shipment', description: error.message, variant: 'destructive' });
+    },
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: number; data: any }) => {
+      return await apiRequest('PATCH', `/api/shipments/${id}`, data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/shipments/order-item', orderItemId] });
+      toast({ title: 'Shipment updated successfully' });
+      resetForm();
+      setIsFormOpen(false);
+      setEditingShipment(null);
+    },
+    onError: (error: Error) => {
+      toast({ title: 'Error updating shipment', description: error.message, variant: 'destructive' });
     },
   });
 
@@ -87,7 +104,7 @@ export default function ShipmentTracking({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!lotNumber || !quantityShipped || !shipmentDate) {
+    if (!quantityShipped || !shipmentDate) {
       toast({ title: 'Please fill all required fields', variant: 'destructive' });
       return;
     }
@@ -95,7 +112,7 @@ export default function ShipmentTracking({
     const data = {
       order_id: orderId,
       order_item_id: orderItemId,
-      lot_number: lotNumber,
+      lot_number: lotNumber || null,
       quantity_shipped: parseInt(quantityShipped),
       rejections_blowholes: parseInt(rejectionsBlowhole) || 0,
       rejections_handles: parseInt(rejectionsHandles) || 0,
@@ -103,7 +120,22 @@ export default function ShipmentTracking({
       shipment_date: shipmentDate,
     };
 
-    createMutation.mutate(data);
+    if (editingShipment) {
+      updateMutation.mutate({ id: editingShipment.id, data });
+    } else {
+      createMutation.mutate(data);
+    }
+  };
+
+  const handleEdit = (shipment: Shipment) => {
+    setEditingShipment(shipment);
+    setLotNumber(shipment.lot_number || '');
+    setQuantityShipped(shipment.quantity_shipped.toString());
+    setShipmentDate(shipment.shipment_date);
+    setRejectionsBlowhole(shipment.rejections_blowholes.toString());
+    setRejectionsHandles(shipment.rejections_handles.toString());
+    setRejectionsOther(shipment.rejections_other.toString());
+    setIsFormOpen(true);
   };
 
   const handleDelete = (id: number) => {
@@ -180,23 +212,27 @@ export default function ShipmentTracking({
           <div className="flex items-center justify-between">
             <h3 className="text-lg font-semibold">Shipments</h3>
             <Button
-              onClick={() => setIsAddingShipment(!isAddingShipment)}
+              onClick={() => {
+                setEditingShipment(null);
+                resetForm();
+                setIsFormOpen(!isFormOpen);
+              }}
               size="sm"
               data-testid="button-add-shipment"
             >
               <Plus className="h-4 w-4 mr-1" />
-              Add Shipment
+              {editingShipment ? 'Cancel Edit' : 'Add Shipment'}
             </Button>
           </div>
 
-          {isAddingShipment && (
+          {isFormOpen && (
             <Card>
               <CardContent className="pt-6">
                 <form onSubmit={handleSubmit} className="space-y-4">
                   <div className="grid grid-cols-3 gap-4">
                     <div>
                       <Label htmlFor="lot_number">
-                        Lot Number <span className="text-destructive">*</span>
+                        Lot Number (Optional)
                       </Label>
                       <Input
                         id="lot_number"
@@ -289,14 +325,15 @@ export default function ShipmentTracking({
                       variant="outline"
                       onClick={() => {
                         resetForm();
-                        setIsAddingShipment(false);
+                        setIsFormOpen(false);
+                        setEditingShipment(null);
                       }}
                       data-testid="button-cancel-shipment"
                     >
                       Cancel
                     </Button>
                     <Button type="submit" data-testid="button-save-shipment">
-                      Save Shipment
+                      {editingShipment ? 'Update Shipment' : 'Save Shipment'}
                     </Button>
                   </div>
                 </form>
@@ -327,7 +364,7 @@ export default function ShipmentTracking({
                     
                     return (
                       <TableRow key={shipment.id} data-testid={`row-shipment-${shipment.id}`}>
-                        <TableCell className="font-medium">{shipment.lot_number}</TableCell>
+                        <TableCell className="font-medium">{shipment.lot_number || '-'}</TableCell>
                         <TableCell>{shipment.shipment_date}</TableCell>
                         <TableCell className="text-right">{shipment.quantity_shipped}</TableCell>
                         <TableCell className="text-right">{shipment.rejections_blowholes}</TableCell>
@@ -336,14 +373,24 @@ export default function ShipmentTracking({
                         <TableCell className="text-right text-destructive font-semibold">{totalRej}</TableCell>
                         <TableCell className="text-right font-semibold">{accepted}</TableCell>
                         <TableCell>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => handleDelete(shipment.id)}
-                            data-testid={`button-delete-shipment-${shipment.id}`}
-                          >
-                            Delete
-                          </Button>
+                          <div className="flex gap-2">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleEdit(shipment)}
+                              data-testid={`button-edit-shipment-${shipment.id}`}
+                            >
+                              <Edit className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleDelete(shipment.id)}
+                              data-testid={`button-delete-shipment-${shipment.id}`}
+                            >
+                              Delete
+                            </Button>
+                          </div>
                         </TableCell>
                       </TableRow>
                     );
