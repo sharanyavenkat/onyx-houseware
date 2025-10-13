@@ -4,6 +4,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import ConfirmDialog from './ConfirmDialog';
 import { Plus, Package, AlertTriangle, Edit } from 'lucide-react';
 import { useState, useMemo } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
@@ -32,6 +33,8 @@ export default function ShipmentTracking({
   const { toast } = useToast();
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingShipment, setEditingShipment] = useState<Shipment | null>(null);
+  const [isConfirmOpen, setIsConfirmOpen] = useState(false);
+  const [shipmentToDelete, setShipmentToDelete] = useState<number | null>(null);
   const [lotNumber, setLotNumber] = useState('');
   const [quantityShipped, setQuantityShipped] = useState('');
   const [shipmentDate, setShipmentDate] = useState('');
@@ -140,8 +143,15 @@ export default function ShipmentTracking({
   };
 
   const handleDelete = (id: number) => {
-    if (confirm('Are you sure you want to delete this shipment?')) {
-      deleteMutation.mutate(id);
+    setShipmentToDelete(id);
+    setIsConfirmOpen(true);
+  };
+
+  const confirmDelete = () => {
+    if (shipmentToDelete !== null) {
+      deleteMutation.mutate(shipmentToDelete);
+      setIsConfirmOpen(false);
+      setShipmentToDelete(null);
     }
   };
 
@@ -412,6 +422,15 @@ export default function ShipmentTracking({
           </Button>
         </div>
       </DialogContent>
+
+      <ConfirmDialog
+        open={isConfirmOpen}
+        onOpenChange={setIsConfirmOpen}
+        onConfirm={confirmDelete}
+        title="Delete Shipment"
+        description="Are you sure you want to delete this shipment? This action cannot be undone."
+        confirmText="Delete"
+      />
     </Dialog>
   );
 }

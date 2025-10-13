@@ -1,7 +1,7 @@
 import DashboardCards from '../components/DashboardCards';
 import DataTable from '../components/DataTable';
-import MonthPicker from '../components/MonthPicker';
 import { Badge } from '@/components/ui/badge';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import type { Item, Order, Customer } from '@shared/schema';
@@ -40,9 +40,7 @@ const topItemsColumns = [
 ];
 
 export default function Dashboard() {
-  const currentDate = new Date();
-  const currentMonth = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}`;
-  const [selectedMonth, setSelectedMonth] = useState(currentMonth);
+  const [selectedMonth, setSelectedMonth] = useState('all');
 
   const { data: items = [] } = useQuery<Item[]>({
     queryKey: ['/api/items'],
@@ -56,9 +54,34 @@ export default function Dashboard() {
     queryKey: ['/api/customers'],
   });
 
+  // Extract unique months from orders based on fulfillment_date
+  const availableMonths = useMemo(() => {
+    const months = new Set<string>();
+    orders.forEach(order => {
+      if (order.fulfillment_date) {
+        const date = new Date(order.fulfillment_date);
+        const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+        months.add(monthKey);
+      }
+    });
+    return Array.from(months).sort().reverse();
+  }, [orders]);
+
+  // Filter orders by selected month (based on fulfillment_date)
+  const filteredOrders = useMemo(() => {
+    if (selectedMonth === 'all') return orders;
+    
+    return orders.filter(order => {
+      if (!order.fulfillment_date) return false;
+      const date = new Date(order.fulfillment_date);
+      const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+      return monthKey === selectedMonth;
+    });
+  }, [orders, selectedMonth]);
+
   const dashboardData = {
-    totalOrders: orders.length,
-    pendingOrders: orders.filter(o => o.status === 'draft' || o.status === 'confirmed').length,
+    totalOrders: filteredOrders.length,
+    pendingOrders: filteredOrders.filter(o => o.status === 'draft' || o.status === 'confirmed').length,
     totalItems: items.filter(item => item.is_active).length,
     totalCustomers: customers.length
   };
@@ -67,8 +90,8 @@ export default function Dashboard() {
   const topItemsByPendingQty = useMemo(() => {
     const itemPendingQtyMap = new Map<number, { name: string; pendingQty: number; safetyStock: number }>();
     
-    // Aggregate pending quantities from orders
-    orders
+    // Aggregate pending quantities from filtered orders
+    filteredOrders
       .filter(order => order.status === 'draft' || order.status === 'confirmed')
       .forEach(order => {
         const lineItems = order.line_items ?? [];
@@ -99,7 +122,7 @@ export default function Dashboard() {
       }))
       .sort((a, b) => b.pendingQty - a.pendingQty)
       .slice(0, 5);
-  }, [orders, items]);
+  }, [filteredOrders, items]);
 
   return (
     <div className="space-y-6" data-testid="page-dashboard">
@@ -109,19 +132,60 @@ export default function Dashboard() {
           <h1 className="text-3xl font-semibold" data-testid="text-dashboard-title">Dashboard</h1>
           <p className="text-muted-foreground">Overview of your order management system</p>
         </div>
-        <MonthPicker value={selectedMonth} onChange={setSelectedMonth} />
+        <div className="flex items-center gap-2">
+          <span className="text-sm text-muted-foreground">Filter by Fulfillment Month:</span>
+          <Select value={selectedMonth} onValueChange={setSelectedMonth}>
+            <SelectTrigger className="w-[200px]" data-testid="select-filter-month">
+              <SelectValue placeholder="All Months" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Months</SelectItem>
+              {availableMonths.map(month => {
+                const [year, monthNum] = month.split('-');
+                const monthName = new Date(parseInt(year), parseInt(monthNum) - 1).toLocaleString('default', { month: 'long' });
+                return (
+                  <SelectItem key={month} value={month}>
+                    {monthName} {year}
+                  </SelectItem>
+                );
+              })}
+            </SelectContent>
+          </Select>
+        </div>
       </div>
 
       {/* Cards */}
       <DashboardCards data={dashboardData} />
 
       {/* Top Items by Pending Quantity */}
-      <DataTable 
-        columns={topItemsColumns}
-        data={topItemsByPendingQty}
-        title="Top Items by Pending Quantity"
-        searchable={false}
-      />
+      <div className="space-y-4">
+        <div className="flex items-center justify-between">
+          <h2 className="text-xl font-semibold">Top Items by Pending Quantity</h2>
+          <div className="flex items-center gap-4">
+            <span className="text-sm text-muted-foreground">Status Legend:</span>
+            <div className="flex items-center gap-3">
+              <div className="flex items-center gap-1.5">
+                <Badge variant="destructive" data-testid="badge-legend-critical">Critical</Badge>
+                <span className="text-xs text-muted-foreground">≥2× safety stock</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <Badge variant="secondary" data-testid="badge-legend-low">Low</Badge>
+                <span className="text-xs text-muted-foreground">1.5-2× safety stock</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <Badge variant="default" data-testid="badge-legend-good">Good</Badge>
+                <span className="text-xs text-muted-foreground">&lt;1.5× safety stock</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <DataTable 
+          columns={topItemsColumns}
+          data={topItemsByPendingQty}
+          title=""
+          searchable={false}
+        />
+      </div>
     </div>
   );
 }

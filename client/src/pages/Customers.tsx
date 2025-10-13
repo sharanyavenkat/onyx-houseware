@@ -1,5 +1,6 @@
 import DataTable from '../components/DataTable';
 import FormModal from '../components/FormModal';
+import ConfirmDialog from '../components/ConfirmDialog';
 import { useState } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { queryClient, apiRequest } from '@/lib/queryClient';
@@ -26,6 +27,8 @@ const customerColumns = [
 export default function Customers() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
+  const [isConfirmOpen, setIsConfirmOpen] = useState(false);
+  const [customerToDelete, setCustomerToDelete] = useState<Customer | null>(null);
   const { toast } = useToast();
 
   const { data: customers = [] } = useQuery<Customer[]>({
@@ -85,8 +88,15 @@ export default function Customers() {
   };
 
   const handleDelete = (customer: Customer) => {
-    if (confirm(`Are you sure you want to delete "${customer.company_name}"? This action cannot be undone.`)) {
-      deleteMutation.mutate(customer.id);
+    setCustomerToDelete(customer);
+    setIsConfirmOpen(true);
+  };
+
+  const confirmDelete = () => {
+    if (customerToDelete) {
+      deleteMutation.mutate(customerToDelete.id);
+      setIsConfirmOpen(false);
+      setCustomerToDelete(null);
     }
   };
 
@@ -121,6 +131,15 @@ export default function Customers() {
         fields={customerFields}
         initialData={editingCustomer || {}}
         submitLabel={editingCustomer ? 'Update Customer' : 'Add Customer'}
+      />
+
+      <ConfirmDialog
+        open={isConfirmOpen}
+        onOpenChange={setIsConfirmOpen}
+        onConfirm={confirmDelete}
+        title="Delete Customer"
+        description={`Are you sure you want to delete "${customerToDelete?.company_name}"? This action cannot be undone.`}
+        confirmText="Delete"
       />
     </div>
   );

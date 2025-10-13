@@ -1,5 +1,6 @@
 import DataTable from '../components/DataTable';
 import OrderFormModal from '../components/OrderFormModal';
+import ConfirmDialog from '../components/ConfirmDialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -50,6 +51,8 @@ export default function Orders() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingOrder, setEditingOrder] = useState<any>(null);
   const [selectedMonth, setSelectedMonth] = useState<string>('all');
+  const [isConfirmOpen, setIsConfirmOpen] = useState(false);
+  const [orderToDelete, setOrderToDelete] = useState<any>(null);
   const { toast } = useToast();
 
   const { data: orders = [] } = useQuery<Order[]>({
@@ -163,8 +166,15 @@ export default function Orders() {
   };
 
   const handleDelete = (order: any) => {
-    if (confirm(`Are you sure you want to delete order "${order.po_number}"? This action cannot be undone.`)) {
-      deleteMutation.mutate(order.id);
+    setOrderToDelete(order);
+    setIsConfirmOpen(true);
+  };
+
+  const confirmDelete = () => {
+    if (orderToDelete) {
+      deleteMutation.mutate(orderToDelete.id);
+      setIsConfirmOpen(false);
+      setOrderToDelete(null);
     }
   };
 
@@ -241,6 +251,15 @@ export default function Orders() {
         submitLabel={editingOrder ? 'Update Order' : 'Add Order'}
         customers={customerOptions}
         items={items}
+      />
+
+      <ConfirmDialog
+        open={isConfirmOpen}
+        onOpenChange={setIsConfirmOpen}
+        onConfirm={confirmDelete}
+        title="Delete Order"
+        description={`Are you sure you want to delete order "${orderToDelete?.po_number}"? This action cannot be undone.`}
+        confirmText="Delete"
       />
     </div>
   );

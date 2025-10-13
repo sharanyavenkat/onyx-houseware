@@ -1,5 +1,6 @@
 import DataTable from '../components/DataTable';
 import FormModal from '../components/FormModal';
+import ConfirmDialog from '../components/ConfirmDialog';
 import { Badge } from '@/components/ui/badge';
 import { useState } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
@@ -46,6 +47,8 @@ const itemColumns = [
 export default function Items() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<Item | null>(null);
+  const [isConfirmOpen, setIsConfirmOpen] = useState(false);
+  const [itemToDelete, setItemToDelete] = useState<Item | null>(null);
   const { toast } = useToast();
 
   const { data: items = [], isLoading } = useQuery<Item[]>({
@@ -105,8 +108,15 @@ export default function Items() {
   };
 
   const handleDelete = (item: Item) => {
-    if (confirm('Are you sure you want to delete this item?')) {
-      deleteMutation.mutate(item.id);
+    setItemToDelete(item);
+    setIsConfirmOpen(true);
+  };
+
+  const confirmDelete = () => {
+    if (itemToDelete) {
+      deleteMutation.mutate(itemToDelete.id);
+      setIsConfirmOpen(false);
+      setItemToDelete(null);
     }
   };
 
@@ -151,6 +161,15 @@ export default function Items() {
           is_active: editingItem.is_active ? 'true' : 'false'
         } : { is_active: 'true' }}
         submitLabel={editingItem ? 'Update Item' : 'Add Item'}
+      />
+
+      <ConfirmDialog
+        open={isConfirmOpen}
+        onOpenChange={setIsConfirmOpen}
+        onConfirm={confirmDelete}
+        title="Delete Item"
+        description={`Are you sure you want to delete "${itemToDelete?.name}"? This action cannot be undone.`}
+        confirmText="Delete"
       />
     </div>
   );
