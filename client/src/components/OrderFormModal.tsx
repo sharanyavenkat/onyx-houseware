@@ -39,6 +39,7 @@ export default function OrderFormModal({
   const [poNumber, setPoNumber] = useState('');
   const [customerId, setCustomerId] = useState('');
   const [orderDate, setOrderDate] = useState('');
+  const [fulfillmentDate, setFulfillmentDate] = useState('');
   const [status, setStatus] = useState('');
   const [notes, setNotes] = useState('');
   const [lineItems, setLineItems] = useState<LineItem[]>([]);
@@ -51,6 +52,7 @@ export default function OrderFormModal({
       setPoNumber(initialData.po_number || '');
       setCustomerId(initialData.customer_id || '');
       setOrderDate(initialData.order_date || '');
+      setFulfillmentDate(initialData.fulfillment_date || '');
       setStatus(initialData.status || '');
       setNotes(initialData.notes || '');
       setLineItems(initialData.line_items || []);
@@ -128,8 +130,9 @@ export default function OrderFormModal({
 
     const formData = {
       po_number: poNumber,
-      customer_id: customerId,
+      customer_id: parseInt(customerId),
       order_date: orderDate,
+      fulfillment_date: fulfillmentDate || null,
       status,
       notes,
       line_items: lineItems
@@ -199,6 +202,17 @@ export default function OrderFormModal({
               value={orderDate}
               onChange={(e) => setOrderDate(e.target.value)}
               data-testid="input-order-date"
+            />
+          </div>
+
+          <div>
+            <Label htmlFor="fulfillment_date">Fulfillment Date</Label>
+            <Input
+              id="fulfillment_date"
+              type="date"
+              value={fulfillmentDate}
+              onChange={(e) => setFulfillmentDate(e.target.value)}
+              data-testid="input-fulfillment-date"
             />
           </div>
 

@@ -38,11 +38,10 @@ export type Item = typeof items.$inferSelect;
 export const customers = pgTable("customers", {
   id: serial("id").primaryKey(),
   company_name: text("company_name").notNull(),
-  contact_person: text("contact_person").notNull(),
-  phone: text("phone").notNull(),
-  email: text("email").notNull(),
-  address: text("address").notNull(),
-  po_number: text("po_number"),
+  contact_person: text("contact_person"),
+  phone: text("phone"),
+  email: text("email"),
+  address: text("address"),
 });
 
 export const insertCustomerSchema = createInsertSchema(customers).omit({
@@ -57,6 +56,7 @@ export const orders = pgTable("orders", {
   po_number: text("po_number").notNull().unique(),
   customer_id: integer("customer_id").notNull().references(() => customers.id),
   order_date: date("order_date").notNull(),
+  fulfillment_date: date("fulfillment_date"),
   status: text("status").notNull().default("draft"),
 });
 
@@ -95,3 +95,22 @@ export const insertIndentSchema = createInsertSchema(indents).omit({
 
 export type InsertIndent = z.infer<typeof insertIndentSchema>;
 export type Indent = typeof indents.$inferSelect;
+
+export const shipments = pgTable("shipments", {
+  id: serial("id").primaryKey(),
+  order_id: integer("order_id").notNull().references(() => orders.id, { onDelete: 'cascade' }),
+  order_item_id: integer("order_item_id").notNull().references(() => orderItems.id, { onDelete: 'cascade' }),
+  lot_number: text("lot_number").notNull(),
+  quantity_shipped: integer("quantity_shipped").notNull(),
+  rejections_blowholes: integer("rejections_blowholes").notNull().default(0),
+  rejections_handles: integer("rejections_handles").notNull().default(0),
+  rejections_other: integer("rejections_other").notNull().default(0),
+  shipment_date: date("shipment_date").notNull(),
+});
+
+export const insertShipmentSchema = createInsertSchema(shipments).omit({
+  id: true,
+});
+
+export type InsertShipment = z.infer<typeof insertShipmentSchema>;
+export type Shipment = typeof shipments.$inferSelect;

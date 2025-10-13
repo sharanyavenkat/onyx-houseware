@@ -1,7 +1,7 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { insertItemSchema, insertCustomerSchema, insertOrderSchema, insertOrderItemSchema, insertIndentSchema } from "@shared/schema";
+import { insertItemSchema, insertCustomerSchema, insertOrderSchema, insertOrderItemSchema, insertIndentSchema, insertShipmentSchema } from "@shared/schema";
 
 export async function registerRoutes(app: Express): Promise<Server> {
   
@@ -138,6 +138,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           const line_items = orderItemsData.map(oi => {
             const item = items.find(i => i.id === oi.item_id);
             return {
+              order_item_id: oi.id,
               item_id: oi.item_id,
               item_name: item?.name || '',
               sku: item?.sku || '',
@@ -173,6 +174,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const line_items = orderItemsData.map(oi => {
         const item = items.find(i => i.id === oi.item_id);
         return {
+          order_item_id: oi.id,
           item_id: oi.item_id,
           item_name: item?.name || '',
           sku: item?.sku || '',
@@ -214,6 +216,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const line_items_response = orderItemsData.map(oi => {
         const item = items.find(i => i.id === oi.item_id);
         return {
+          order_item_id: oi.id,
           item_id: oi.item_id,
           item_name: item?.name || '',
           sku: item?.sku || '',
@@ -259,6 +262,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const line_items_response = orderItemsData.map(oi => {
         const item = items.find(i => i.id === oi.item_id);
         return {
+          order_item_id: oi.id,
           item_id: oi.item_id,
           item_name: item?.name || '',
           sku: item?.sku || '',
@@ -319,6 +323,57 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(200).json(indent);
     } catch (error: any) {
       res.status(400).json({ message: error.message });
+    }
+  });
+
+  // Shipment routes
+  app.get("/api/shipments/order/:orderId", async (req, res) => {
+    try {
+      const shipments = await storage.getShipmentsByOrderId(parseInt(req.params.orderId));
+      res.json(shipments);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.get("/api/shipments/order-item/:orderItemId", async (req, res) => {
+    try {
+      const shipments = await storage.getShipmentsByOrderItemId(parseInt(req.params.orderItemId));
+      res.json(shipments);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/shipments", async (req, res) => {
+    try {
+      const validatedData = insertShipmentSchema.parse(req.body);
+      const shipment = await storage.createShipment(validatedData);
+      res.status(201).json(shipment);
+    } catch (error: any) {
+      res.status(400).json({ message: error.message });
+    }
+  });
+
+  app.patch("/api/shipments/:id", async (req, res) => {
+    try {
+      const validatedData = insertShipmentSchema.partial().parse(req.body);
+      const shipment = await storage.updateShipment(parseInt(req.params.id), validatedData);
+      if (!shipment) {
+        return res.status(404).json({ message: "Shipment not found" });
+      }
+      res.json(shipment);
+    } catch (error: any) {
+      res.status(400).json({ message: error.message });
+    }
+  });
+
+  app.delete("/api/shipments/:id", async (req, res) => {
+    try {
+      await storage.deleteShipment(parseInt(req.params.id));
+      res.status(204).send();
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
     }
   });
 

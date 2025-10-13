@@ -13,12 +13,15 @@ import {
   type InsertOrderItem,
   type Indent,
   type InsertIndent,
+  type Shipment,
+  type InsertShipment,
   users,
   items,
   customers,
   orders,
   orderItems,
-  indents
+  indents,
+  shipments
 } from "@shared/schema";
 
 export interface IStorage {
@@ -49,6 +52,12 @@ export interface IStorage {
 
   getIndentsByMonth(month: string): Promise<Indent[]>;
   upsertIndent(indent: InsertIndent): Promise<Indent>;
+
+  getShipmentsByOrderId(orderId: number): Promise<Shipment[]>;
+  getShipmentsByOrderItemId(orderItemId: number): Promise<Shipment[]>;
+  createShipment(shipment: InsertShipment): Promise<Shipment>;
+  updateShipment(id: number, shipment: Partial<InsertShipment>): Promise<Shipment | undefined>;
+  deleteShipment(id: number): Promise<void>;
 }
 
 export class DbStorage implements IStorage {
@@ -177,6 +186,28 @@ export class DbStorage implements IStorage {
       const [newIndent] = await db.insert(indents).values(insertIndent).returning();
       return newIndent;
     }
+  }
+
+  async getShipmentsByOrderId(orderId: number): Promise<Shipment[]> {
+    return await db.select().from(shipments).where(eq(shipments.order_id, orderId));
+  }
+
+  async getShipmentsByOrderItemId(orderItemId: number): Promise<Shipment[]> {
+    return await db.select().from(shipments).where(eq(shipments.order_item_id, orderItemId));
+  }
+
+  async createShipment(insertShipment: InsertShipment): Promise<Shipment> {
+    const [shipment] = await db.insert(shipments).values(insertShipment).returning();
+    return shipment;
+  }
+
+  async updateShipment(id: number, updateData: Partial<InsertShipment>): Promise<Shipment | undefined> {
+    const [shipment] = await db.update(shipments).set(updateData).where(eq(shipments.id, id)).returning();
+    return shipment;
+  }
+
+  async deleteShipment(id: number): Promise<void> {
+    await db.delete(shipments).where(eq(shipments.id, id));
   }
 }
 

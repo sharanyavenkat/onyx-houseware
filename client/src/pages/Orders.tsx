@@ -1,9 +1,10 @@
 import DataTable from '../components/DataTable';
 import OrderFormModal from '../components/OrderFormModal';
+import ShipmentTracking from '../components/ShipmentTracking';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Eye } from 'lucide-react';
+import { Eye, Package } from 'lucide-react';
 import { useState, useEffect, useMemo } from 'react';
 import { useLocation } from 'wouter';
 import { useQuery, useMutation } from '@tanstack/react-query';
@@ -45,6 +46,8 @@ export default function Orders() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingOrder, setEditingOrder] = useState<any>(null);
   const [viewingOrder, setViewingOrder] = useState<any>(null);
+  const [trackingShipment, setTrackingShipment] = useState<any>(null);
+  const [isTrackingOpen, setIsTrackingOpen] = useState(false);
   const { toast } = useToast();
 
   const { data: orders = [] } = useQuery<Order[]>({
@@ -215,6 +218,7 @@ export default function Orders() {
               <div><strong>Customer:</strong> {viewingOrder.customer_name}</div>
               <div><strong>Status:</strong> <Badge>{viewingOrder.status}</Badge></div>
               <div><strong>Order Date:</strong> {viewingOrder.order_date}</div>
+              <div><strong>Fulfillment Date:</strong> {viewingOrder.fulfillment_date || 'Not set'}</div>
               <div><strong>Total Items:</strong> {viewingOrder.line_items?.length || 0}</div>
             </div>
 
@@ -232,8 +236,22 @@ export default function Orders() {
                         <div className="font-medium">{item.item_name}</div>
                         <div className="text-sm text-muted-foreground">SKU: {item.sku}</div>
                       </div>
-                      <div className="text-right">
-                        <div className="font-semibold">{item.quantity} pcs</div>
+                      <div className="flex items-center gap-4">
+                        <div className="text-right">
+                          <div className="font-semibold">{item.quantity} pcs</div>
+                        </div>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            setTrackingShipment(item);
+                            setIsTrackingOpen(true);
+                          }}
+                          data-testid={`button-track-shipment-${index}`}
+                        >
+                          <Package className="h-4 w-4 mr-1" />
+                          Track Shipments
+                        </Button>
                       </div>
                     </div>
                   ))}
@@ -262,6 +280,20 @@ export default function Orders() {
             </Button>
           </CardContent>
         </Card>
+      )}
+
+      {trackingShipment && viewingOrder && (
+        <ShipmentTracking
+          isOpen={isTrackingOpen}
+          onClose={() => {
+            setIsTrackingOpen(false);
+            setTrackingShipment(null);
+          }}
+          orderItemId={trackingShipment.order_item_id}
+          orderId={viewingOrder.id}
+          itemName={trackingShipment.item_name}
+          orderedQuantity={trackingShipment.quantity}
+        />
       )}
     </div>
   );
