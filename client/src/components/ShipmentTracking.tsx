@@ -9,6 +9,7 @@ import { useState, useMemo } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { queryClient, apiRequest } from '@/lib/queryClient';
 import { useToast } from '@/hooks/use-toast';
+import { formatDate, toInputDate } from '@/lib/dateUtils';
 import type { Shipment } from '@shared/schema';
 
 interface ShipmentTrackingProps {
@@ -131,7 +132,7 @@ export default function ShipmentTracking({
     setEditingShipment(shipment);
     setLotNumber(shipment.lot_number || '');
     setQuantityShipped(shipment.quantity_shipped.toString());
-    setShipmentDate(shipment.shipment_date);
+    setShipmentDate(toInputDate(shipment.shipment_date));
     setRejectionsBlowhole(shipment.rejections_blowholes.toString());
     setRejectionsHandles(shipment.rejections_handles.toString());
     setRejectionsOther(shipment.rejections_other.toString());
@@ -365,7 +366,7 @@ export default function ShipmentTracking({
                     return (
                       <TableRow key={shipment.id} data-testid={`row-shipment-${shipment.id}`}>
                         <TableCell className="font-medium">{shipment.lot_number || '-'}</TableCell>
-                        <TableCell>{shipment.shipment_date}</TableCell>
+                        <TableCell>{formatDate(shipment.shipment_date)}</TableCell>
                         <TableCell className="text-right">{shipment.quantity_shipped}</TableCell>
                         <TableCell className="text-right">{shipment.rejections_blowholes}</TableCell>
                         <TableCell className="text-right">{shipment.rejections_handles}</TableCell>

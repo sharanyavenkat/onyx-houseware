@@ -10,6 +10,7 @@ import Dashboard from "@/pages/Dashboard";
 import Items from "@/pages/Items";
 import Customers from "@/pages/Customers";
 import Orders from "@/pages/Orders";
+import OrderDetails from "@/pages/OrderDetails";
 import Indent from "@/pages/Indent";
 import Login from "@/pages/Login";
 import NotFound from "@/pages/not-found";
@@ -26,6 +27,7 @@ function AuthenticatedApp() {
             <Route path="/items" component={Items} />
             <Route path="/customers" component={Customers} />
             <Route path="/orders" component={Orders} />
+            <Route path="/orders/:id" component={OrderDetails} />
             <Route path="/indent" component={Indent} />
             <Route component={NotFound} />
           </Switch>

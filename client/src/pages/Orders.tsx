@@ -1,21 +1,25 @@
 import DataTable from '../components/DataTable';
 import OrderFormModal from '../components/OrderFormModal';
-import ShipmentTracking from '../components/ShipmentTracking';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Eye, Package } from 'lucide-react';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Eye } from 'lucide-react';
 import { useState, useEffect, useMemo } from 'react';
-import { useLocation } from 'wouter';
+import { useLocation, Link } from 'wouter';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { queryClient, apiRequest } from '@/lib/queryClient';
 import { useToast } from '@/hooks/use-toast';
+import { formatDate } from '@/lib/dateUtils';
 import type { Order, Item, Customer } from '@shared/schema';
 
 const orderColumns = [
   { key: 'po_number', label: 'PO Number' },
   { key: 'customer_name', label: 'Customer' },
-  { key: 'order_date', label: 'Order Date' },
+  { 
+    key: 'order_date', 
+    label: 'Order Date',
+    render: (value: string) => formatDate(value)
+  },
   { 
     key: 'items_count', 
     label: 'Items', 
@@ -42,12 +46,10 @@ const orderColumns = [
 ];
 
 export default function Orders() {
-  const [location] = useLocation();
+  const [location, setLocation] = useLocation();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingOrder, setEditingOrder] = useState<any>(null);
-  const [viewingOrder, setViewingOrder] = useState<any>(null);
-  const [trackingShipment, setTrackingShipment] = useState<any>(null);
-  const [isTrackingOpen, setIsTrackingOpen] = useState(false);
+  const [selectedMonth, setSelectedMonth] = useState<string>('all');
   const { toast } = useToast();
 
   const { data: orders = [] } = useQuery<Order[]>({
@@ -61,14 +63,6 @@ export default function Orders() {
   const { data: customers = [] } = useQuery<Customer[]>({
     queryKey: ['/api/customers'],
   });
-
-  // Parse URL search params to check for filter
-  const [filter, setFilter] = useState<string | null>(null);
-
-  useEffect(() => {
-    const searchParams = new URLSearchParams(window.location.search);
-    setFilter(searchParams.get('filter'));
-  }, [location]);
 
   // Map customer data for dropdown
   const customerOptions = useMemo(() => {
@@ -86,13 +80,31 @@ export default function Orders() {
     }));
   }, [orders, customers]);
 
-  // Filter orders based on URL parameter
+  // Get unique months from orders
+  const availableMonths = useMemo(() => {
+    const months = new Set<string>();
+    orders.forEach(order => {
+      if (order.order_date) {
+        const date = new Date(order.order_date);
+        const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+        months.add(monthKey);
+      }
+    });
+    return Array.from(months).sort().reverse();
+  }, [orders]);
+
+  // Filter orders by selected month
   const filteredOrders = useMemo(() => {
-    if (filter === 'pending') {
-      return ordersWithCustomerNames.filter(order => order.status === 'draft' || order.status === 'confirmed');
+    if (selectedMonth === 'all') {
+      return ordersWithCustomerNames;
     }
-    return ordersWithCustomerNames;
-  }, [ordersWithCustomerNames, filter]);
+    return ordersWithCustomerNames.filter(order => {
+      if (!order.order_date) return false;
+      const date = new Date(order.order_date);
+      const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+      return monthKey === selectedMonth;
+    });
+  }, [ordersWithCustomerNames, selectedMonth]);
 
   const createMutation = useMutation({
     mutationFn: async (data: any) => {
@@ -147,7 +159,7 @@ export default function Orders() {
   };
 
   const handleView = (order: any) => {
-    setViewingOrder(order);
+    setLocation(`/orders/${order.id}`);
   };
 
   const handleDelete = (order: any) => {
@@ -182,12 +194,35 @@ export default function Orders() {
     }
   ];
 
+  const formatMonthLabel = (monthKey: string) => {
+    const [year, month] = monthKey.split('-');
+    const date = new Date(parseInt(year), parseInt(month) - 1);
+    return date.toLocaleDateString('en-US', { year: 'numeric', month: 'long' });
+  };
+
   return (
     <div className="space-y-6" data-testid="page-orders">
+      <div className="flex items-center gap-4 mb-4">
+        <label className="text-sm font-medium">Filter by Month:</label>
+        <Select value={selectedMonth} onValueChange={setSelectedMonth}>
+          <SelectTrigger className="w-[200px]" data-testid="select-month-filter">
+            <SelectValue placeholder="All Months" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Months</SelectItem>
+            {availableMonths.map(month => (
+              <SelectItem key={month} value={month}>
+                {formatMonthLabel(month)}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
       <DataTable 
         columns={enhancedColumns}
         data={filteredOrders}
-        title={filter === 'pending' ? 'Pending Orders' : 'Orders'}
+        title="Orders"
         addButtonLabel="Add Order"
         onAdd={handleAdd}
         onEdit={handleEdit}
@@ -207,94 +242,6 @@ export default function Orders() {
         customers={customerOptions}
         items={items}
       />
-      
-      {viewingOrder && (
-        <Card className="mt-6">
-          <CardHeader>
-            <CardTitle>Order Details: {viewingOrder.po_number}</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-2 gap-4 mb-6">
-              <div><strong>Customer:</strong> {viewingOrder.customer_name}</div>
-              <div><strong>Status:</strong> <Badge>{viewingOrder.status}</Badge></div>
-              <div><strong>Order Date:</strong> {viewingOrder.order_date}</div>
-              <div><strong>Fulfillment Date:</strong> {viewingOrder.fulfillment_date || 'Not set'}</div>
-              <div><strong>Total Items:</strong> {viewingOrder.line_items?.length || 0}</div>
-            </div>
-
-            {viewingOrder.line_items && viewingOrder.line_items.length > 0 && (
-              <div className="border rounded-md">
-                <div className="bg-muted px-4 py-2 font-semibold text-sm">Order Items</div>
-                <div className="divide-y">
-                  {viewingOrder.line_items.map((item: any, index: number) => (
-                    <div 
-                      key={index} 
-                      className="px-4 py-3 flex justify-between items-center"
-                      data-testid={`order-detail-item-${index}`}
-                    >
-                      <div>
-                        <div className="font-medium">{item.item_name}</div>
-                        <div className="text-sm text-muted-foreground">SKU: {item.sku}</div>
-                      </div>
-                      <div className="flex items-center gap-4">
-                        <div className="text-right">
-                          <div className="font-semibold">{item.quantity} pcs</div>
-                        </div>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => {
-                            setTrackingShipment(item);
-                            setIsTrackingOpen(true);
-                          }}
-                          data-testid={`button-track-shipment-${index}`}
-                        >
-                          <Package className="h-4 w-4 mr-1" />
-                          Track Shipments
-                        </Button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-                <div className="bg-muted px-4 py-2 font-semibold text-sm flex justify-between">
-                  <span>Total Pieces:</span>
-                  <span>{viewingOrder.line_items.reduce((sum: number, item: any) => sum + item.quantity, 0)}</span>
-                </div>
-              </div>
-            )}
-
-            {viewingOrder.notes && (
-              <div className="mt-4">
-                <strong>Notes:</strong>
-                <p className="text-muted-foreground mt-1">{viewingOrder.notes}</p>
-              </div>
-            )}
-
-            <Button 
-              variant="outline" 
-              className="mt-4" 
-              onClick={() => setViewingOrder(null)}
-              data-testid="button-close-details"
-            >
-              Close
-            </Button>
-          </CardContent>
-        </Card>
-      )}
-
-      {trackingShipment && viewingOrder && (
-        <ShipmentTracking
-          isOpen={isTrackingOpen}
-          onClose={() => {
-            setIsTrackingOpen(false);
-            setTrackingShipment(null);
-          }}
-          orderItemId={trackingShipment.order_item_id}
-          orderId={viewingOrder.id}
-          itemName={trackingShipment.item_name}
-          orderedQuantity={trackingShipment.quantity}
-        />
-      )}
     </div>
   );
 }
