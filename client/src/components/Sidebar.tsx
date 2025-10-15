@@ -11,6 +11,8 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 import { Link, useLocation } from "wouter";
+import { useMutation } from '@tanstack/react-query';
+import { apiRequest, queryClient } from '@/lib/queryClient';
 
 interface SidebarProps {
   className?: string;
@@ -28,9 +30,18 @@ export default function Sidebar({ className }: SidebarProps) {
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [location] = useLocation();
 
+  const logoutMutation = useMutation({
+    mutationFn: async () => {
+      return await apiRequest('POST', '/api/auth/logout');
+    },
+    onSuccess: () => {
+      // Invalidate auth/me query to show login page
+      queryClient.invalidateQueries({ queryKey: ['/api/auth/me'] });
+    },
+  });
+
   const handleLogout = () => {
-    console.log('Logout triggered');
-    // TODO: Implement actual logout
+    logoutMutation.mutate();
   };
 
   return (

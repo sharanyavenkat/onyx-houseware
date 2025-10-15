@@ -1,10 +1,80 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
+import { verifyPassword } from "./auth";
+import { requireAuth } from "./middleware";
 import { insertItemSchema, insertCustomerSchema, insertOrderSchema, insertOrderItemSchema, insertIndentSchema, insertShipmentSchema } from "@shared/schema";
 
 export async function registerRoutes(app: Express): Promise<Server> {
   
+  // Authentication routes (public) - must come before the auth middleware
+  app.post("/api/auth/login", async (req, res) => {
+    try {
+      const { username, password } = req.body;
+
+      if (!username || !password) {
+        return res.status(400).json({ message: "Username and password are required" });
+      }
+
+      const user = await storage.getUserByUsername(username);
+      
+      if (!user) {
+        return res.status(401).json({ message: "Invalid username or password" });
+      }
+
+      const isValid = await verifyPassword(password, user.password);
+      
+      if (!isValid) {
+        return res.status(401).json({ message: "Invalid username or password" });
+      }
+
+      // Set session
+      req.session.userId = user.id;
+      
+      res.json({
+        id: user.id,
+        username: user.username
+      });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/auth/logout", async (req, res) => {
+    req.session.destroy((err) => {
+      if (err) {
+        return res.status(500).json({ message: "Logout failed" });
+      }
+      res.json({ message: "Logged out successfully" });
+    });
+  });
+
+  app.get("/api/auth/me", requireAuth, async (req, res) => {
+    try {
+      const user = await storage.getUser(req.session.userId!);
+      
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+
+      res.json({
+        id: user.id,
+        username: user.username
+      });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Protect all /api routes except /api/auth routes
+  app.use("/api", (req, res, next) => {
+    // Skip authentication for auth routes
+    if (req.path.startsWith("/auth")) {
+      return next();
+    }
+    return requireAuth(req, res, next);
+  });
+
   // Items routes
   app.get("/api/items", async (req, res) => {
     try {
