@@ -2,6 +2,7 @@ import DataTable from '../components/DataTable';
 import MonthPicker from '../components/MonthPicker';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Badge } from '@/components/ui/badge';
 import { Save } from 'lucide-react';
 import { useState, useMemo } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
@@ -62,6 +63,22 @@ export default function IndentPage() {
       const expectedReceipts = editingCells[`${item.id}-expected_receipts`] ?? indent?.expected_receipts ?? 0;
       const pendingQty = pendingOrdersByItem[item.id] || 0;
       const requiredToOrder = Math.max(0, (pendingQty + item.safety_stock) - (openingBalance + expectedReceipts));
+      
+      // Calculate available stock after pending orders are fulfilled
+      const availableAfterPending = (openingBalance + expectedReceipts) - pendingQty;
+      
+      // Determine safety stock status
+      let safetyStockStatus: 'critical' | 'low' | 'good' = 'good';
+      if (availableAfterPending < 0) {
+        // Negative stock - critical
+        safetyStockStatus = 'critical';
+      } else if (availableAfterPending < item.safety_stock * 0.5) {
+        // Less than 50% of safety stock - critical
+        safetyStockStatus = 'critical';
+      } else if (availableAfterPending < item.safety_stock) {
+        // Less than full safety stock - low
+        safetyStockStatus = 'low';
+      }
 
       return {
         id: item.id,
@@ -70,6 +87,8 @@ export default function IndentPage() {
         expected_receipts: expectedReceipts,
         pending_order_qty: pendingQty,
         safety_stock: item.safety_stock,
+        available_after_pending: availableAfterPending,
+        safety_stock_status: safetyStockStatus,
         required_to_order: requiredToOrder,
       };
     });
@@ -138,6 +157,28 @@ export default function IndentPage() {
     { key: 'pending_order_qty', label: 'Pending Orders' },
     { key: 'safety_stock', label: 'Safety Stock' },
     { 
+      key: 'available_after_pending', 
+      label: 'Available After Pending',
+      render: (value: number, row: any) => (
+        <span className={`font-medium ${value < 0 ? 'text-destructive' : ''}`}>
+          {value}
+        </span>
+      )
+    },
+    { 
+      key: 'safety_stock_status', 
+      label: 'Safety Stock Status', 
+      render: (value: string, row: any) => {
+        if (value === 'critical') {
+          return <Badge variant="destructive" data-testid={`badge-status-critical-${row.id}`}>Critical</Badge>;
+        } else if (value === 'low') {
+          return <Badge variant="secondary" data-testid={`badge-status-low-${row.id}`}>Low</Badge>;
+        } else {
+          return <Badge variant="default" data-testid={`badge-status-good-${row.id}`}>Good</Badge>;
+        }
+      }
+    },
+    { 
       key: 'required_to_order', 
       label: 'Required to Order', 
       render: (value: number) => (
@@ -166,11 +207,33 @@ export default function IndentPage() {
       </div>
 
       {/* Formula Explanation */}
-      <div className="bg-muted/50 p-4 rounded-lg border">
-        <h3 className="font-medium mb-2">Calculation Formula:</h3>
-        <p className="text-sm text-muted-foreground">
-          <strong>Required to Order</strong> = max(0, (Pending Orders + Safety Stock) - (Opening Balance + Expected Receipts))
-        </p>
+      <div className="bg-muted/50 p-4 rounded-lg border space-y-3">
+        <div>
+          <h3 className="font-medium mb-2">Calculation Formula:</h3>
+          <p className="text-sm text-muted-foreground">
+            <strong>Required to Order</strong> = max(0, (Pending Orders + Safety Stock) - (Opening Balance + Expected Receipts))
+          </p>
+        </div>
+        <div>
+          <h3 className="font-medium mb-2">Safety Stock Status:</h3>
+          <p className="text-sm text-muted-foreground mb-2">
+            <strong>Available After Pending</strong> = (Opening Balance + Expected Receipts) - Pending Orders
+          </p>
+          <div className="flex items-center gap-4 text-sm">
+            <div className="flex items-center gap-2">
+              <Badge variant="destructive" data-testid="badge-legend-critical">Critical</Badge>
+              <span className="text-muted-foreground">Available &lt; 50% of safety stock or negative</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <Badge variant="secondary" data-testid="badge-legend-low">Low</Badge>
+              <span className="text-muted-foreground">Available &lt; safety stock</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <Badge variant="default" data-testid="badge-legend-good">Good</Badge>
+              <span className="text-muted-foreground">Available ≥ safety stock</span>
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* Indent Table */}

@@ -57,6 +57,17 @@ Preferred communication style: Simple, everyday language.
   - URL parameter support (?filter=pending) from dashboard navigation
   - Columns: PO Number, Customer, Order Date, Fulfillment Date, Items Count, Total Pieces, Status
   
+- **Indent Page**:
+  - Monthly inventory planning with editable Opening Balance and Expected Receipts
+  - Automatic calculation of Required to Order based on pending orders and safety stock
+  - Safety Stock Status indicator with three levels:
+    - **Critical** (red): Available stock < 50% of safety stock or negative
+    - **Low** (yellow): Available stock < safety stock but ≥ 50%
+    - **Good** (green): Available stock ≥ safety stock
+  - "Available After Pending" column shows stock after fulfilling pending orders
+  - Real-time status updates as user edits Opening Balance or Expected Receipts
+  - Formula explanations and status legend for clarity
+
 - **Navigation**: 
   - Sidebar order: Dashboard → Orders → Indent → Items → Customers
   - Collapsible sidebar with icon-only mode
