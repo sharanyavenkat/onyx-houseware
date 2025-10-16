@@ -9,6 +9,7 @@ import { useQuery, useMutation } from '@tanstack/react-query';
 import { queryClient, apiRequest } from '@/lib/queryClient';
 import { useToast } from '@/hooks/use-toast';
 import type { Item, Indent, Order, OrderItem } from '@shared/schema';
+import { calculateInventoryMetrics } from '@shared/inventory';
 
 export default function IndentPage() {
   const currentDate = new Date();
@@ -63,27 +64,13 @@ export default function IndentPage() {
       const expectedReceipts = editingCells[`${item.id}-expected_receipts`] ?? indent?.expected_receipts ?? 0;
       const pendingQty = pendingOrdersByItem[item.id] || 0;
       
-      // Calculate available stock after pending orders are fulfilled
-      const availableAfterPending = (openingBalance + expectedReceipts) - pendingQty;
-      
-      // Calculate requirements separately
-      const requiredForPending = Math.max(0, pendingQty - (openingBalance + expectedReceipts));
-      // Use max(0, availableAfterPending) to avoid double-counting when stock is negative
-      const requiredForSafetyStock = Math.max(0, item.safety_stock - Math.max(0, availableAfterPending));
-      const totalRequiredToOrder = requiredForPending + requiredForSafetyStock;
-      
-      // Determine safety stock status
-      let safetyStockStatus: 'critical' | 'low' | 'good' = 'good';
-      if (availableAfterPending < 0) {
-        // Negative stock - critical
-        safetyStockStatus = 'critical';
-      } else if (availableAfterPending < item.safety_stock * 0.5) {
-        // Less than 50% of safety stock - critical
-        safetyStockStatus = 'critical';
-      } else if (availableAfterPending < item.safety_stock) {
-        // Less than full safety stock - low
-        safetyStockStatus = 'low';
-      }
+      // Use shared inventory calculation
+      const metrics = calculateInventoryMetrics(
+        openingBalance,
+        expectedReceipts,
+        pendingQty,
+        item.safety_stock
+      );
 
       return {
         id: item.id,
@@ -92,12 +79,15 @@ export default function IndentPage() {
         expected_receipts: expectedReceipts,
         pending_order_qty: pendingQty,
         safety_stock: item.safety_stock,
-        available_after_pending: availableAfterPending,
-        safety_stock_status: safetyStockStatus,
-        required_for_pending: requiredForPending,
-        required_for_safety_stock: requiredForSafetyStock,
-        required_to_order: totalRequiredToOrder,
-        needs_safety_refill: requiredForSafetyStock > 0,
+        working_stock: metrics.workingStock,
+        usable_stock: metrics.usableStock,
+        post_pending_stock: metrics.postPendingStock,
+        safety_stock_status: metrics.safetyStockStatus,
+        shortfall_to_fulfill: metrics.shortfallToFulfill,
+        shortfall_to_restore_safety: metrics.shortfallToRestoreSafety,
+        required_to_order: metrics.totalRequired,
+        needs_safety_refill: metrics.shortfallToRestoreSafety > 0,
+        is_safety_buffer_breached: metrics.isSafetyBufferBreached,
       };
     });
   }, [items, indents, pendingOrdersByItem, editingCells]);
@@ -165,10 +155,19 @@ export default function IndentPage() {
     { key: 'pending_order_qty', label: 'Pending Orders' },
     { key: 'safety_stock', label: 'Safety Stock' },
     { 
-      key: 'available_after_pending', 
-      label: 'Available After Pending',
+      key: 'usable_stock', 
+      label: 'Total Usable Stock',
       render: (value: number, row: any) => (
-        <span className={`font-medium ${value < 0 ? 'text-destructive' : ''}`}>
+        <span className="font-medium" data-testid={`text-usable-stock-${row.id}`}>
+          {value}
+        </span>
+      )
+    },
+    { 
+      key: 'post_pending_stock', 
+      label: 'Stock After Pending',
+      render: (value: number, row: any) => (
+        <span className={`font-medium ${value < 0 ? 'text-destructive' : ''}`} data-testid={`text-post-pending-${row.id}`}>
           {value}
         </span>
       )
@@ -224,13 +223,14 @@ export default function IndentPage() {
       {/* Formula Explanation */}
       <div className="bg-muted/50 p-4 rounded-lg border space-y-3">
         <div>
-          <h3 className="font-medium mb-2">Calculation Formula:</h3>
+          <h3 className="font-medium mb-2">Two-Tier Inventory Model:</h3>
           <div className="text-sm text-muted-foreground space-y-1">
-            <p><strong>Available After Pending</strong> = (Opening Balance + Expected Receipts) - Pending Orders</p>
-            <p><strong>Required to Order</strong> = Required for Pending + Required for Safety Stock Refill</p>
-            <p className="text-xs pl-4">• Required for Pending = max(0, Pending Orders - (Opening + Expected))</p>
-            <p className="text-xs pl-4">• Required for Safety Refill = max(0, Safety Stock - max(0, Available After Pending))</p>
-            <p className="text-xs pl-4 text-muted-foreground/70">Note: This prevents double-counting when stock is negative</p>
+            <p><strong>Working Stock</strong> = Opening Balance + Expected Receipts <span className="text-xs">(normal operational inventory)</span></p>
+            <p><strong>Total Usable Stock</strong> = Working Stock + Safety Stock <span className="text-xs">(includes safety buffer which can be used)</span></p>
+            <p><strong>Stock After Pending</strong> = Total Usable Stock - Pending Orders</p>
+            <p className="pt-2"><strong>Required to Order</strong> = Shortfall to Fulfill + Shortfall to Restore Safety</p>
+            <p className="text-xs pl-4">• Shortfall to Fulfill = max(0, Pending Orders - Working Stock)</p>
+            <p className="text-xs pl-4">• Shortfall to Restore Safety = max(0, Safety Stock - max(0, Stock After Pending))</p>
           </div>
         </div>
         <div>
@@ -238,15 +238,15 @@ export default function IndentPage() {
           <div className="flex items-center gap-4 text-sm flex-wrap">
             <div className="flex items-center gap-2">
               <Badge variant="destructive" data-testid="badge-legend-critical">Critical</Badge>
-              <span className="text-muted-foreground">Available &lt; 50% of safety stock or negative</span>
+              <span className="text-muted-foreground">Stock after pending &lt; 50% of safety stock or negative</span>
             </div>
             <div className="flex items-center gap-2">
               <Badge variant="secondary" data-testid="badge-legend-low">Low</Badge>
-              <span className="text-muted-foreground">Available &lt; safety stock</span>
+              <span className="text-muted-foreground">Stock after pending &lt; safety stock</span>
             </div>
             <div className="flex items-center gap-2">
               <Badge variant="default" data-testid="badge-legend-good">Good</Badge>
-              <span className="text-muted-foreground">Available ≥ safety stock</span>
+              <span className="text-muted-foreground">Stock after pending ≥ safety stock</span>
             </div>
             <div className="flex items-center gap-2">
               <Badge variant="outline" className="text-xs">Refill Needed</Badge>
