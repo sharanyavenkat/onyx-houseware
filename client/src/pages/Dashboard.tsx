@@ -159,22 +159,29 @@ export default function Dashboard() {
 
       {/* Top Items by Pending Quantity */}
       <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <h2 className="text-xl font-semibold">Top Items by Pending Quantity</h2>
-          <div className="flex items-center gap-4">
-            <span className="text-sm text-muted-foreground">Status Legend:</span>
-            <div className="flex items-center gap-3">
-              <div className="flex items-center gap-1.5">
-                <Badge variant="destructive" data-testid="badge-legend-critical">Critical</Badge>
-                <span className="text-xs text-muted-foreground">≥2× safety stock</span>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <Badge variant="secondary" data-testid="badge-legend-low">Low</Badge>
-                <span className="text-xs text-muted-foreground">1.5-2× safety stock</span>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <Badge variant="default" data-testid="badge-legend-good">Good</Badge>
-                <span className="text-xs text-muted-foreground">&lt;1.5× safety stock</span>
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-xl font-semibold">Top Items by Pending Quantity</h2>
+              <p className="text-sm text-muted-foreground mt-1">
+                Pending Quantity = Total quantity from orders in Draft or Confirmed status. Critical/Low status indicates pending orders exceed safety stock levels.
+              </p>
+            </div>
+            <div className="flex items-center gap-4">
+              <span className="text-sm text-muted-foreground">Status Legend:</span>
+              <div className="flex items-center gap-3">
+                <div className="flex items-center gap-1.5">
+                  <Badge variant="destructive" data-testid="badge-legend-critical">Critical</Badge>
+                  <span className="text-xs text-muted-foreground">≥2× safety stock</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <Badge variant="secondary" data-testid="badge-legend-low">Low</Badge>
+                  <span className="text-xs text-muted-foreground">1.5-2× safety stock</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <Badge variant="default" data-testid="badge-legend-good">Good</Badge>
+                  <span className="text-xs text-muted-foreground">&lt;1.5× safety stock</span>
+                </div>
               </div>
             </div>
           </div>
