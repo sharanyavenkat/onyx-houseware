@@ -44,7 +44,8 @@ export function calculateInventoryMetrics(
   const postPendingStock = usableStock - pendingQty;
   
   // Requirements
-  const shortfallToFulfill = Math.max(0, pendingQty - workingStock);
+  // Shortfall to fulfill uses USABLE stock (including safety stock), not just working stock
+  const shortfallToFulfill = Math.max(0, pendingQty - usableStock);
   const shortfallToRestoreSafety = Math.max(0, safetyStock - Math.max(0, postPendingStock));
   const totalRequired = shortfallToFulfill + shortfallToRestoreSafety;
   

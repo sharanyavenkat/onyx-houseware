@@ -229,7 +229,7 @@ export default function IndentPage() {
             <p><strong>Total Usable Stock</strong> = Working Stock + Safety Stock <span className="text-xs">(includes safety buffer which can be used)</span></p>
             <p><strong>Stock After Pending</strong> = Total Usable Stock - Pending Orders</p>
             <p className="pt-2"><strong>Required to Order</strong> = Shortfall to Fulfill + Shortfall to Restore Safety</p>
-            <p className="text-xs pl-4">• Shortfall to Fulfill = max(0, Pending Orders - Working Stock)</p>
+            <p className="text-xs pl-4">• Shortfall to Fulfill = max(0, Pending Orders - Total Usable Stock)</p>
             <p className="text-xs pl-4">• Shortfall to Restore Safety = max(0, Safety Stock - max(0, Stock After Pending))</p>
           </div>
         </div>
