@@ -162,7 +162,7 @@ export default function Dashboard() {
             <div>
               <h2 className="text-xl font-semibold">Top Items by Pending Quantity</h2>
               <p className="text-sm text-muted-foreground mt-1">
-                Pending Quantity = Total from Draft or Confirmed orders. Status shows safety stock concern based on worst-case (no opening/expected stock).
+                Pending Quantity = Total from Draft or Confirmed orders. Safety stock can be used to fulfill orders - status shows concern if depleted (assumes worst-case: no opening/expected stock).
               </p>
             </div>
             <div className="flex items-center gap-4">

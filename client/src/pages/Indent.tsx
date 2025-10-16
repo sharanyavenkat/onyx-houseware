@@ -226,11 +226,11 @@ export default function IndentPage() {
           <h3 className="font-medium mb-2">Two-Tier Inventory Model:</h3>
           <div className="text-sm text-muted-foreground space-y-1">
             <p><strong>Working Stock</strong> = Opening Balance + Expected Receipts <span className="text-xs">(normal operational inventory)</span></p>
-            <p><strong>Total Usable Stock</strong> = Working Stock + Safety Stock <span className="text-xs">(includes safety buffer which can be used)</span></p>
-            <p><strong>Stock After Pending</strong> = Total Usable Stock - Pending Orders</p>
+            <p><strong>Total Usable Stock</strong> = Working Stock + Safety Stock <span className="text-xs">(safety stock can be used to fulfill orders)</span></p>
+            <p><strong>Stock After Pending</strong> = Total Usable Stock - Pending Orders <span className="text-xs">(remaining after using all available stock)</span></p>
             <p className="pt-2"><strong>Required to Order</strong> = Shortfall to Fulfill + Shortfall to Restore Safety</p>
-            <p className="text-xs pl-4">• Shortfall to Fulfill = max(0, Pending Orders - Total Usable Stock)</p>
-            <p className="text-xs pl-4">• Shortfall to Restore Safety = max(0, Safety Stock - max(0, Stock After Pending))</p>
+            <p className="text-xs pl-4">• Shortfall to Fulfill = max(0, Pending - Usable Stock) <span className="text-muted-foreground/70">(shortfall to complete pending orders)</span></p>
+            <p className="text-xs pl-4">• Shortfall to Restore Safety = max(0, Safety Stock - max(0, Stock After Pending)) <span className="text-muted-foreground/70">(amount needed to refill safety buffer)</span></p>
           </div>
         </div>
         <div>
