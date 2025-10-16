@@ -58,15 +58,20 @@ Preferred communication style: Simple, everyday language.
   - Columns: PO Number, Customer, Order Date, Fulfillment Date, Items Count, Total Pieces, Status
   
 - **Indent Page**:
+  - **Two-Tier Inventory Model**: Safety stock is usable inventory, concern raised when it gets depleted
   - Monthly inventory planning with editable Opening Balance and Expected Receipts
-  - Automatic calculation of Required to Order based on pending orders and safety stock
+  - Calculations:
+    - Working Stock = Opening Balance + Expected Receipts
+    - Total Usable Stock = Working Stock + Safety Stock (safety stock can be used)
+    - Stock After Pending = Usable Stock - Pending Orders
+    - Required to Order = Shortfall to Fulfill + Shortfall to Restore Safety
   - Safety Stock Status indicator with three levels:
-    - **Critical** (red): Available stock < 50% of safety stock or negative
-    - **Low** (yellow): Available stock < safety stock but ≥ 50%
-    - **Good** (green): Available stock ≥ safety stock
-  - "Available After Pending" column shows stock after fulfilling pending orders
+    - **Critical** (red): Stock after pending < 50% of safety stock or negative
+    - **Low** (yellow): Stock after pending < safety stock but ≥ 50%
+    - **Good** (green): Stock after pending ≥ safety stock
+  - "Refill Needed" badge shows when safety stock needs refilling
   - Real-time status updates as user edits Opening Balance or Expected Receipts
-  - Formula explanations and status legend for clarity
+  - Comprehensive formula explanations and status legend
 
 - **Navigation**: 
   - Sidebar order: Dashboard → Orders → Indent → Items → Customers

@@ -5,6 +5,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import type { Item, Order, Customer } from '@shared/schema';
+import { calculateInventoryMetrics } from '@shared/inventory';
 
 // Extended Order type with line_items from API
 type OrderWithLineItems = Order & {
@@ -15,15 +16,6 @@ type OrderWithLineItems = Order & {
     quantity: number;
   }>;
 };
-
-// Function to calculate status based on pending quantity vs safety stock
-function calculateStatus(pendingQty: number, safetyStock: number): string {
-  if (safetyStock === 0) return 'Good';
-  const ratio = pendingQty / safetyStock;
-  if (ratio >= 2) return 'Critical';
-  if (ratio >= 1.5) return 'Low';
-  return 'Good';
-}
 
 const topItemsColumns = [
   { key: 'name', label: 'Item Name' },
@@ -114,12 +106,18 @@ export default function Dashboard() {
         });
       });
     
-    // Convert to array, add status, sort by pending quantity, and take top 5
+    // Convert to array, calculate status using shared utility (assuming opening=0, expected=0 for worst case)
     return Array.from(itemPendingQtyMap.values())
-      .map(item => ({
-        ...item,
-        status: calculateStatus(item.pendingQty, item.safetyStock)
-      }))
+      .map(item => {
+        // Use shared calculation with opening=0, expected=0 (worst case for dashboard view)
+        const metrics = calculateInventoryMetrics(0, 0, item.pendingQty, item.safetyStock);
+        return {
+          ...item,
+          status: metrics.safetyStockStatus === 'critical' ? 'Critical' 
+                : metrics.safetyStockStatus === 'low' ? 'Low' 
+                : 'Good'
+        };
+      })
       .sort((a, b) => b.pendingQty - a.pendingQty)
       .slice(0, 5);
   }, [filteredOrders, items]);
@@ -164,7 +162,7 @@ export default function Dashboard() {
             <div>
               <h2 className="text-xl font-semibold">Top Items by Pending Quantity</h2>
               <p className="text-sm text-muted-foreground mt-1">
-                Pending Quantity = Total quantity from orders in Draft or Confirmed status. Critical/Low status indicates pending orders exceed safety stock levels.
+                Pending Quantity = Total from Draft or Confirmed orders. Status shows safety stock concern based on worst-case (no opening/expected stock).
               </p>
             </div>
             <div className="flex items-center gap-4">
@@ -172,15 +170,15 @@ export default function Dashboard() {
               <div className="flex items-center gap-3">
                 <div className="flex items-center gap-1.5">
                   <Badge variant="destructive" data-testid="badge-legend-critical">Critical</Badge>
-                  <span className="text-xs text-muted-foreground">≥2× safety stock</span>
+                  <span className="text-xs text-muted-foreground">Stock after pending &lt; 50% of safety or negative</span>
                 </div>
                 <div className="flex items-center gap-1.5">
                   <Badge variant="secondary" data-testid="badge-legend-low">Low</Badge>
-                  <span className="text-xs text-muted-foreground">1.5-2× safety stock</span>
+                  <span className="text-xs text-muted-foreground">Stock after pending &lt; safety stock</span>
                 </div>
                 <div className="flex items-center gap-1.5">
                   <Badge variant="default" data-testid="badge-legend-good">Good</Badge>
-                  <span className="text-xs text-muted-foreground">&lt;1.5× safety stock</span>
+                  <span className="text-xs text-muted-foreground">Stock after pending ≥ safety stock</span>
                 </div>
               </div>
             </div>
