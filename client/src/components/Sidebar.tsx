@@ -20,10 +20,10 @@ interface SidebarProps {
 
 const menuItems = [
   { icon: Home, label: "Dashboard", href: "/" },
-  { icon: Package, label: "Items", href: "/items" },
-  { icon: Users, label: "Customers", href: "/customers" },
   { icon: FileText, label: "Orders", href: "/orders" },
   { icon: ClipboardList, label: "Indent", href: "/indent" },
+  { icon: Package, label: "Items", href: "/items" },
+  { icon: Users, label: "Customers", href: "/customers" },
 ];
 
 export default function Sidebar({ className }: SidebarProps) {
