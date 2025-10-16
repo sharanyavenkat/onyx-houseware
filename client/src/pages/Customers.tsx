@@ -9,11 +9,10 @@ import type { Customer } from '@shared/schema';
 
 const customerFields = [
   { name: 'company_name', label: 'Company Name', type: 'text' as const, required: true, placeholder: 'Enter company name' },
-  { name: 'contact_person', label: 'Contact Person', type: 'text' as const, required: true, placeholder: 'Contact person name' },
-  { name: 'email', label: 'Email', type: 'email' as const, required: true, placeholder: 'company@example.com' },
-  { name: 'phone', label: 'Phone', type: 'text' as const, required: true, placeholder: '555-0000' },
-  { name: 'po_number', label: 'PO Number', type: 'text' as const, placeholder: 'Customer PO number (optional)' },
-  { name: 'address', label: 'Address', type: 'textarea' as const, required: true, placeholder: 'Complete address...' },
+  { name: 'contact_person', label: 'Contact Person', type: 'text' as const, placeholder: 'Contact person name' },
+  { name: 'email', label: 'Email', type: 'email' as const, placeholder: 'company@example.com' },
+  { name: 'phone', label: 'Phone', type: 'text' as const, placeholder: '555-0000' },
+  { name: 'address', label: 'Address', type: 'textarea' as const, placeholder: 'Complete address...' },
 ];
 
 const customerColumns = [
@@ -21,7 +20,6 @@ const customerColumns = [
   { key: 'contact_person', label: 'Contact' },
   { key: 'email', label: 'Email' },
   { key: 'phone', label: 'Phone' },
-  { key: 'po_number', label: 'PO Number', render: (value: string) => value || '-' }
 ];
 
 export default function Customers() {
