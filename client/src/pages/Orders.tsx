@@ -5,7 +5,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Eye } from 'lucide-react';
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useLocation } from 'wouter';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { queryClient, apiRequest } from '@/lib/queryClient';
@@ -20,6 +20,11 @@ const orderColumns = [
     key: 'order_date', 
     label: 'Order Date',
     render: (value: string) => formatDate(value)
+  },
+  { 
+    key: 'fulfillment_date', 
+    label: 'Fulfillment Date',
+    render: (value: string) => value ? formatDate(value) : '-'
   },
   { 
     key: 'items_count', 
@@ -51,9 +56,19 @@ export default function Orders() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingOrder, setEditingOrder] = useState<any>(null);
   const [selectedMonth, setSelectedMonth] = useState<string>('all');
+  const [statusFilter, setStatusFilter] = useState<string>('all');
   const [isConfirmOpen, setIsConfirmOpen] = useState(false);
   const [orderToDelete, setOrderToDelete] = useState<any>(null);
   const { toast } = useToast();
+
+  // Read URL query parameter for filter
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const filterParam = urlParams.get('filter');
+    if (filterParam === 'pending') {
+      setStatusFilter('pending');
+    }
+  }, [location]);
 
   const { data: orders = [] } = useQuery<Order[]>({
     queryKey: ['/api/orders'],
@@ -96,18 +111,29 @@ export default function Orders() {
     return Array.from(months).sort().reverse();
   }, [orders]);
 
-  // Filter orders by selected month
+  // Filter orders by selected month and status
   const filteredOrders = useMemo(() => {
-    if (selectedMonth === 'all') {
-      return ordersWithCustomerNames;
+    let result = ordersWithCustomerNames;
+    
+    // Filter by month
+    if (selectedMonth !== 'all') {
+      result = result.filter(order => {
+        if (!order.order_date) return false;
+        const date = new Date(order.order_date);
+        const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+        return monthKey === selectedMonth;
+      });
     }
-    return ordersWithCustomerNames.filter(order => {
-      if (!order.order_date) return false;
-      const date = new Date(order.order_date);
-      const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-      return monthKey === selectedMonth;
-    });
-  }, [ordersWithCustomerNames, selectedMonth]);
+    
+    // Filter by status
+    if (statusFilter === 'pending') {
+      result = result.filter(order => order.status === 'draft' || order.status === 'confirmed');
+    } else if (statusFilter !== 'all') {
+      result = result.filter(order => order.status === statusFilter);
+    }
+    
+    return result;
+  }, [ordersWithCustomerNames, selectedMonth, statusFilter]);
 
   const createMutation = useMutation({
     mutationFn: async (data: any) => {
@@ -225,6 +251,21 @@ export default function Orders() {
                 {formatMonthLabel(month)}
               </SelectItem>
             ))}
+          </SelectContent>
+        </Select>
+
+        <label className="text-sm font-medium">Filter by Status:</label>
+        <Select value={statusFilter} onValueChange={setStatusFilter}>
+          <SelectTrigger className="w-[200px]" data-testid="select-status-filter">
+            <SelectValue placeholder="All Status" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Status</SelectItem>
+            <SelectItem value="pending">Pending (Draft + Confirmed)</SelectItem>
+            <SelectItem value="draft">Draft</SelectItem>
+            <SelectItem value="confirmed">Confirmed</SelectItem>
+            <SelectItem value="fulfilled">Fulfilled</SelectItem>
+            <SelectItem value="cancelled">Cancelled</SelectItem>
           </SelectContent>
         </Select>
       </div>
