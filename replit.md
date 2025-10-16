@@ -18,8 +18,8 @@ Preferred communication style: Simple, everyday language.
 
 ## Backend Architecture
 - **Runtime**: Node.js with Express.js server
-- **Database**: Configured for PostgreSQL with Drizzle ORM, but includes SQLite fallback support
-- **Authentication**: Session-based auth using express-session with bcrypt password hashing
+- **Database**: SQLite with Drizzle ORM and better-sqlite3 driver (migrated from PostgreSQL)
+- **Authentication**: Session-based auth using express-session with bcrypt password hashing and memory store
 - **API Design**: RESTful endpoints under `/api/*` prefix with Zod validation
 - **File Structure**: Monorepo with shared types between client and server
 
@@ -30,10 +30,12 @@ Preferred communication style: Simple, everyday language.
 - **Password Security**: Bcrypt hashing with 12 salt rounds
 
 ## Database Design
-- **ORM**: Drizzle with PostgreSQL as primary database
+- **ORM**: Drizzle ORM with SQLite dialect
+- **Driver**: better-sqlite3 for synchronous SQLite operations
+- **Storage**: Local SQLite file at `./server/data/onyx.db`
 - **Schema Management**: Centralized schema definitions in shared folder
-- **Migrations**: Drizzle-kit for database migrations
-- **Connection**: Neon Database serverless PostgreSQL with connection pooling
+- **Migrations**: Drizzle-kit for database migrations (requires manual drizzle.config.ts update)
+- **Performance**: WAL mode enabled, 5-second busy timeout configured
 
 ## Key Business Entities
 - **Items**: Product catalog with SKU, pricing, safety stock levels
@@ -49,15 +51,13 @@ Preferred communication style: Simple, everyday language.
 # External Dependencies
 
 ## Database & ORM
-- **@neondatabase/serverless**: PostgreSQL serverless driver for Neon Database
-- **drizzle-orm**: Type-safe SQL ORM with PostgreSQL dialect
+- **better-sqlite3**: SQLite database driver for local file-based storage
+- **drizzle-orm**: Type-safe SQL ORM with SQLite dialect
 - **drizzle-kit**: Database migration and schema management tool
-- **better-sqlite3**: SQLite fallback database support
 
 ## Authentication & Security
 - **bcryptjs**: Password hashing with salt rounds
-- **express-session**: Server-side session management
-- **connect-pg-simple**: PostgreSQL session store adapter
+- **express-session**: Server-side session management with memory store
 
 ## UI & Styling
 - **@radix-ui/***: Comprehensive set of accessible UI primitives

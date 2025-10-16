@@ -24,6 +24,7 @@ const sqlite = new Database(dbPath);
 // Apply PRAGMAs for better performance and reliability
 sqlite.pragma("journal_mode = WAL");
 sqlite.pragma("busy_timeout = 5000");
+sqlite.pragma("foreign_keys = ON");
 
 // Create Drizzle instance
 export const db = drizzle(sqlite, { schema });

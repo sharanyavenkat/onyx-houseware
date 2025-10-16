@@ -3,6 +3,7 @@ import session from "express-session";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 import { initializeAdmin } from "./auth";
+import { bootstrapDatabase } from "./db/bootstrap";
 
 const app = express();
 app.use(express.json());
@@ -51,6 +52,9 @@ app.use((req, res, next) => {
 });
 
 (async () => {
+  // Bootstrap SQLite database (create tables if they don't exist)
+  await bootstrapDatabase();
+  
   // Initialize admin user
   await initializeAdmin();
   
