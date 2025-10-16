@@ -39,9 +39,27 @@ Preferred communication style: Simple, everyday language.
 
 ## Key Business Entities
 - **Items**: Product catalog with SKU, pricing, safety stock levels
-- **Customers**: Company information with PO numbers and billing details  
-- **Orders**: Header/line item structure with status workflow (draft → confirmed → fulfilled → cancelled)
+- **Customers**: Company information (only company_name is required; contact_person, email, phone, address are optional)
+- **Orders**: Header/line item structure with PO numbers, status workflow (draft → confirmed → fulfilled → cancelled), order date, and fulfillment date
 - **Indent**: Monthly inventory planning with automatic order quantity calculations
+
+## Key Features
+- **Dashboard**: 
+  - Overview cards with total orders, pending orders, items, and customers
+  - Clickable pending orders card filters to pending orders (draft + confirmed status)
+  - Top items by pending quantity with status indicators (Critical/Low/Good based on safety stock ratios)
+  - Pending quantity explanation: Total from orders in Draft or Confirmed status
+  - Month filter based on fulfillment dates
+  
+- **Orders Page**:
+  - Dual filtering: by month (order date) and by status
+  - Status filter options: All, Pending (Draft+Confirmed), Draft, Confirmed, Fulfilled, Cancelled
+  - URL parameter support (?filter=pending) from dashboard navigation
+  - Columns: PO Number, Customer, Order Date, Fulfillment Date, Items Count, Total Pieces, Status
+  
+- **Navigation**: 
+  - Sidebar order: Dashboard → Orders → Indent → Items → Customers
+  - Collapsible sidebar with icon-only mode
 
 ## Development Workflow
 - **Development**: Concurrent client/server with Vite proxy
