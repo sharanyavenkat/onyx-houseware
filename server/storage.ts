@@ -1,5 +1,5 @@
 import { eq, and } from "drizzle-orm";
-import { db } from "./db";
+import { db } from "./db/client";
 import { 
   type User, 
   type InsertUser,
@@ -25,7 +25,7 @@ import {
 } from "@shared/schema";
 
 export interface IStorage {
-  getUser(id: string): Promise<User | undefined>;
+  getUser(id: number): Promise<User | undefined>;
   getUserByUsername(username: string): Promise<User | undefined>;
   createUser(user: InsertUser): Promise<User>;
 
@@ -61,7 +61,7 @@ export interface IStorage {
 }
 
 export class DbStorage implements IStorage {
-  async getUser(id: string): Promise<User | undefined> {
+  async getUser(id: number): Promise<User | undefined> {
     const [user] = await db.select().from(users).where(eq(users.id, id));
     return user;
   }
