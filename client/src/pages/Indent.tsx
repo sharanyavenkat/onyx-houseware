@@ -62,10 +62,15 @@ export default function IndentPage() {
       const openingBalance = editingCells[`${item.id}-opening_balance`] ?? indent?.opening_balance ?? 0;
       const expectedReceipts = editingCells[`${item.id}-expected_receipts`] ?? indent?.expected_receipts ?? 0;
       const pendingQty = pendingOrdersByItem[item.id] || 0;
-      const requiredToOrder = Math.max(0, (pendingQty + item.safety_stock) - (openingBalance + expectedReceipts));
       
       // Calculate available stock after pending orders are fulfilled
       const availableAfterPending = (openingBalance + expectedReceipts) - pendingQty;
+      
+      // Calculate requirements separately
+      const requiredForPending = Math.max(0, pendingQty - (openingBalance + expectedReceipts));
+      // Use max(0, availableAfterPending) to avoid double-counting when stock is negative
+      const requiredForSafetyStock = Math.max(0, item.safety_stock - Math.max(0, availableAfterPending));
+      const totalRequiredToOrder = requiredForPending + requiredForSafetyStock;
       
       // Determine safety stock status
       let safetyStockStatus: 'critical' | 'low' | 'good' = 'good';
@@ -89,7 +94,10 @@ export default function IndentPage() {
         safety_stock: item.safety_stock,
         available_after_pending: availableAfterPending,
         safety_stock_status: safetyStockStatus,
-        required_to_order: requiredToOrder,
+        required_for_pending: requiredForPending,
+        required_for_safety_stock: requiredForSafetyStock,
+        required_to_order: totalRequiredToOrder,
+        needs_safety_refill: requiredForSafetyStock > 0,
       };
     });
   }, [items, indents, pendingOrdersByItem, editingCells]);
@@ -181,10 +189,17 @@ export default function IndentPage() {
     { 
       key: 'required_to_order', 
       label: 'Required to Order', 
-      render: (value: number) => (
-        <span className={`font-semibold ${value > 0 ? 'text-destructive' : 'text-muted-foreground'}`}>
-          {value}
-        </span>
+      render: (value: number, row: any) => (
+        <div className="space-y-1">
+          <span className={`font-semibold block ${value > 0 ? 'text-destructive' : 'text-muted-foreground'}`} data-testid={`text-required-${row.id}`}>
+            {value}
+          </span>
+          {row.needs_safety_refill && (
+            <Badge variant="outline" className="text-xs" data-testid={`badge-refill-needed-${row.id}`}>
+              Refill Needed
+            </Badge>
+          )}
+        </div>
       )
     }
   ];
@@ -210,16 +225,17 @@ export default function IndentPage() {
       <div className="bg-muted/50 p-4 rounded-lg border space-y-3">
         <div>
           <h3 className="font-medium mb-2">Calculation Formula:</h3>
-          <p className="text-sm text-muted-foreground">
-            <strong>Required to Order</strong> = max(0, (Pending Orders + Safety Stock) - (Opening Balance + Expected Receipts))
-          </p>
+          <div className="text-sm text-muted-foreground space-y-1">
+            <p><strong>Available After Pending</strong> = (Opening Balance + Expected Receipts) - Pending Orders</p>
+            <p><strong>Required to Order</strong> = Required for Pending + Required for Safety Stock Refill</p>
+            <p className="text-xs pl-4">• Required for Pending = max(0, Pending Orders - (Opening + Expected))</p>
+            <p className="text-xs pl-4">• Required for Safety Refill = max(0, Safety Stock - max(0, Available After Pending))</p>
+            <p className="text-xs pl-4 text-muted-foreground/70">Note: This prevents double-counting when stock is negative</p>
+          </div>
         </div>
         <div>
-          <h3 className="font-medium mb-2">Safety Stock Status:</h3>
-          <p className="text-sm text-muted-foreground mb-2">
-            <strong>Available After Pending</strong> = (Opening Balance + Expected Receipts) - Pending Orders
-          </p>
-          <div className="flex items-center gap-4 text-sm">
+          <h3 className="font-medium mb-2">Safety Stock Status & Concerns:</h3>
+          <div className="flex items-center gap-4 text-sm flex-wrap">
             <div className="flex items-center gap-2">
               <Badge variant="destructive" data-testid="badge-legend-critical">Critical</Badge>
               <span className="text-muted-foreground">Available &lt; 50% of safety stock or negative</span>
@@ -231,6 +247,10 @@ export default function IndentPage() {
             <div className="flex items-center gap-2">
               <Badge variant="default" data-testid="badge-legend-good">Good</Badge>
               <span className="text-muted-foreground">Available ≥ safety stock</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <Badge variant="outline" className="text-xs">Refill Needed</Badge>
+              <span className="text-muted-foreground">Safety stock needs refilling</span>
             </div>
           </div>
         </div>
