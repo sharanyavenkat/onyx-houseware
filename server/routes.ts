@@ -359,7 +359,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Order Items route (for fetching all order items)
+  // Order Items routes
   app.get("/api/order-items", async (req, res) => {
     try {
       const allOrderItems: any[] = [];
@@ -373,6 +373,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(allOrderItems);
     } catch (error: any) {
       res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.get("/api/orders/:id/items", async (req, res) => {
+    try {
+      const items = await storage.getOrderItemsByOrderId(parseInt(req.params.id));
+      res.json(items);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/order-items", async (req, res) => {
+    try {
+      const validatedData = insertOrderItemSchema.parse(req.body);
+      const orderItem = await storage.createOrderItem(validatedData);
+      res.status(201).json(orderItem);
+    } catch (error: any) {
+      res.status(400).json({ message: error.message });
     }
   });
 
