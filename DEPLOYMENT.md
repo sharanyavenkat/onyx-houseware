@@ -503,26 +503,37 @@ Your app is now accessible at `https://yourdomain.com`!
 
 ### 1. Update Session Cookie Settings
 
-In production with HTTPS, update `server/index.ts`:
+**✅ Already Configured:** The application is already configured for production HTTPS:
 
+- **Trust Proxy**: Automatically enabled in production for Nginx reverse proxy
+- **Secure Cookies**: Enabled when `NODE_ENV=production`
+- **Session Security**: HTTP-only cookies with 24-hour expiration
+
+The code already includes:
 ```typescript
+// Trust proxy when behind reverse proxy (Nginx) in production
+if (process.env.NODE_ENV === 'production') {
+  app.set('trust proxy', 1);
+}
+
 app.use(session({
   secret: process.env.SESSION_SECRET || 'fallback-secret',
   resave: false,
   saveUninitialized: false,
   cookie: {
     httpOnly: true,
-    secure: true,  // Set to true for HTTPS
-    sameSite: 'strict',  // CSRF protection
+    secure: process.env.NODE_ENV === 'production',  // Automatically secure in production
     maxAge: 24 * 60 * 60 * 1000 // 24 hours
   }
 }));
 ```
 
-Rebuild and restart:
+**No additional configuration needed!** Just ensure `NODE_ENV=production` in your `.env` file.
+
+To verify after deployment:
 ```bash
-npm run build
-pm2 restart onyx-houseware
+# Check that cookies are marked Secure in browser DevTools
+# Network tab → Cookies → Should see "Secure" flag
 ```
 
 ### 2. Setup Database Backups
