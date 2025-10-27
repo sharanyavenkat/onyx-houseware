@@ -82,6 +82,19 @@ Preferred communication style: Simple, everyday language.
 - **Build**: Client builds to `dist/public`, server bundles with esbuild
 - **Production**: Express serves static files and API routes
 
+# Deployment
+
+See [DEPLOYMENT.md](./DEPLOYMENT.md) for complete AWS LightSail deployment guide including:
+- Download/export from Replit
+- Local setup and development
+- Environment configuration
+- Database schema change workflow
+- AWS LightSail deployment steps
+- SSL/HTTPS setup
+- Production best practices
+
+See [QUICK_START.md](./QUICK_START.md) for quick reference commands.
+
 # External Dependencies
 
 ## Database & ORM

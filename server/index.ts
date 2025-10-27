@@ -9,6 +9,11 @@ const app = express();
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 
+// Trust proxy when behind reverse proxy (Nginx) in production
+if (process.env.NODE_ENV === 'production') {
+  app.set('trust proxy', 1);
+}
+
 // Session configuration
 app.use(session({
   secret: process.env.SESSION_SECRET || 'onyx-houseware-secret-key-change-in-production',
