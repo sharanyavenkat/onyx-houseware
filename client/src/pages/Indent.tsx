@@ -1,10 +1,8 @@
 import DataTable from '../components/DataTable';
 import MonthPicker from '../components/MonthPicker';
-import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
-import { Save } from 'lucide-react';
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { queryClient, apiRequest } from '@/lib/queryClient';
 import { useToast } from '@/hooks/use-toast';
@@ -16,12 +14,17 @@ export default function IndentPage() {
   const currentMonth = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}`;
   const [selectedMonth, setSelectedMonth] = useState(currentMonth);
   const [editingCells, setEditingCells] = useState<Record<string, number>>({});
+  const [dirtyItems, setDirtyItems] = useState<Set<number>>(new Set());
+  const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const { toast } = useToast();
 
-  // Fetch all items
-  const { data: items = [] } = useQuery<Item[]>({
+  // Fetch all items (only active items)
+  const { data: allItems = [] } = useQuery<Item[]>({
     queryKey: ['/api/items'],
   });
+
+  // Filter to only active items
+  const items = useMemo(() => allItems.filter(item => item.is_active), [allItems]);
 
   // Fetch indents for selected month
   const { data: indents = [] } = useQuery<Indent[]>({
@@ -62,6 +65,7 @@ export default function IndentPage() {
       const indent = indents.find(i => i.item_id === item.id);
       const openingBalance = editingCells[`${item.id}-opening_balance`] ?? indent?.opening_balance ?? 0;
       const expectedReceipts = editingCells[`${item.id}-expected_receipts`] ?? indent?.expected_receipts ?? 0;
+      const safetyStock = editingCells[`${item.id}-safety_stock`] ?? item.safety_stock;
       const pendingQty = pendingOrdersByItem[item.id] || 0;
       
       // Use shared inventory calculation
@@ -69,7 +73,7 @@ export default function IndentPage() {
         openingBalance,
         expectedReceipts,
         pendingQty,
-        item.safety_stock
+        safetyStock
       );
 
       return {
@@ -77,8 +81,8 @@ export default function IndentPage() {
         item_name: item.name,
         opening_balance: openingBalance,
         expected_receipts: expectedReceipts,
+        safety_stock: safetyStock,
         pending_order_qty: pendingQty,
-        safety_stock: item.safety_stock,
         working_stock: metrics.workingStock,
         usable_stock: metrics.usableStock,
         post_pending_stock: metrics.postPendingStock,
@@ -92,36 +96,132 @@ export default function IndentPage() {
     });
   }, [items, indents, pendingOrdersByItem, editingCells]);
 
-  const saveMutation = useMutation({
+  // Save mutation for indent data
+  const saveIndentMutation = useMutation({
     mutationFn: async (data: { item_id: number; month: string; opening_balance: number; expected_receipts: number }[]) => {
       await Promise.all(
         data.map(indent => apiRequest('POST', '/api/indents', indent))
       );
     },
-    onSuccess: () => {
+    onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ['/api/indents', selectedMonth] });
-      toast({ title: 'Indent saved successfully' });
-      setEditingCells({});
+      
+      // Clear editing cells only for successfully saved items (indent fields)
+      setEditingCells(prev => {
+        const updated = { ...prev };
+        variables.forEach(item => {
+          delete updated[`${item.item_id}-opening_balance`];
+          delete updated[`${item.item_id}-expected_receipts`];
+        });
+        return updated;
+      });
+      
+      // Remove from dirty items
+      setDirtyItems(prev => {
+        const updated = new Set(prev);
+        variables.forEach(item => updated.delete(item.item_id));
+        return updated;
+      });
     },
     onError: (error: Error) => {
       toast({ title: 'Error saving indent', description: error.message, variant: 'destructive' });
     },
   });
 
+  // Save mutation for item safety stock
+  const saveItemMutation = useMutation({
+    mutationFn: async (data: { id: number; safety_stock: number }[]) => {
+      await Promise.all(
+        data.map(item => apiRequest('PATCH', `/api/items/${item.id}`, { safety_stock: item.safety_stock }))
+      );
+    },
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['/api/items'] });
+      
+      // Clear editing cells only for successfully saved items (safety stock field)
+      setEditingCells(prev => {
+        const updated = { ...prev };
+        variables.forEach(item => {
+          delete updated[`${item.id}-safety_stock`];
+        });
+        return updated;
+      });
+    },
+    onError: (error: Error) => {
+      toast({ title: 'Error updating safety stock', description: error.message, variant: 'destructive' });
+    },
+  });
+
+  // Auto-save with debouncing
+  useEffect(() => {
+    // Clear existing timeout
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current);
+    }
+
+    // Check if there are any safety stock edits pending
+    const hasSafetyStockEdits = Object.keys(editingCells).some(key => key.endsWith('-safety_stock'));
+
+    // Don't save if nothing has been edited
+    if (dirtyItems.size === 0 && !hasSafetyStockEdits) {
+      return;
+    }
+
+    // Set new timeout for auto-save (1 second debounce)
+    saveTimeoutRef.current = setTimeout(() => {
+      // Prepare indent data ONLY for dirty items
+      const indentsToSave = indentData
+        .filter(row => dirtyItems.has(row.id))
+        .map(row => ({
+          item_id: row.id,
+          month: selectedMonth,
+          opening_balance: row.opening_balance,
+          expected_receipts: row.expected_receipts,
+        }));
+
+      // Prepare safety stock updates (only for items that have changed safety stock)
+      const itemsToUpdate: { id: number; safety_stock: number }[] = [];
+      Object.keys(editingCells).forEach(key => {
+        if (key.endsWith('-safety_stock')) {
+          const itemId = parseInt(key.split('-')[0]);
+          const newSafetyStock = editingCells[key];
+          const originalItem = items.find(i => i.id === itemId);
+          
+          // Only update if safety stock actually changed
+          if (originalItem && originalItem.safety_stock !== newSafetyStock) {
+            itemsToUpdate.push({ id: itemId, safety_stock: newSafetyStock });
+          }
+        }
+      });
+
+      // Save indent data (only for dirty items)
+      if (indentsToSave.length > 0) {
+        saveIndentMutation.mutate(indentsToSave);
+      }
+
+      // Save safety stock updates
+      if (itemsToUpdate.length > 0) {
+        saveItemMutation.mutate(itemsToUpdate);
+      }
+    }, 1000);
+
+    // Cleanup on unmount
+    return () => {
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current);
+      }
+    };
+  }, [dirtyItems, editingCells, indentData, selectedMonth, items]);
+
   const handleCellEdit = (itemId: number, field: string, value: string) => {
     const numValue = parseInt(value) || 0;
     const key = `${itemId}-${field}`;
     setEditingCells(prev => ({ ...prev, [key]: numValue }));
-  };
-
-  const handleSave = () => {
-    const indentsToSave = indentData.map(row => ({
-      item_id: row.id,
-      month: selectedMonth,
-      opening_balance: row.opening_balance,
-      expected_receipts: row.expected_receipts,
-    }));
-    saveMutation.mutate(indentsToSave);
+    
+    // Mark this item as dirty if it's an indent field
+    if (field === 'opening_balance' || field === 'expected_receipts') {
+      setDirtyItems(prev => new Set(prev).add(itemId));
+    }
   };
 
   const indentColumns = [
@@ -152,8 +252,20 @@ export default function IndentPage() {
         />
       )
     },
+    { 
+      key: 'safety_stock', 
+      label: 'Safety Stock',
+      render: (value: number, row: any) => (
+        <Input
+          type="number"
+          value={value}
+          onChange={(e) => handleCellEdit(row.id, 'safety_stock', e.target.value)}
+          className="w-24"
+          data-testid={`input-safety-stock-${row.id}`}
+        />
+      )
+    },
     { key: 'pending_order_qty', label: 'Pending Orders' },
-    { key: 'safety_stock', label: 'Safety Stock' },
     { 
       key: 'usable_stock', 
       label: 'Total Usable Stock',
@@ -173,19 +285,6 @@ export default function IndentPage() {
       )
     },
     { 
-      key: 'safety_stock_status', 
-      label: 'Safety Stock Status', 
-      render: (value: string, row: any) => {
-        if (value === 'critical') {
-          return <Badge variant="destructive" data-testid={`badge-status-critical-${row.id}`}>Critical</Badge>;
-        } else if (value === 'low') {
-          return <Badge variant="secondary" data-testid={`badge-status-low-${row.id}`}>Low</Badge>;
-        } else {
-          return <Badge variant="default" data-testid={`badge-status-good-${row.id}`}>Good</Badge>;
-        }
-      }
-    },
-    { 
       key: 'required_to_order', 
       label: 'Required to Order', 
       render: (value: number, row: any) => (
@@ -200,6 +299,19 @@ export default function IndentPage() {
           )}
         </div>
       )
+    },
+    { 
+      key: 'safety_stock_status', 
+      label: 'Safety Stock Status', 
+      render: (value: string, row: any) => {
+        if (value === 'critical') {
+          return <Badge variant="destructive" data-testid={`badge-status-critical-${row.id}`}>Critical</Badge>;
+        } else if (value === 'low') {
+          return <Badge variant="secondary" data-testid={`badge-status-low-${row.id}`}>Low</Badge>;
+        } else {
+          return <Badge variant="default" data-testid={`badge-status-good-${row.id}`}>Good</Badge>;
+        }
+      }
     }
   ];
 
@@ -209,14 +321,10 @@ export default function IndentPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-semibold" data-testid="text-indent-title">Indent Management</h1>
-          <p className="text-muted-foreground">Manage monthly inventory requirements</p>
+          <p className="text-muted-foreground">Manage monthly inventory requirements (auto-saves as you edit)</p>
         </div>
         <div className="flex items-center gap-4">
           <MonthPicker value={selectedMonth} onChange={setSelectedMonth} />
-          <Button onClick={handleSave} disabled={saveMutation.isPending} data-testid="button-save-indent">
-            <Save className="h-4 w-4 mr-2" />
-            {saveMutation.isPending ? 'Saving...' : 'Save Changes'}
-          </Button>
         </div>
       </div>
 
@@ -232,6 +340,13 @@ export default function IndentPage() {
             <p className="text-xs pl-4">• Shortfall to Fulfill = max(0, Pending - Usable Stock) <span className="text-muted-foreground/70">(shortfall to complete pending orders)</span></p>
             <p className="text-xs pl-4">• Shortfall to Restore Safety = max(0, Safety Stock - max(0, Stock After Pending)) <span className="text-muted-foreground/70">(amount needed to refill safety buffer)</span></p>
           </div>
+        </div>
+        <div>
+          <h3 className="font-medium mb-2">Editable Safety Stock:</h3>
+          <p className="text-sm text-muted-foreground">
+            Safety Stock is editable here to reflect current production reality. Adjust based on bottlenecks from casters, production capacity, 
+            and demand. Target is 500 pcs per item, but start lower as needed. Changes sync to the Items table automatically.
+          </p>
         </div>
         <div>
           <h3 className="font-medium mb-2">Safety Stock Status & Concerns:</h3>
