@@ -141,6 +141,7 @@ export default function Orders() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/orders'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/order-items'] });
       toast({ title: 'Order created successfully' });
       setIsModalOpen(false);
     },
@@ -155,6 +156,7 @@ export default function Orders() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/orders'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/order-items'] });
       toast({ title: 'Order updated successfully' });
       setIsModalOpen(false);
       setEditingOrder(null);
@@ -170,6 +172,7 @@ export default function Orders() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/orders'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/order-items'] });
       toast({ title: 'Order deleted successfully' });
     },
     onError: (error: Error) => {

@@ -19,11 +19,12 @@ type OrderWithLineItems = Order & {
 
 const topItemsColumns = [
   { key: 'name', label: 'Item Name' },
-  { key: 'pendingQty', label: 'Pending Qty' },
-  { key: 'safetyStock', label: 'Safety Stock' },
+  { key: 'pendingQty', label: 'Pending Orders' },
+  { key: 'workingStock', label: 'Available Stock' },
+  { key: 'shortfall', label: 'Need to Order' },
   { 
     key: 'status', 
-    label: 'Status', 
+    label: 'Urgency', 
     render: (value: string) => {
       const variant = value === 'Critical' ? 'destructive' : value === 'Low' ? 'secondary' : 'default';
       return <Badge variant={variant}>{value}</Badge>;
@@ -106,19 +107,27 @@ export default function Dashboard() {
         });
       });
     
-    // Convert to array, calculate status using shared utility (assuming opening=0, expected=0 for worst case)
+    // Convert to array, calculate metrics (assuming worst case: opening=0, expected=0)
     return Array.from(itemPendingQtyMap.values())
       .map(item => {
-        // Use shared calculation with opening=0, expected=0 (worst case for dashboard view)
+        // Worst case: only safety stock available
+        const workingStock = item.safetyStock;
+        const shortfall = Math.max(0, item.pendingQty - workingStock);
+        
+        // Use shared calculation to determine status
         const metrics = calculateInventoryMetrics(0, 0, item.pendingQty, item.safetyStock);
+        
         return {
-          ...item,
+          name: item.name,
+          pendingQty: item.pendingQty,
+          workingStock,
+          shortfall,
           status: metrics.safetyStockStatus === 'critical' ? 'Critical' 
                 : metrics.safetyStockStatus === 'low' ? 'Low' 
                 : 'Good'
         };
       })
-      .sort((a, b) => b.pendingQty - a.pendingQty)
+      .sort((a, b) => b.shortfall - a.shortfall)
       .slice(0, 5);
   }, [filteredOrders, items]);
 
@@ -155,33 +164,14 @@ export default function Dashboard() {
       {/* Cards */}
       <DashboardCards data={dashboardData} />
 
-      {/* Top Items by Pending Quantity */}
+      {/* Items Requiring Urgent Attention */}
       <div className="space-y-4">
         <div className="space-y-2">
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="text-xl font-semibold">Top Items by Pending Quantity</h2>
-              <p className="text-sm text-muted-foreground mt-1">
-                Pending Quantity = Total from Draft or Confirmed orders. Safety stock can be used to fulfill orders - status shows concern if depleted (assumes worst-case: no opening/expected stock).
-              </p>
-            </div>
-            <div className="flex items-center gap-4">
-              <span className="text-sm text-muted-foreground">Status Legend:</span>
-              <div className="flex items-center gap-3">
-                <div className="flex items-center gap-1.5">
-                  <Badge variant="destructive" data-testid="badge-legend-critical">Critical</Badge>
-                  <span className="text-xs text-muted-foreground">Stock after pending &lt; 50% of safety or negative</span>
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <Badge variant="secondary" data-testid="badge-legend-low">Low</Badge>
-                  <span className="text-xs text-muted-foreground">Stock after pending &lt; safety stock</span>
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <Badge variant="default" data-testid="badge-legend-good">Good</Badge>
-                  <span className="text-xs text-muted-foreground">Stock after pending ≥ safety stock</span>
-                </div>
-              </div>
-            </div>
+          <div>
+            <h2 className="text-xl font-semibold">Items Requiring Urgent Attention</h2>
+            <p className="text-sm text-muted-foreground mt-1">
+              Shows items with pending orders sorted by urgency. "Available Stock" assumes worst-case scenario (safety stock only, no opening balance or expected receipts). Visit Indent page to see actual stock levels and plan orders.
+            </p>
           </div>
         </div>
         <DataTable 
