@@ -4,7 +4,7 @@ import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import type { Item, Order, Customer } from '@shared/schema';
+import type { Item, Order, Customer, Indent } from '@shared/schema';
 import { calculateInventoryMetrics } from '@shared/inventory';
 
 // Extended Order type with line_items from API
@@ -20,11 +20,11 @@ type OrderWithLineItems = Order & {
 const topItemsColumns = [
   { key: 'name', label: 'Item Name' },
   { key: 'pendingQty', label: 'Pending Orders' },
-  { key: 'workingStock', label: 'Available Stock' },
-  { key: 'shortfall', label: 'Need to Order' },
+  { key: 'workingStock', label: 'Total Available' },
+  { key: 'shortfall', label: 'Still Need to Order' },
   { 
     key: 'status', 
-    label: 'Urgency', 
+    label: 'Status', 
     render: (value: string) => {
       const variant = value === 'Critical' ? 'destructive' : value === 'Low' ? 'secondary' : 'default';
       return <Badge variant={variant}>{value}</Badge>;
@@ -33,6 +33,9 @@ const topItemsColumns = [
 ];
 
 export default function Dashboard() {
+  // Default to current month for indent data
+  const currentDate = new Date();
+  const currentMonth = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}`;
   const [selectedMonth, setSelectedMonth] = useState('all');
 
   const { data: items = [] } = useQuery<Item[]>({
@@ -45,6 +48,11 @@ export default function Dashboard() {
 
   const { data: customers = [] } = useQuery<Customer[]>({
     queryKey: ['/api/customers'],
+  });
+
+  // Fetch indent data for current month to get real stock levels
+  const { data: indents = [] } = useQuery<Indent[]>({
+    queryKey: ['/api/indents', currentMonth],
   });
 
   // Extract unique months from orders based on fulfillment_date
@@ -79,12 +87,12 @@ export default function Dashboard() {
     totalCustomers: customers.length
   };
 
-  // Calculate top items by pending quantity from real order data
+  // Calculate top items by pending quantity using REAL indent data
   const topItemsByPendingQty = useMemo(() => {
     const itemPendingQtyMap = new Map<number, { name: string; pendingQty: number; safetyStock: number }>();
     
-    // Aggregate pending quantities from filtered orders
-    filteredOrders
+    // Aggregate pending quantities from ALL orders (not filtered by month - we want all pending orders)
+    orders
       .filter(order => order.status === 'draft' || order.status === 'confirmed')
       .forEach(order => {
         const lineItems = order.line_items ?? [];
@@ -107,29 +115,39 @@ export default function Dashboard() {
         });
       });
     
-    // Convert to array, calculate metrics (assuming worst case: opening=0, expected=0)
+    // Convert to array, calculate using REAL indent data
     return Array.from(itemPendingQtyMap.values())
-      .map(item => {
-        // Worst case: only safety stock available
-        const workingStock = item.safetyStock;
-        const shortfall = Math.max(0, item.pendingQty - workingStock);
+      .map(itemData => {
+        const item = items.find(i => i.name === itemData.name);
+        if (!item) return null;
         
-        // Use shared calculation to determine status
-        const metrics = calculateInventoryMetrics(0, 0, item.pendingQty, item.safetyStock);
+        // Get real indent data for this item (current month)
+        const indent = indents.find(i => i.item_id === item.id);
+        const openingBalance = indent?.opening_balance ?? 0;
+        const expectedReceipts = indent?.expected_receipts ?? 0;
+        
+        // Calculate using REAL numbers from indent
+        const metrics = calculateInventoryMetrics(
+          openingBalance,
+          expectedReceipts,
+          itemData.pendingQty,
+          itemData.safetyStock
+        );
         
         return {
-          name: item.name,
-          pendingQty: item.pendingQty,
-          workingStock,
-          shortfall,
+          name: itemData.name,
+          pendingQty: itemData.pendingQty,
+          workingStock: metrics.workingStock + metrics.safetyStock, // Total available
+          shortfall: metrics.shortfallToFulfill, // Only what's needed to fulfill orders
           status: metrics.safetyStockStatus === 'critical' ? 'Critical' 
                 : metrics.safetyStockStatus === 'low' ? 'Low' 
                 : 'Good'
         };
       })
+      .filter(item => item !== null)
       .sort((a, b) => b.shortfall - a.shortfall)
       .slice(0, 5);
-  }, [filteredOrders, items]);
+  }, [orders, items, indents]);
 
   return (
     <div className="space-y-6" data-testid="page-dashboard">
@@ -164,13 +182,14 @@ export default function Dashboard() {
       {/* Cards */}
       <DashboardCards data={dashboardData} />
 
-      {/* Items Requiring Urgent Attention */}
+      {/* Items Requiring Attention */}
       <div className="space-y-4">
         <div className="space-y-2">
           <div>
-            <h2 className="text-xl font-semibold">Items Requiring Urgent Attention</h2>
+            <h2 className="text-xl font-semibold">Items Requiring Attention</h2>
             <p className="text-sm text-muted-foreground mt-1">
-              Shows items with pending orders sorted by urgency. "Available Stock" assumes worst-case scenario (safety stock only, no opening balance or expected receipts). Visit Indent page to see actual stock levels and plan orders.
+              Shows items with pending orders using current month's indent data (Opening Balance + Expected Receipts + Safety Stock). 
+              "Still Need to Order" shows the shortfall to fulfill pending orders after using all available stock. Visit Indent page for detailed planning.
             </p>
           </div>
         </div>
