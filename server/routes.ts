@@ -407,10 +407,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/indents", async (req, res) => {
     try {
+      console.log('[Server] POST /api/indents received body:', JSON.stringify(req.body, null, 2));
       const validatedData = insertIndentSchema.parse(req.body);
+      console.log('[Server] After Zod validation:', JSON.stringify(validatedData, null, 2));
       const indent = await storage.upsertIndent(validatedData);
+      console.log('[Server] After upsert, returned indent:', JSON.stringify(indent, null, 2));
       res.status(200).json(indent);
     } catch (error: any) {
+      console.log('[Server] Error in POST /api/indents:', error.message);
       res.status(400).json({ message: error.message });
     }
   });

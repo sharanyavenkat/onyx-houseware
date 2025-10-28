@@ -1,5 +1,5 @@
-import { eq, and } from "drizzle-orm";
-import { db } from "./db/client";
+import { eq, and, sql } from "drizzle-orm";
+import { db, sqlite } from "./db/client";
 import { 
   type User, 
   type InsertUser,
@@ -163,6 +163,8 @@ export class DbStorage implements IStorage {
   }
 
   async upsertIndent(insertIndent: InsertIndent): Promise<Indent> {
+    console.log('[Storage] upsertIndent called with:', JSON.stringify(insertIndent, null, 2));
+    
     // Check if indent already exists for this item and month
     const [existing] = await db.select().from(indents).where(
       and(
@@ -171,8 +173,17 @@ export class DbStorage implements IStorage {
       )
     );
 
+    console.log('[Storage] Existing indent found:', JSON.stringify(existing, null, 2));
+
+    let result: Indent;
+
     if (existing) {
       // Update existing indent
+      console.log('[Storage] Updating with values:', {
+        opening_balance: insertIndent.opening_balance,
+        expected_receipts: insertIndent.expected_receipts
+      });
+      
       const [updated] = await db.update(indents)
         .set({
           opening_balance: insertIndent.opening_balance,
@@ -180,12 +191,27 @@ export class DbStorage implements IStorage {
         })
         .where(eq(indents.id, existing.id))
         .returning();
-      return updated;
+      
+      console.log('[Storage] After update, returned:', JSON.stringify(updated, null, 2));
+      result = updated;
     } else {
       // Create new indent
+      console.log('[Storage] Creating new indent');
       const [newIndent] = await db.insert(indents).values(insertIndent).returning();
-      return newIndent;
+      console.log('[Storage] After insert, returned:', JSON.stringify(newIndent, null, 2));
+      result = newIndent;
     }
+
+    // Force WAL checkpoint to ensure changes are written to disk
+    // This is necessary because testing agents may query from a different connection
+    sqlite.pragma("wal_checkpoint(FULL)");
+    console.log('[Storage] WAL checkpoint executed');
+    
+    // Verify what's actually in the DB after checkpoint
+    const [verified] = await db.select().from(indents).where(eq(indents.id, result.id));
+    console.log('[Storage] Verification query result after checkpoint:', JSON.stringify(verified, null, 2));
+    
+    return result;
   }
 
   async getShipmentsByOrderId(orderId: number): Promise<Shipment[]> {

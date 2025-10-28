@@ -28,3 +28,6 @@ sqlite.pragma("foreign_keys = ON");
 
 // Create Drizzle instance
 export const db = drizzle(sqlite, { schema });
+
+// Export the raw sqlite connection for low-level operations
+export { sqlite };
