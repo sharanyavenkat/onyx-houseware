@@ -289,11 +289,20 @@ export default function IndentPage() {
       )
     },
     { 
-      key: 'required_to_order', 
-      label: 'Required to Order', 
+      key: 'shortfall_to_fulfill', 
+      label: 'Req. to Fulfill Orders', 
+      render: (value: number, row: any) => (
+        <span className={`font-semibold ${value > 0 ? 'text-destructive' : 'text-muted-foreground'}`} data-testid={`text-fulfill-${row.id}`}>
+          {value}
+        </span>
+      )
+    },
+    { 
+      key: 'shortfall_to_restore_safety', 
+      label: 'Req. for Safety Stock', 
       render: (value: number, row: any) => (
         <div className="space-y-1">
-          <span className={`font-semibold block ${value > 0 ? 'text-destructive' : 'text-muted-foreground'}`} data-testid={`text-required-${row.id}`}>
+          <span className={`font-semibold block ${value > 0 ? 'text-orange-600 dark:text-orange-400' : 'text-muted-foreground'}`} data-testid={`text-safety-${row.id}`}>
             {value}
           </span>
           {row.needs_safety_refill && (
@@ -340,20 +349,25 @@ export default function IndentPage() {
             <p><strong>Working Stock</strong> = Opening Balance + Expected Receipts <span className="text-xs">(normal operational inventory)</span></p>
             <p><strong>Total Usable Stock</strong> = Working Stock + Safety Stock <span className="text-xs">(safety stock can be used to fulfill orders)</span></p>
             <p><strong>Stock After Pending</strong> = Total Usable Stock - Pending Orders <span className="text-xs">(remaining after using all available stock)</span></p>
-            <p className="pt-2"><strong>Required to Order</strong> = Shortfall to Fulfill + Shortfall to Restore Safety</p>
-            <p className="text-xs pl-4">• Shortfall to Fulfill = max(0, Pending - Usable Stock) <span className="text-muted-foreground/70">(shortfall to complete pending orders)</span></p>
-            <p className="text-xs pl-4">• Shortfall to Restore Safety = max(0, Safety Stock - max(0, Stock After Pending)) <span className="text-muted-foreground/70">(amount needed to refill safety buffer)</span></p>
+          </div>
+        </div>
+        <div>
+          <h3 className="font-medium mb-2">Order Requirements (Split View):</h3>
+          <div className="text-sm text-muted-foreground space-y-1">
+            <p><strong className="text-destructive">Req. to Fulfill Orders</strong> = max(0, Pending - Usable Stock) <span className="text-xs">(critical - needed to complete pending orders)</span></p>
+            <p><strong className="text-orange-600 dark:text-orange-400">Req. for Safety Stock</strong> = max(0, Safety Stock - max(0, Stock After Pending)) <span className="text-xs">(optional - to restore safety buffer)</span></p>
+            <p className="text-xs pt-1 italic">These are split so you can decide: order just what's needed for orders, or also refill safety stock based on production capacity.</p>
           </div>
         </div>
         <div>
           <h3 className="font-medium mb-2">Editable Safety Stock:</h3>
           <p className="text-sm text-muted-foreground">
-            Safety Stock is editable here to reflect current production reality. Adjust based on bottlenecks from casters, production capacity, 
-            and demand. Target is 500 pcs per item, but start lower as needed. Changes sync to the Items table automatically.
+            Safety Stock is editable to reflect current production reality. Adjust based on caster bottlenecks, production capacity, 
+            and demand. Target is 500 pcs per item, but start lower as needed. Changes auto-save and sync to Items table.
           </p>
         </div>
         <div>
-          <h3 className="font-medium mb-2">Safety Stock Status & Concerns:</h3>
+          <h3 className="font-medium mb-2">Safety Stock Status Legend:</h3>
           <div className="flex items-center gap-4 text-sm flex-wrap">
             <div className="flex items-center gap-2">
               <Badge variant="destructive" data-testid="badge-legend-critical">Critical</Badge>
@@ -361,7 +375,7 @@ export default function IndentPage() {
             </div>
             <div className="flex items-center gap-2">
               <Badge variant="secondary" data-testid="badge-legend-low">Low</Badge>
-              <span className="text-muted-foreground">Stock after pending &lt; safety stock</span>
+              <span className="text-muted-foreground">Stock after pending &lt; safety stock but ≥ 50%</span>
             </div>
             <div className="flex items-center gap-2">
               <Badge variant="default" data-testid="badge-legend-good">Good</Badge>
@@ -369,7 +383,7 @@ export default function IndentPage() {
             </div>
             <div className="flex items-center gap-2">
               <Badge variant="outline" className="text-xs">Refill Needed</Badge>
-              <span className="text-muted-foreground">Safety stock needs refilling</span>
+              <span className="text-muted-foreground">Appears when safety stock needs refilling</span>
             </div>
           </div>
         </div>
