@@ -99,12 +99,8 @@ export default function IndentPage() {
   // Save mutation for indent data
   const saveIndentMutation = useMutation({
     mutationFn: async (data: { item_id: number; month: string; opening_balance: number; expected_receipts: number }[]) => {
-      console.log('[Indent Auto-Save] Saving indents:', JSON.stringify(data, null, 2));
       await Promise.all(
-        data.map(indent => {
-          console.log('[Indent Auto-Save] POST /api/indents with payload:', indent);
-          return apiRequest('POST', '/api/indents', indent);
-        })
+        data.map(indent => apiRequest('POST', '/api/indents', indent))
       );
     },
     onSuccess: (_, variables) => {

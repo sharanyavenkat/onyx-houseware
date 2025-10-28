@@ -34,7 +34,6 @@ export default function LoginForm({ onLogin, isLoading = false, error }: LoginFo
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (validateForm()) {
-      console.log('Login attempt for:', username);
       onLogin(username, password);
     }
   };

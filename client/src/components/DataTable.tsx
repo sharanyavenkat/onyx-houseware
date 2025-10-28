@@ -50,17 +50,14 @@ export default function DataTable({
     : data;
 
   const handleAdd = () => {
-    console.log('Add triggered');
     onAdd?.();
   };
 
   const handleEdit = (item: any) => {
-    console.log('Edit triggered for:', item);
     onEdit?.(item);
   };
 
   const handleDelete = (item: any) => {
-    console.log('Delete triggered for:', item);
     onDelete?.(item);
   };
 
