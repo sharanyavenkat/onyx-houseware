@@ -4,3 +4,4 @@ dist
 server/public
 *.tar.gz
 .env
+.replit
