@@ -5,7 +5,8 @@ This guide covers everything you need to download, configure, run locally, and d
 ---
 
 ## Table of Contents
-1. [Download from Replit](#download-from-replit)
+
+1. [Download from Github](#download-from-github)
 2. [Local Setup](#local-setup)
 3. [Environment Configuration](#environment-configuration)
 4. [Database Schema Changes](#database-schema-changes)
@@ -16,28 +17,11 @@ This guide covers everything you need to download, configure, run locally, and d
 
 ---
 
-## Download from Replit
+## Download from Github
 
-### Option 1: Download as ZIP
-1. In Replit, click the three dots menu (⋮) in the top right
-2. Select "Download as ZIP"
-3. Extract the ZIP file on your local machine
-
-### Option 2: Git Clone (Recommended)
 ```bash
-# If your Replit project is connected to GitHub
 git clone https://github.com/YOUR_USERNAME/YOUR_REPO.git
 cd YOUR_REPO
-```
-
-### Option 3: Export via Replit CLI
-```bash
-# Install Replit CLI
-npm install -g @replit/cli
-
-# Login and pull your project
-replit login
-replit pull YOUR_REPL_NAME
 ```
 
 ---
@@ -45,17 +29,20 @@ replit pull YOUR_REPL_NAME
 ## Local Setup
 
 ### Prerequisites
+
 - **Node.js** 20.x or later (check with `node --version`)
 - **npm** 10.x or later (check with `npm --version`)
 - **Git** (optional, for version control)
 
 ### Install Dependencies
+
 ```bash
 cd onyx-houseware  # or your project directory name
 npm install
 ```
 
 This will install all required packages including:
+
 - Express.js (backend server)
 - React (frontend)
 - SQLite & Drizzle ORM (database)
@@ -66,6 +53,7 @@ This will install all required packages including:
 ## Environment Configuration
 
 ### 1. Create Environment File
+
 ```bash
 # Copy the example file
 cp .env.example .env
@@ -75,6 +63,7 @@ touch .env
 ```
 
 ### 2. Configure `.env` File
+
 Edit `.env` with your production values:
 
 ```env
@@ -94,11 +83,13 @@ NODE_ENV=production
 ```
 
 **⚠️ SECURITY CRITICAL:**
+
 - Never use `admin123` as password in production
 - Generate a strong `SESSION_SECRET` (minimum 32 characters)
 - Keep `.env` file secure and never commit it to version control
 
 ### Generate Secure Session Secret
+
 ```bash
 # On Linux/Mac
 openssl rand -base64 48
@@ -112,9 +103,11 @@ node -e "console.log(require('crypto').randomBytes(48).toString('base64'))"
 ## Database Schema Changes
 
 ### Understanding the Database System
+
 This application uses **SQLite** with **Drizzle ORM**. The database schema is defined in `shared/schema.ts`.
 
 ### Current Database Structure
+
 - **Location**: `server/data/onyx.db` (auto-created on first run)
 - **Schema**: `shared/schema.ts` (TypeScript definitions)
 - **Tables**: users, items, customers, orders, order_items, indents, shipments
@@ -122,22 +115,24 @@ This application uses **SQLite** with **Drizzle ORM**. The database schema is de
 ### Making Schema Changes
 
 #### Step 1: Modify Schema
+
 Edit `shared/schema.ts` to add/modify tables or columns:
 
 ```typescript
 // Example: Adding a new column to items table
-export const items = sqliteTable('items', {
-  id: integer('id').primaryKey({ autoIncrement: true }),
-  name: text('name').notNull(),
-  sku: text('sku').notNull().unique(),
+export const items = sqliteTable("items", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  name: text("name").notNull(),
+  sku: text("sku").notNull().unique(),
   // ... existing fields ...
-  
+
   // NEW FIELD
-  warehouse_location: text('warehouse_location'),  // Add new field
+  warehouse_location: text("warehouse_location"), // Add new field
 });
 ```
 
 #### Step 2: Update Storage Interface (if needed)
+
 If you add new CRUD operations, update `server/storage.ts`:
 
 ```typescript
@@ -159,18 +154,21 @@ npm run db:push
 ```
 
 If you encounter data-loss warnings:
+
 ```bash
 # Force push (⚠️ may delete data - backup first!)
 npm run db:push -- --force
 ```
 
 **Before Force Push:**
+
 ```bash
 # Backup your database
 cp server/data/onyx.db server/data/onyx.db.backup.$(date +%Y%m%d_%H%M%S)
 ```
 
 #### Step 4: Update Bootstrap (for new tables)
+
 If you added **new tables**, update `server/db/bootstrap.ts`:
 
 ```typescript
@@ -188,6 +186,7 @@ export async function bootstrapDatabase() {
 ### Schema Change Best Practices
 
 1. **Always backup before schema changes**
+
    ```bash
    cp server/data/onyx.db server/data/onyx.db.backup
    ```
@@ -195,6 +194,7 @@ export async function bootstrapDatabase() {
 2. **Test locally first** before deploying to production
 
 3. **For production deployments:**
+
    - Stop the application
    - Backup the database
    - Apply schema changes
@@ -205,6 +205,7 @@ export async function bootstrapDatabase() {
 ### Database Backup & Restore
 
 #### Backup
+
 ```bash
 # Manual backup
 cp server/data/onyx.db backups/onyx-$(date +%Y%m%d).db
@@ -214,6 +215,7 @@ sqlite3 server/data/onyx.db .dump > backups/onyx-$(date +%Y%m%d).sql
 ```
 
 #### Restore
+
 ```bash
 # From .db file
 cp backups/onyx-20250116.db server/data/onyx.db
@@ -227,15 +229,18 @@ sqlite3 server/data/onyx.db < backups/onyx-20250116.sql
 ## Running Locally
 
 ### Development Mode (with hot reload)
+
 ```bash
 npm run dev
 ```
+
 - Frontend: Auto-reloads on changes
 - Backend: Auto-restarts on changes
 - Access: http://localhost:5000
 - Login with credentials from `.env`
 
 ### Production Build & Run
+
 ```bash
 # Build the application
 npm run build
@@ -245,6 +250,7 @@ npm start
 ```
 
 ### Verify Everything Works
+
 1. Open browser to http://localhost:5000
 2. Login with your admin credentials
 3. Test key features:
@@ -258,6 +264,7 @@ npm start
 ## AWS LightSail Deployment
 
 ### Prerequisites
+
 - AWS Account
 - Domain name (optional, but recommended)
 - SSH client
@@ -265,9 +272,11 @@ npm start
 ### Step 1: Create LightSail Instance
 
 1. **Go to AWS LightSail Console**
+
    - https://lightsail.aws.amazon.com/
 
 2. **Create Instance**
+
    - Click "Create instance"
    - **Region**: Choose closest to your users
    - **Blueprint**: OS Only → Ubuntu 24.04 LTS
@@ -286,6 +295,7 @@ npm start
 ### Step 3: Configure Firewall
 
 In **Networking** tab, add these rules:
+
 - **SSH**: Port 22 (already enabled)
 - **HTTP**: Port 80
 - **HTTPS**: Port 443
@@ -320,6 +330,7 @@ sudo apt install -y build-essential python3
 ### Step 6: Upload Your Application
 
 **Option A: Using Git (Recommended)**
+
 ```bash
 # On your server
 cd /home/ubuntu
@@ -328,6 +339,7 @@ cd onyx-houseware
 ```
 
 **Option B: Using SCP**
+
 ```bash
 # On your local machine
 # First, zip your project (excluding node_modules)
@@ -344,6 +356,7 @@ cd onyx-houseware
 ```
 
 **Option C: Using rsync (Best for updates)**
+
 ```bash
 # On your local machine
 rsync -avz -e "ssh -i /path/to/your-key.pem" \
@@ -365,6 +378,7 @@ nano .env
 ```
 
 Paste your production configuration:
+
 ```env
 ADMIN_USERNAME=admin
 ADMIN_PASSWORD=YourSecureProductionPassword
@@ -427,6 +441,7 @@ sudo nano /etc/nginx/sites-available/onyx-houseware
 ```
 
 Paste this configuration:
+
 ```nginx
 server {
     listen 80;
@@ -445,7 +460,7 @@ server {
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_cache_bypass $http_upgrade;
-        
+
         # Timeouts
         proxy_connect_timeout 60s;
         proxy_send_timeout 60s;
@@ -455,6 +470,7 @@ server {
 ```
 
 Enable the site:
+
 ```bash
 # Create symbolic link
 sudo ln -s /etc/nginx/sites-available/onyx-houseware /etc/nginx/sites-enabled/
@@ -491,6 +507,7 @@ sudo certbot --nginx -d yourdomain.com -d www.yourdomain.com
 ```
 
 Test auto-renewal:
+
 ```bash
 sudo certbot renew --dry-run
 ```
@@ -510,27 +527,31 @@ Your app is now accessible at `https://yourdomain.com`!
 - **Session Security**: HTTP-only cookies with 24-hour expiration
 
 The code already includes:
+
 ```typescript
 // Trust proxy when behind reverse proxy (Nginx) in production
-if (process.env.NODE_ENV === 'production') {
-  app.set('trust proxy', 1);
+if (process.env.NODE_ENV === "production") {
+  app.set("trust proxy", 1);
 }
 
-app.use(session({
-  secret: process.env.SESSION_SECRET || 'fallback-secret',
-  resave: false,
-  saveUninitialized: false,
-  cookie: {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',  // Automatically secure in production
-    maxAge: 24 * 60 * 60 * 1000 // 24 hours
-  }
-}));
+app.use(
+  session({
+    secret: process.env.SESSION_SECRET || "fallback-secret",
+    resave: false,
+    saveUninitialized: false,
+    cookie: {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production", // Automatically secure in production
+      maxAge: 24 * 60 * 60 * 1000, // 24 hours
+    },
+  })
+);
 ```
 
 **No additional configuration needed!** Just ensure `NODE_ENV=production` in your `.env` file.
 
 To verify after deployment:
+
 ```bash
 # Check that cookies are marked Secure in browser DevTools
 # Network tab → Cookies → Should see "Secure" flag
@@ -539,6 +560,7 @@ To verify after deployment:
 ### 2. Setup Database Backups
 
 Create a backup script:
+
 ```bash
 # Create backup directory
 mkdir -p /home/ubuntu/backups
@@ -548,6 +570,7 @@ nano /home/ubuntu/backup-db.sh
 ```
 
 Paste:
+
 ```bash
 #!/bin/bash
 BACKUP_DIR="/home/ubuntu/backups"
@@ -565,11 +588,13 @@ echo "Backup created: $BACKUP_FILE"
 ```
 
 Make executable:
+
 ```bash
 chmod +x /home/ubuntu/backup-db.sh
 ```
 
 Schedule daily backups with cron:
+
 ```bash
 crontab -e
 # Add this line (runs daily at 2 AM):
@@ -618,17 +643,20 @@ pm2 restart onyx-houseware
 ### SQLite in Production
 
 **✅ Advantages:**
+
 - No separate database server needed
 - Simple deployment
 - Perfect for single-server applications
 - Low resource usage
 
 **⚠️ Limitations:**
+
 - Single-writer (not ideal for high-concurrency writes)
 - File-based (backup the entire file)
 - No built-in replication
 
 **Best Practices:**
+
 1. **Regular backups** (automated daily backups)
 2. **WAL mode enabled** (already configured in code)
 3. **File permissions**: Ensure proper permissions on `server/data/onyx.db`
@@ -642,6 +670,7 @@ pm2 restart onyx-houseware
 **Current Setup**: Memory-based sessions (using `memorystore`)
 
 **⚠️ Production Consideration:**
+
 - Sessions reset when app restarts
 - All users will need to login again after deployment updates
 
@@ -662,6 +691,7 @@ If you need persistent sessions, consider Redis or PostgreSQL session store.
 ### Performance Optimization
 
 1. **Enable Nginx gzip compression:**
+
    ```nginx
    # Add to /etc/nginx/nginx.conf in http block
    gzip on;
@@ -671,6 +701,7 @@ If you need persistent sessions, consider Redis or PostgreSQL session store.
    ```
 
 2. **Monitor disk space:**
+
    ```bash
    df -h  # Check disk usage
    ```
@@ -681,12 +712,14 @@ If you need persistent sessions, consider Redis or PostgreSQL session store.
 ### Scaling Considerations
 
 **When to scale:**
+
 - Response times consistently > 500ms
 - CPU usage > 80%
 - Memory usage > 80%
 - Disk space < 20%
 
 **Scaling options:**
+
 1. **Vertical**: Upgrade LightSail instance size
 2. **Horizontal**: Add load balancer + multiple instances (requires PostgreSQL instead of SQLite)
 
@@ -695,6 +728,7 @@ If you need persistent sessions, consider Redis or PostgreSQL session store.
 ## Quick Reference Commands
 
 ### Local Development
+
 ```bash
 npm run dev          # Start dev server with hot reload
 npm run build        # Build for production
@@ -703,6 +737,7 @@ npm run db:push      # Apply schema changes to database
 ```
 
 ### Production Server
+
 ```bash
 # Application
 pm2 status                    # Check status
@@ -729,6 +764,7 @@ sudo systemctl status pm2-ubuntu  # Check PM2 service
 ## Troubleshooting
 
 ### App won't start
+
 ```bash
 # Check logs
 pm2 logs onyx-houseware --lines 100
@@ -740,6 +776,7 @@ pm2 logs onyx-houseware --lines 100
 ```
 
 ### Can't access via browser
+
 ```bash
 # Check if app is running
 pm2 status
@@ -754,6 +791,7 @@ curl http://localhost:5000
 ```
 
 ### Database errors
+
 ```bash
 # Check file permissions
 ls -l server/data/onyx.db
@@ -771,6 +809,7 @@ pm2 restart onyx-houseware
 ## Support & Updates
 
 For questions or issues:
+
 1. Check logs: `pm2 logs onyx-houseware`
 2. Review Nginx logs: `sudo tail -f /var/log/nginx/error.log`
 3. Verify environment variables in `.env`
