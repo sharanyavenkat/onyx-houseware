@@ -2,11 +2,47 @@ import { db } from "./client";
 import { sql } from "drizzle-orm";
 
 /**
- * Bootstrap function to create SQLite tables if they don't exist
- * This is needed because drizzle.config.ts is protected and db:push cannot run
+ * Helper function to safely add columns to existing tables
+ * Catches "duplicate column" errors so ALTER TABLE statements can stay in bootstrap forever
+ * 
+ * @param tableName - Name of the table to modify
+ * @param columnDef - Full column definition (e.g., "discount REAL DEFAULT 0")
+ * @param columnName - Name of the column for logging purposes
+ */
+async function addColumnIfNotExists(
+  tableName: string,
+  columnDef: string,
+  columnName: string
+) {
+  try {
+    await db.run(sql.raw(`ALTER TABLE ${tableName} ADD COLUMN ${columnDef}`));
+    console.log(`✅ Added ${columnName} column to ${tableName}`);
+  } catch (error: any) {
+    // Ignore duplicate column errors - column already exists
+    if (!error.message.includes("duplicate column")) {
+      throw error; // Re-throw if it's a different error
+    }
+  }
+}
+
+/**
+ * Bootstrap function to create SQLite tables and apply schema migrations
+ * 
+ * How to use this file:
+ * - CREATE TABLE IF NOT EXISTS: Safe to keep forever, runs on every startup
+ * - ALTER TABLE via addColumnIfNotExists(): Safe to keep forever, only runs once
+ * 
+ * For schema changes:
+ * 1. Development: Run `npm run db:push` to quickly sync schema changes
+ * 2. Production: Add ALTER TABLE statements below using addColumnIfNotExists()
+ * 3. Deploy: Bootstrap runs automatically and applies changes safely
  */
 export async function bootstrapDatabase() {
   try {
+    // ========================================
+    // CREATE TABLES (Safe to keep forever)
+    // ========================================
+
     // Create users table
     await db.run(sql`
       CREATE TABLE IF NOT EXISTS users (
@@ -90,9 +126,22 @@ export async function bootstrapDatabase() {
       )
     `);
 
-    console.log("SQLite database tables initialized successfully");
+    // ========================================
+    // SCHEMA MIGRATIONS (Safe to keep forever)
+    // ========================================
+    // Add new ALTER TABLE statements below using addColumnIfNotExists()
+    // These will run once and then safely ignore duplicate column errors
+    //
+    // Example:
+    // await addColumnIfNotExists(
+    //   "items",
+    //   "discount REAL DEFAULT 0",
+    //   "discount"
+    // );
+
+    console.log("✅ SQLite database tables initialized successfully");
   } catch (error) {
-    console.error("Error bootstrapping database:", error);
+    console.error("❌ Error bootstrapping database:", error);
     throw error;
   }
 }
