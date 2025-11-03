@@ -140,7 +140,7 @@ This application uses **SQLite** with **Drizzle ORM** and a **bootstrap-based mi
 
 ### Two-Stage Workflow: Development → Production
 
-#### **STAGE 1: Development (Local/Replit)**
+#### **STAGE 1: Development (Local)**
 
 **Step 1: Modify Schema**
 
