@@ -104,19 +104,45 @@ node -e "console.log(require('crypto').randomBytes(48).toString('base64'))"
 
 ### Understanding the Database System
 
-This application uses **SQLite** with **Drizzle ORM**. The database schema is defined in `shared/schema.ts`.
-Note: The database path automatically adjusts based on the `DATABASE_URL` value in your `.env` file (local or production).
+This application uses **SQLite** with **Drizzle ORM** and a **bootstrap-based migration approach**.
 
-### Current Database Structure
+**Key Concepts:**
+- **Schema**: Defined in `shared/schema.ts` (TypeScript definitions)
+- **Bootstrap**: Auto-creates tables on startup via `server/db/bootstrap.ts`
+- **Development Tool**: `npm run db:push` syncs schema to database instantly (dev only)
+- **Production Strategy**: Manual schema migrations via bootstrap helper functions
 
-- **Local (Development)**: `server/data/onyx.db`
-- **Production (AWS LightSail)**: `/var/app/data/onyx.db` (persistent across redeploys)
-- **Schema**: `shared/schema.ts` (TypeScript definitions)
-- **Tables**: users, items, customers, orders, order_items, indents, shipments
+### Database File Locations
 
-### Making Schema Changes
+| Environment | Path | Purpose |
+|-------------|------|---------|
+| **Development** | `server/data/onyx.db` | Local development database |
+| **Production** | `/var/app/data/onyx.db` | Persistent across redeploys |
 
-#### Step 1: Modify Schema
+**How it works:**
+- The `DATABASE_URL` environment variable controls which path is used
+- Bootstrap script automatically creates the directory if it doesn't exist
+- Tables auto-create on first run using `CREATE TABLE IF NOT EXISTS`
+
+### Current Database Tables
+
+- `users` - Admin authentication
+- `items` - Product catalog with SKU and pricing
+- `customers` - Customer information
+- `orders` - Order headers with PO numbers
+- `order_items` - Order line items
+- `indents` - Monthly inventory planning
+- `shipments` - Fulfillment tracking with rejections
+
+---
+
+## Making Schema Changes
+
+### Two-Stage Workflow: Development → Production
+
+#### **STAGE 1: Development (Local/Replit)**
+
+**Step 1: Modify Schema**
 
 Edit `shared/schema.ts` to add/modify tables or columns:
 
@@ -129,80 +155,219 @@ export const items = sqliteTable("items", {
   // ... existing fields ...
 
   // NEW FIELD
-  warehouse_location: text("warehouse_location"), // Add new field
+  discount: real("discount").default(0), // Add discount field
 });
 ```
 
-#### Step 2: Update Storage Interface (if needed)
+**Step 2: Sync Schema to Development Database**
 
-If you add new CRUD operations, update `server/storage.ts`:
+**Why use `db:push`?**
+- ✅ Instantly syncs `shared/schema.ts` to your local database
+- ✅ No need to write manual SQL
+- ✅ Perfect for rapid development and testing
+- ✅ Shows you what SQL will be executed
+- ⚠️ Only for development - can't easily run in production
+
+```bash
+# Apply schema changes to development database
+npm run db:push
+```
+
+If you get data-loss warnings (e.g., changing column types):
+
+```bash
+# Backup first!
+cp server/data/onyx.db server/data/onyx.db.backup
+
+# Force push (may delete data)
+npm run db:push -- --force
+```
+
+**What happens:**
+- Drizzle compares your schema to the database
+- Generates SQL to add/modify/remove columns
+- Applies changes instantly
+- ✅ Your local database now matches `shared/schema.ts`
+
+**Step 3: Update Storage Interface (if needed)**
+
+If you added new CRUD operations, update `server/storage.ts`:
 
 ```typescript
 export interface IStorage {
   // Add new methods if needed
-  updateItemLocation(itemId: number, location: string): Promise<Item>;
+  updateItemDiscount(itemId: number, discount: number): Promise<Item>;
 }
 ```
 
-#### Step 3: Apply Schema Changes to Database
-
-**⚠️ IMPORTANT: SQLite Migration Strategy**
-
-This project uses **direct schema push** (not migrations) for SQLite:
+**Step 4: Test Your Changes**
 
 ```bash
-# Push schema changes to database
-npm run db:push
+npm run dev
+# Test the new feature thoroughly
 ```
 
-If you encounter data-loss warnings:
+---
 
-```bash
-# Force push (⚠️ may delete data - backup first!)
-npm run db:push -- --force
-```
+#### **STAGE 2: Production (AWS LightSail)**
 
-**Before Force Push:**
+Once your changes work locally, you need to deploy them to production. **You can't run `npm run db:push` on the production server** - instead, you use the bootstrap approach.
 
-```bash
-# Backup your database
-cp /var/app/data/onyx.db /var/app/data/onyx.db.backup.$(date +%Y%m%d_%H%M%S)
-```
+**For Adding New Tables:**
 
-#### Step 4: Update Bootstrap (for new tables)
-
-If you added **new tables**, update `server/db/bootstrap.ts`:
+Update `server/db/bootstrap.ts` in the "CREATE TABLES" section:
 
 ```typescript
-export async function bootstrapDatabase() {
-  // Add CREATE TABLE statements for new tables
-  await db.run(sql`
-    CREATE TABLE IF NOT EXISTS your_new_table (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      // ... columns ...
-    )
-  `);
-}
+// Add this to the CREATE TABLES section
+await db.run(sql`
+  CREATE TABLE IF NOT EXISTS new_table_name (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  )
+`);
 ```
+
+**Safe to keep forever!** The `IF NOT EXISTS` means it only creates the table once.
+
+**For Modifying Existing Tables (Adding/Removing Columns):**
+
+Use the `addColumnIfNotExists()` helper in the "SCHEMA MIGRATIONS" section:
+
+```typescript
+// In server/db/bootstrap.ts, SCHEMA MIGRATIONS section
+await addColumnIfNotExists(
+  "items",                      // table name
+  "discount REAL DEFAULT 0",    // column definition
+  "discount"                    // column name (for logging)
+);
+```
+
+**Safe to keep forever!** The helper catches duplicate column errors automatically.
+
+**Deploy to Production:**
+
+```bash
+# On your production server
+cd /home/ubuntu/onyx-houseware
+
+# Pull latest code (includes updated bootstrap.ts)
+git pull
+
+# Install dependencies (if any new ones)
+npm install
+
+# Rebuild application
+npm run build
+
+# Restart (bootstrap runs automatically and applies schema changes)
+pm2 restart onyx-houseware
+```
+
+**What happens on restart:**
+- Bootstrap runs on server startup
+- Sees new `addColumnIfNotExists()` call
+- Adds the column to production database
+- Logs: `"✅ Added discount column to items"`
+- Future restarts: Column exists, silently ignores (no error!)
+
+---
+
+### Complete Example: Adding a Discount Feature
+
+**Development workflow:**
+
+```bash
+# 1. Edit shared/schema.ts - add discount field to items table
+# 2. Sync to local database
+npm run db:push
+
+# 3. Edit server/storage.ts - add discount methods
+# 4. Edit server/routes.ts - add discount API endpoints
+# 5. Edit client code - add discount UI
+# 6. Test locally
+npm run dev
+```
+
+**Production workflow:**
+
+```bash
+# 7. Update server/db/bootstrap.ts
+# Add to SCHEMA MIGRATIONS section:
+await addColumnIfNotExists(
+  "items",
+  "discount REAL DEFAULT 0",
+  "discount"
+);
+
+# 8. Commit and push to git
+git add .
+git commit -m "Add discount feature"
+git push
+
+# 9. Deploy to production
+ssh ubuntu@YOUR_SERVER
+cd /home/ubuntu/onyx-houseware
+git pull
+npm install
+npm run build
+pm2 restart onyx-houseware
+
+# ✅ Discount column now exists in production!
+```
+
+---
+
+### Why Two Different Approaches?
+
+| Aspect | Development (`db:push`) | Production (Bootstrap) |
+|--------|------------------------|------------------------|
+| **Speed** | ⚡ Instant | 🔄 On restart |
+| **Safety** | ⚠️ Can lose data | ✅ Safe, controlled |
+| **Automation** | ✅ Automatic SQL generation | 📝 Manual SQL in bootstrap |
+| **Repeatability** | ❌ Can't re-run safely | ✅ Runs on every startup |
+| **Error Handling** | ❌ Fails on duplicate | ✅ Ignores duplicates |
+
+**Summary:**
+- **Development**: Use `db:push` for fast iteration
+- **Production**: Use bootstrap with error handling for safety and repeatability
+
+---
 
 ### Schema Change Best Practices
 
 1. **Always backup before schema changes**
 
    ```bash
-   cp /var/app/data/onyx.db /var/app/data/onyx.db.backup
+   # Development
+   cp server/data/onyx.db server/data/onyx.db.backup
+   
+   # Production
+   cp /var/app/data/onyx.db /var/app/data/onyx.db.backup.$(date +%Y%m%d_%H%M%S)
    ```
 
 2. **Test locally first** before deploying to production
 
+   ```bash
+   # Local testing workflow
+   npm run db:push        # Apply schema change
+   npm run dev            # Test the feature
+   # If it works, then update bootstrap.ts for production
+   ```
+
 3. **For production deployments:**
 
-   - Stop the application
-   - Backup the database
-   - Apply schema changes
-   - Restart the application
+   - Backup the database first
+   - Update `bootstrap.ts` with schema change
+   - Deploy code
+   - Bootstrap runs automatically on restart
+   - Verify in logs: `"✅ Added [column] column to [table]"`
 
 4. **Never change primary key types** (e.g., don't change `integer` to `text`)
+
+5. **Use `addColumnIfNotExists()` for column changes** - it's safe to keep forever
+
+6. **Use `CREATE TABLE IF NOT EXISTS` for new tables** - it's safe to keep forever
 
 ### Database Backup & Restore
 

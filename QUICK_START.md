@@ -125,24 +125,99 @@ sudo certbot --nginx -d yourdomain.com -d www.yourdomain.com
 
 ## Database Schema Changes
 
-### Modify Schema
+### Understanding the System
 
-1. Edit `shared/schema.ts`
-2. Update `server/storage.ts` (if needed)
-3. Update `server/db/bootstrap.ts` (for new tables)
+This app uses **SQLite with Bootstrap + Drizzle ORM**:
+- **Schema**: `shared/schema.ts` (TypeScript definitions)
+- **Bootstrap**: `server/db/bootstrap.ts` (auto-creates tables on startup)
+- **Database Paths**:
+  - Development: `server/data/onyx.db`
+  - Production: `/var/app/data/onyx.db` (persistent across redeploys)
 
-### Apply Changes
+### Development Workflow (Fast Iteration)
+
+**1. Modify Schema**
+
+Edit `shared/schema.ts`:
+
+```typescript
+export const items = sqliteTable("items", {
+  // ... existing fields ...
+  discount: real("discount").default(0), // NEW!
+});
+```
+
+**2. Sync to Database**
+
+**Why `db:push`?**
+- ✅ Instantly applies schema changes to your local database
+- ✅ No manual SQL needed
+- ✅ Perfect for development
+- ⚠️ Use only in development, not production
 
 ```bash
-# Always backup first!
-cp /var/app/data/onyx.db /var/app/data/onyx.db.backup.$(date +%Y%m%d_%H%M%S)
+# Backup first!
+cp server/data/onyx.db server/data/onyx.db.backup
 
-# Push schema changes
+# Apply schema changes
 npm run db:push
 
 # If you get warnings about data loss:
 npm run db:push -- --force
 ```
+
+**3. Update Code & Test**
+
+```bash
+# Update server/storage.ts and routes if needed
+npm run dev
+# Test your changes
+```
+
+### Production Workflow (Safe & Repeatable)
+
+**For New Tables:** Add to `server/db/bootstrap.ts` CREATE TABLES section:
+
+```typescript
+await db.run(sql`
+  CREATE TABLE IF NOT EXISTS new_table (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL
+  )
+`);
+```
+
+**For Column Changes:** Add to `server/db/bootstrap.ts` SCHEMA MIGRATIONS section:
+
+```typescript
+await addColumnIfNotExists(
+  "items",                      // table
+  "discount REAL DEFAULT 0",    // column definition
+  "discount"                    // name (for logging)
+);
+```
+
+**Deploy:**
+
+```bash
+# On production server
+cd /home/ubuntu/onyx-houseware
+git pull
+npm install
+npm run build
+pm2 restart onyx-houseware
+
+# Bootstrap runs automatically and applies schema changes!
+```
+
+### Quick Comparison
+
+| | Development | Production |
+|---|---|---|
+| **Tool** | `npm run db:push` | Bootstrap helpers |
+| **Speed** | ⚡ Instant | 🔄 On restart |
+| **Safe to re-run?** | ❌ No | ✅ Yes (forever!) |
+| **When to use** | Local testing | Deployments |
 
 ---
 
