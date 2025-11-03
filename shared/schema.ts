@@ -1,9 +1,11 @@
-import { sqliteTable, text, integer, real } from "drizzle-orm/sqlite-core";
+import { integer, real, sqliteTable, text } from "drizzle-orm/sqlite-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
 export const users = sqliteTable("users", {
-  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  id: text("id")
+    .primaryKey()
+    .$defaultFn(() => crypto.randomUUID()),
   username: text("username").notNull().unique(),
   password: text("password").notNull(),
 });
@@ -24,7 +26,7 @@ export const items = sqliteTable("items", {
   size_specification: text("size_specification").notNull(),
   price: real("price").notNull(),
   safety_stock: integer("safety_stock").notNull().default(0),
-  is_active: integer("is_active", { mode: 'boolean' }).notNull().default(true),
+  is_active: integer("is_active", { mode: "boolean" }).notNull().default(true),
 });
 
 export const insertItemSchema = createInsertSchema(items).omit({
@@ -53,7 +55,9 @@ export type Customer = typeof customers.$inferSelect;
 export const orders = sqliteTable("orders", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   po_number: text("po_number").notNull().unique(),
-  customer_id: integer("customer_id").notNull().references(() => customers.id),
+  customer_id: integer("customer_id")
+    .notNull()
+    .references(() => customers.id),
   order_date: text("order_date").notNull(),
   fulfillment_date: text("fulfillment_date"),
   status: text("status").notNull().default("draft"),
@@ -68,8 +72,12 @@ export type Order = typeof orders.$inferSelect;
 
 export const orderItems = sqliteTable("order_items", {
   id: integer("id").primaryKey({ autoIncrement: true }),
-  order_id: integer("order_id").notNull().references(() => orders.id, { onDelete: 'cascade' }),
-  item_id: integer("item_id").notNull().references(() => items.id),
+  order_id: integer("order_id")
+    .notNull()
+    .references(() => orders.id, { onDelete: "cascade" }),
+  item_id: integer("item_id")
+    .notNull()
+    .references(() => items.id),
   quantity: integer("quantity").notNull(),
 });
 
@@ -82,7 +90,9 @@ export type OrderItem = typeof orderItems.$inferSelect;
 
 export const indents = sqliteTable("indents", {
   id: integer("id").primaryKey({ autoIncrement: true }),
-  item_id: integer("item_id").notNull().references(() => items.id),
+  item_id: integer("item_id")
+    .notNull()
+    .references(() => items.id),
   month: text("month").notNull(),
   opening_balance: integer("opening_balance").notNull().default(0),
   expected_receipts: integer("expected_receipts").notNull().default(0),
@@ -97,8 +107,12 @@ export type Indent = typeof indents.$inferSelect;
 
 export const shipments = sqliteTable("shipments", {
   id: integer("id").primaryKey({ autoIncrement: true }),
-  order_id: integer("order_id").notNull().references(() => orders.id, { onDelete: 'cascade' }),
-  order_item_id: integer("order_item_id").notNull().references(() => orderItems.id, { onDelete: 'cascade' }),
+  order_id: integer("order_id")
+    .notNull()
+    .references(() => orders.id, { onDelete: "cascade" }),
+  order_item_id: integer("order_item_id")
+    .notNull()
+    .references(() => orderItems.id, { onDelete: "cascade" }),
   lot_number: text("lot_number"),
   quantity_shipped: integer("quantity_shipped").notNull(),
   rejections_blowholes: integer("rejections_blowholes").notNull().default(0),

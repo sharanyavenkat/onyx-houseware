@@ -1,16 +1,14 @@
+import * as schema from "@shared/schema";
 import Database from "better-sqlite3";
 import { drizzle } from "drizzle-orm/better-sqlite3";
-import * as schema from "@shared/schema";
-import path from "path";
-import { fileURLToPath } from "url";
 import fs from "fs";
-
-// Get the directory name in ES modules
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+import path from "path";
 
 // Database file path
-const dbPath = path.join(__dirname, "../data/onyx.db");
+const raw = process.env.DATABASE_URL || "server/data/onyx.db";
+const dbPath = path.isAbsolute(raw) ? raw : path.resolve(raw);
+
+console.log("✅ Using SQLite DB at:", dbPath);
 
 // Ensure the data directory exists
 const dataDir = path.dirname(dbPath);
