@@ -323,14 +323,15 @@ pm2 restart onyx-houseware
 | Aspect | Development (`db:push`) | Production (Bootstrap) |
 |--------|------------------------|------------------------|
 | **Speed** | ⚡ Instant | 🔄 On restart |
-| **Safety** | ⚠️ Can lose data | ✅ Safe, controlled |
-| **Automation** | ✅ Automatic SQL generation | 📝 Manual SQL in bootstrap |
-| **Repeatability** | ❌ Can't re-run safely | ✅ Runs on every startup |
-| **Error Handling** | ❌ Fails on duplicate | ✅ Ignores duplicates |
+| **Execution** | 🖐️ Manual command | 🤖 Automatic on startup |
+| **SQL Generation** | ✅ Auto-generates SQL | 📝 You write SQL manually |
+| **Automation** | ❌ Can't add to startup script | ✅ Built into server startup |
+| **Error Handling** | ⚠️ Requires manual confirmation | ✅ Handles errors gracefully |
+| **Production Ready** | ❌ Hard to run on server | ✅ Designed for production |
 
 **Summary:**
-- **Development**: Use `db:push` for fast iteration
-- **Production**: Use bootstrap with error handling for safety and repeatability
+- **Development**: Use `db:push` for fast iteration and testing (manual, interactive)
+- **Production**: Use bootstrap for automated, zero-touch deployments (runs on every startup)
 
 ---
 

@@ -216,8 +216,8 @@ pm2 restart onyx-houseware
 |---|---|---|
 | **Tool** | `npm run db:push` | Bootstrap helpers |
 | **Speed** | ⚡ Instant | 🔄 On restart |
-| **Safe to re-run?** | ❌ No | ✅ Yes (forever!) |
-| **When to use** | Local testing | Deployments |
+| **Execution** | 🖐️ Manual command | 🤖 Automatic on startup |
+| **Best for** | Fast local testing | Automated deployments |
 
 ---
 
