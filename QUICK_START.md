@@ -283,7 +283,7 @@ pm2 logs onyx-houseware --lines 100
 # Check firewall in AWS LightSail console
 # Ensure ports 80, 443 are open
 sudo systemctl status nginx
-curl http://localhost:5000
+curl http://localhost:5001
 ```
 
 **Database issues:**

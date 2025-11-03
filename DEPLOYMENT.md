@@ -78,7 +78,7 @@ ADMIN_PASSWORD=YourSecurePassword123!
 SESSION_SECRET=your-very-long-random-secret-key-here-min-32-chars
 
 # Application Configuration
-PORT=5000
+PORT=5001
 NODE_ENV=production
 ```
 
@@ -403,7 +403,7 @@ npm run dev
 
 - Frontend: Auto-reloads on changes
 - Backend: Auto-restarts on changes
-- Access: http://localhost:5000
+- Access: http://localhost:5001
 - Login with credentials from `.env`
 
 ### Production Build & Run
@@ -418,7 +418,7 @@ npm start
 
 ### Verify Everything Works
 
-1. Open browser to http://localhost:5000
+1. Open browser to http://localhost:5001
 2. Login with your admin credentials
 3. Test key features:
    - Dashboard loads with stats
@@ -466,7 +466,7 @@ In **Networking** tab, add these rules:
 - **SSH**: Port 22 (already enabled)
 - **HTTP**: Port 80
 - **HTTPS**: Port 443
-- **Custom**: Port 5000 (for initial testing, remove later)
+- **Custom**: Port 5001 (for initial testing, remove later)
 
 ### Step 4: Connect via SSH
 
@@ -550,7 +550,7 @@ Paste your production configuration:
 ADMIN_USERNAME=admin
 ADMIN_PASSWORD=YourSecureProductionPassword
 SESSION_SECRET=your-very-long-random-secret-from-step-2
-PORT=5000
+PORT=5001
 NODE_ENV=production
 ```
 
@@ -569,7 +569,7 @@ npm run build
 npm start
 ```
 
-Visit `http://YOUR_STATIC_IP:5000` to verify it works. Press `Ctrl+C` to stop.
+Visit `http://YOUR_STATIC_IP:5001` to verify it works. Press `Ctrl+C` to stop.
 
 ### Step 9: Setup Process Manager (PM2)
 
@@ -597,7 +597,7 @@ pm2 stop onyx-houseware     # Stop app
 
 ### Step 10: Setup Nginx Reverse Proxy
 
-Nginx forwards web traffic (port 80/443) to your Node.js app (port 5000):
+Nginx forwards web traffic (port 80/443) to your Node.js app (port 5001):
 
 ```bash
 # Install Nginx
@@ -618,7 +618,7 @@ server {
     client_max_body_size 10M;
 
     location / {
-        proxy_pass http://localhost:5000;
+        proxy_pass http://localhost:5001;
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection 'upgrade';
@@ -852,7 +852,7 @@ If you need persistent sessions, consider Redis or PostgreSQL session store.
 - [ ] Generated strong SESSION_SECRET
 - [ ] Enabled HTTPS with Let's Encrypt
 - [ ] Configured firewall (only ports 80, 443, 22)
-- [ ] Removed port 5000 from public access (if using Nginx)
+- [ ] Removed port 5001 from public access (if using Nginx)
 - [ ] Setup automated database backups
 - [ ] Updated session cookie to `secure: true`
 - [ ] Keep Node.js and packages updated
@@ -956,7 +956,7 @@ sudo systemctl status nginx
 # Check firewall rules in LightSail console
 
 # Test direct access to Node.js
-curl http://localhost:5000
+curl http://localhost:5001
 ```
 
 ### Database errors
