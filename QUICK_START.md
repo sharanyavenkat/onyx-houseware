@@ -3,6 +3,7 @@
 ## For Local Development
 
 ### 1. Initial Setup
+
 ```bash
 # Clone or download the project
 cd onyx-houseware
@@ -17,18 +18,21 @@ cp .env.example .env
 # ADMIN_USERNAME=admin
 # ADMIN_PASSWORD=your_password
 # SESSION_SECRET=your_secret_key
+# DATABASE_URL=server/data/onyx.db
 ```
 
 ### 2. Run Locally
+
 ```bash
 # Development mode (with hot reload)
 npm run dev
 
-# Access at http://localhost:5000
+# Access at http://localhost:5001
 # Login with credentials from .env
 ```
 
 ### 3. Production Build
+
 ```bash
 # Build the application
 npm run build
@@ -42,14 +46,16 @@ npm start
 ## For AWS LightSail Deployment
 
 ### Prerequisites
+
 - AWS Account
 - Ubuntu 24.04 LTS instance ($5/month minimum)
 - Static IP attached
-- Domain name (optional)
+- Domain name
 
 ### Quick Deployment Steps
 
 **1. On your server:**
+
 ```bash
 # Install Node.js 20.x
 curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
@@ -61,17 +67,27 @@ npm install
 ```
 
 **2. Configure environment:**
+
 ```bash
 nano .env
 # Add:
 # ADMIN_USERNAME=admin
 # ADMIN_PASSWORD=YourSecurePassword
 # SESSION_SECRET=your-long-random-secret
-# PORT=5000
+# PORT=5001
 # NODE_ENV=production
+# DATABASE_URL=/var/app/data/onyx.db
 ```
 
-**3. Build and run:**
+**3. Ensure persistent DB directory:**
+
+```bash
+sudo mkdir -p /var/app/data
+sudo chown ubuntu:ubuntu /var/app/data
+```
+
+**4. Build and run:**
+
 ```bash
 npm run build
 
@@ -82,7 +98,8 @@ pm2 startup systemd
 pm2 save
 ```
 
-**4. Setup Nginx:**
+**5. Setup Nginx:**
+
 ```bash
 sudo apt install nginx -y
 
@@ -96,6 +113,7 @@ sudo systemctl restart nginx
 ```
 
 **5. Setup SSL (if you have a domain):**
+
 ```bash
 sudo apt install certbot python3-certbot-nginx -y
 sudo certbot --nginx -d yourdomain.com -d www.yourdomain.com
@@ -108,14 +126,16 @@ sudo certbot --nginx -d yourdomain.com -d www.yourdomain.com
 ## Database Schema Changes
 
 ### Modify Schema
+
 1. Edit `shared/schema.ts`
 2. Update `server/storage.ts` (if needed)
 3. Update `server/db/bootstrap.ts` (for new tables)
 
 ### Apply Changes
+
 ```bash
 # Always backup first!
-cp server/data/onyx.db server/data/onyx.db.backup
+cp /var/app/data/onyx.db /var/app/data/onyx.db.backup.$(date +%Y%m%d_%H%M%S)
 
 # Push schema changes
 npm run db:push
@@ -143,10 +163,18 @@ pm2 monit                   # Monitor resources
 
 ```bash
 # Manual backup
-cp server/data/onyx.db backups/onyx-$(date +%Y%m%d).db
+cp /var/app/data/onyx.db /home/ubuntu/backups/onyx-$(date +%Y%m%d).db
+
+# Or dump as SQL
+sqlite3 /var/app/data/onyx.db .dump > /home/ubuntu/backups/onyx-$(date +%Y%m%d).sql
 
 # Restore backup
-cp backups/onyx-20250116.db server/data/onyx.db
+# From .db file
+cp /home/ubuntu/backups/onyx-20250116.db /var/app/data/onyx.db
+
+# From .sql dump
+sqlite3 /var/app/data/onyx.db < /home/ubuntu/backups/onyx-20250116.sql
+
 pm2 restart onyx-houseware
 ```
 
@@ -168,12 +196,14 @@ pm2 restart onyx-houseware
 ## Troubleshooting
 
 **App won't start:**
+
 ```bash
 pm2 logs onyx-houseware --lines 100
 # Check for errors in .env or missing dependencies
 ```
 
 **Can't access via browser:**
+
 ```bash
 # Check firewall in AWS LightSail console
 # Ensure ports 80, 443 are open
@@ -182,19 +212,22 @@ curl http://localhost:5000
 ```
 
 **Database issues:**
+
 ```bash
-ls -l server/data/onyx.db  # Check permissions
-df -h                       # Check disk space
+ls -l /var/app/data/onyx.db  # Check permissions
+df -h                        # Check disk space
 ```
 
 ---
 
 ## Full Documentation
+
 See [DEPLOYMENT.md](./DEPLOYMENT.md) for complete deployment guide with detailed explanations.
 
 ---
 
 **Need Help?**
+
 - Check `pm2 logs onyx-houseware`
 - Review `/var/log/nginx/error.log`
 - Verify `.env` configuration

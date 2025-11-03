@@ -105,10 +105,12 @@ node -e "console.log(require('crypto').randomBytes(48).toString('base64'))"
 ### Understanding the Database System
 
 This application uses **SQLite** with **Drizzle ORM**. The database schema is defined in `shared/schema.ts`.
+Note: The database path automatically adjusts based on the `DATABASE_URL` value in your `.env` file (local or production).
 
 ### Current Database Structure
 
-- **Location**: `server/data/onyx.db` (auto-created on first run)
+- **Local (Development)**: `server/data/onyx.db`
+- **Production (AWS LightSail)**: `/var/app/data/onyx.db` (persistent across redeploys)
 - **Schema**: `shared/schema.ts` (TypeScript definitions)
 - **Tables**: users, items, customers, orders, order_items, indents, shipments
 
@@ -164,7 +166,7 @@ npm run db:push -- --force
 
 ```bash
 # Backup your database
-cp server/data/onyx.db server/data/onyx.db.backup.$(date +%Y%m%d_%H%M%S)
+cp /var/app/data/onyx.db /var/app/data/onyx.db.backup.$(date +%Y%m%d_%H%M%S)
 ```
 
 #### Step 4: Update Bootstrap (for new tables)
@@ -188,7 +190,7 @@ export async function bootstrapDatabase() {
 1. **Always backup before schema changes**
 
    ```bash
-   cp server/data/onyx.db server/data/onyx.db.backup
+   cp /var/app/data/onyx.db /var/app/data/onyx.db.backup
    ```
 
 2. **Test locally first** before deploying to production
@@ -208,20 +210,20 @@ export async function bootstrapDatabase() {
 
 ```bash
 # Manual backup
-cp server/data/onyx.db backups/onyx-$(date +%Y%m%d).db
+cp /var/app/data/onyx.db backups/onyx-$(date +%Y%m%d).db
 
 # Or use SQLite dump
-sqlite3 server/data/onyx.db .dump > backups/onyx-$(date +%Y%m%d).sql
+sqlite3 /var/app/data/onyx.db .dump > backups/onyx-$(date +%Y%m%d).sql
 ```
 
 #### Restore
 
 ```bash
 # From .db file
-cp backups/onyx-20250116.db server/data/onyx.db
+cp backups/onyx-20250116.db /var/app/data/onyx.db
 
 # From .sql dump
-sqlite3 server/data/onyx.db < backups/onyx-20250116.sql
+sqlite3 /var/app/data/onyx.db < backups/onyx-20250116.sql
 ```
 
 ---
@@ -564,6 +566,8 @@ Create a backup script:
 ```bash
 # Create backup directory
 mkdir -p /home/ubuntu/backups
+# Note: Database file itself is stored in /var/app/data
+# Backups are stored separately in /home/ubuntu/backups
 
 # Create backup script
 nano /home/ubuntu/backup-db.sh
@@ -574,7 +578,7 @@ Paste:
 ```bash
 #!/bin/bash
 BACKUP_DIR="/home/ubuntu/backups"
-DB_PATH="/home/ubuntu/onyx-houseware/server/data/onyx.db"
+DB_PATH="/var/app/data/onyx.db"
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 BACKUP_FILE="$BACKUP_DIR/onyx_$TIMESTAMP.db"
 
@@ -661,8 +665,8 @@ pm2 restart onyx-houseware
 2. **WAL mode enabled** (already configured in code)
 3. **File permissions**: Ensure proper permissions on `server/data/onyx.db`
    ```bash
-   chmod 664 server/data/onyx.db
-   chown ubuntu:ubuntu server/data/onyx.db
+   chmod 664 /var/app/data/onyx.db
+   chown ubuntu:ubuntu /var/app/data/onyx.db
    ```
 
 ### Session Storage
