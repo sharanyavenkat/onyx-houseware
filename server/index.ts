@@ -1,12 +1,21 @@
 import dotenv from "dotenv";
 import express, { NextFunction, type Request, Response } from "express";
 import session from "express-session";
+import path from "path";
+import { fileURLToPath } from "url";
 import { initializeAdmin } from "./auth";
 import { bootstrapDatabase } from "./db/bootstrap";
 import { registerRoutes } from "./routes";
 import { log, serveStatic, setupVite } from "./vite";
 
-dotenv.config();
+// Load .env from project root (handles both dev and production)
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const envPath = process.env.NODE_ENV === "production" 
+  ? path.resolve(__dirname, "../.env")  // In production, dist/index.js -> project root
+  : path.resolve(__dirname, "../.env"); // In dev, server/index.ts -> project root
+
+dotenv.config({ path: envPath });
 
 const app = express();
 app.use(express.json());

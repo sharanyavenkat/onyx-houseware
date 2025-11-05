@@ -8,6 +8,13 @@ import path from "path";
 const raw = process.env.DATABASE_URL || "server/data/onyx.db";
 const dbPath = path.isAbsolute(raw) ? raw : path.resolve(raw);
 
+// Debug logging to troubleshoot DATABASE_URL issues
+console.log("=== Database Configuration ===");
+console.log("DATABASE_URL env var:", process.env.DATABASE_URL || "(not set)");
+console.log("Raw path:", raw);
+console.log("Resolved dbPath:", dbPath);
+console.log("==============================");
+
 // Ensure the data directory exists
 const dataDir = path.dirname(dbPath);
 if (!fs.existsSync(dataDir)) {
