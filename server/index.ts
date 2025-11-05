@@ -11,9 +11,10 @@ import { log, serveStatic, setupVite } from "./vite";
 // Load .env from project root (handles both dev and production)
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const envPath = process.env.NODE_ENV === "production" 
-  ? path.resolve(__dirname, "../.env")  // In production, dist/index.js -> project root
-  : path.resolve(__dirname, "../.env"); // In dev, server/index.ts -> project root
+const envPath =
+  process.env.NODE_ENV === "production"
+    ? path.resolve(__dirname, "../.env") // In production, dist/index.js -> project root
+    : path.resolve(__dirname, "../.env"); // In dev, server/index.ts -> project root
 
 console.log("=== ENV Loading Debug ===");
 console.log("__dirname:", __dirname);
@@ -22,10 +23,13 @@ console.log("NODE_ENV:", process.env.NODE_ENV);
 
 const result = dotenv.config({ path: envPath });
 if (result.error) {
-  console.error("❌ Failed to load .env:", result.error.message);
+  console.error("Failed to load .env:", result.error.message);
 } else {
-  console.log("✅ .env loaded successfully from:", envPath);
-  console.log("DATABASE_URL after load:", process.env.DATABASE_URL || "(still not set)");
+  console.log(".env loaded successfully from:", envPath);
+  console.log(
+    "DATABASE_URL after load:",
+    process.env.DATABASE_URL || "(still not set)"
+  );
 }
 console.log("========================");
 
@@ -46,8 +50,10 @@ app.use(
     saveUninitialized: false,
     cookie: {
       httpOnly: true,
+      sameSite: "none", // allow cookies over HTTPS
       secure: process.env.NODE_ENV === "production",
       maxAge: 24 * 60 * 60 * 1000, // 24 hours
+      domain: ".onyx-houseware.in",
     },
   })
 );
