@@ -16,24 +16,11 @@ const envPath = process.env.NODE_ENV === "production"
   ? path.resolve(__dirname, "../.env")     // Production: dist/index.js -> ../.env
   : path.resolve(__dirname, "../../.env"); // Dev: server/db/client.ts -> ../../.env
 
-console.log("🔍 Loading .env from:", envPath);
-const envResult = dotenv.config({ path: envPath });
-if (envResult.error) {
-  console.error("❌ Error loading .env:", envResult.error.message);
-} else {
-  console.log("✅ .env loaded, DATABASE_URL:", process.env.DATABASE_URL || "(not found in .env)");
-}
+dotenv.config({ path: envPath });
 
 // Database file path
 const raw = process.env.DATABASE_URL || "server/data/onyx.db";
 const dbPath = path.isAbsolute(raw) ? raw : path.resolve(raw);
-
-// Debug logging to troubleshoot DATABASE_URL issues
-console.log("=== Database Configuration ===");
-console.log("DATABASE_URL env var:", process.env.DATABASE_URL || "(not set)");
-console.log("Raw path:", raw);
-console.log("Resolved dbPath:", dbPath);
-console.log("==============================");
 
 // Ensure the data directory exists
 const dataDir = path.dirname(dbPath);

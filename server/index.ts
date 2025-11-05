@@ -16,22 +16,7 @@ const envPath =
     ? path.resolve(__dirname, "../.env") // In production, dist/index.js -> project root
     : path.resolve(__dirname, "../.env"); // In dev, server/index.ts -> project root
 
-console.log("=== ENV Loading Debug ===");
-console.log("__dirname:", __dirname);
-console.log("envPath:", envPath);
-console.log("NODE_ENV:", process.env.NODE_ENV);
-
-const result = dotenv.config({ path: envPath });
-if (result.error) {
-  console.error("Failed to load .env:", result.error.message);
-} else {
-  console.log(".env loaded successfully from:", envPath);
-  console.log(
-    "DATABASE_URL after load:",
-    process.env.DATABASE_URL || "(still not set)"
-  );
-}
-console.log("========================");
+dotenv.config({ path: envPath });
 
 const app = express();
 app.use(express.json());
