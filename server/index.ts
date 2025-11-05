@@ -50,10 +50,11 @@ app.use(
     saveUninitialized: false,
     cookie: {
       httpOnly: true,
-      sameSite: "none", // allow cookies over HTTPS
-      secure: process.env.NODE_ENV === "production",
+      secure: process.env.NODE_ENV === "production", // Require HTTPS in production
+      sameSite: "lax", // Allow same-site navigation
       maxAge: 24 * 60 * 60 * 1000, // 24 hours
-      domain: ".onyx-houseware.in",
+      path: "/", // Cookie available for all paths
+      domain: undefined, // Don't set domain - let browser handle it
     },
   })
 );
