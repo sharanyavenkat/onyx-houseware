@@ -1,8 +1,19 @@
 import * as schema from "@shared/schema";
 import Database from "better-sqlite3";
 import { drizzle } from "drizzle-orm/better-sqlite3";
+import dotenv from "dotenv";
 import fs from "fs";
 import path from "path";
+import { fileURLToPath } from "url";
+
+// Load .env BEFORE reading DATABASE_URL
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const envPath = process.env.NODE_ENV === "production" 
+  ? path.resolve(__dirname, "../../.env")  // In production: dist/db/client.js -> project root
+  : path.resolve(__dirname, "../../.env"); // In dev: server/db/client.ts -> project root
+
+dotenv.config({ path: envPath });
 
 // Database file path
 const raw = process.env.DATABASE_URL || "server/data/onyx.db";
