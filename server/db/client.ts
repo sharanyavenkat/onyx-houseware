@@ -8,8 +8,6 @@ import path from "path";
 const raw = process.env.DATABASE_URL || "server/data/onyx.db";
 const dbPath = path.isAbsolute(raw) ? raw : path.resolve(raw);
 
-console.log("✅ Using SQLite DB at:", dbPath);
-
 // Ensure the data directory exists
 const dataDir = path.dirname(dbPath);
 if (!fs.existsSync(dataDir)) {
