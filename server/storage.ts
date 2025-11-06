@@ -181,13 +181,15 @@ export class DbStorage implements IStorage {
       // Update existing indent
       console.log('[Storage] Updating with values:', {
         opening_balance: insertIndent.opening_balance,
-        expected_receipts: insertIndent.expected_receipts
+        expected_receipts: insertIndent.expected_receipts,
+        current_safety_stock: insertIndent.current_safety_stock
       });
       
       const [updated] = await db.update(indents)
         .set({
           opening_balance: insertIndent.opening_balance,
-          expected_receipts: insertIndent.expected_receipts
+          expected_receipts: insertIndent.expected_receipts,
+          current_safety_stock: insertIndent.current_safety_stock
         })
         .where(eq(indents.id, existing.id))
         .returning();

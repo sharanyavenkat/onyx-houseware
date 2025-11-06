@@ -72,6 +72,12 @@ export default function ShipmentTracking({
       queryClient.invalidateQueries({
         queryKey: ["/api/shipments/order-item", orderItemId],
       });
+      queryClient.invalidateQueries({
+        queryKey: ["/api/orders", orderId],
+      });
+      queryClient.invalidateQueries({
+        queryKey: ["/api/shipments", "order", orderId],
+      });
       toast({ title: "Shipment recorded successfully" });
       resetForm();
       setIsFormOpen(false);
@@ -92,6 +98,12 @@ export default function ShipmentTracking({
     onSuccess: () => {
       queryClient.invalidateQueries({
         queryKey: ["/api/shipments/order-item", orderItemId],
+      });
+      queryClient.invalidateQueries({
+        queryKey: ["/api/orders", orderId],
+      });
+      queryClient.invalidateQueries({
+        queryKey: ["/api/shipments", "order", orderId],
       });
       toast({ title: "Shipment updated successfully" });
       resetForm();
@@ -114,6 +126,12 @@ export default function ShipmentTracking({
     onSuccess: () => {
       queryClient.invalidateQueries({
         queryKey: ["/api/shipments/order-item", orderItemId],
+      });
+      queryClient.invalidateQueries({
+        queryKey: ["/api/orders", orderId],
+      });
+      queryClient.invalidateQueries({
+        queryKey: ["/api/shipments", "order", orderId],
       });
       toast({ title: "Shipment deleted successfully" });
     },
