@@ -89,7 +89,7 @@ export default function Dashboard() {
 
   // Calculate top items by pending quantity using REAL indent data
   const topItemsByPendingQty = useMemo(() => {
-    const itemPendingQtyMap = new Map<number, { name: string; pendingQty: number; safetyStock: number }>();
+    const itemPendingQtyMap = new Map<number, { name: string; pendingQty: number; desiredSafetyStock: number }>();
     
     // Aggregate pending quantities from ALL orders (not filtered by month - we want all pending orders)
     orders
@@ -108,7 +108,7 @@ export default function Dashboard() {
               itemPendingQtyMap.set(itemId, {
                 name: item.name,
                 pendingQty: lineItem.quantity,
-                safetyStock: item.safety_stock || 0
+                desiredSafetyStock: item.desired_safety_stock || 0
               });
             }
           }
@@ -125,19 +125,21 @@ export default function Dashboard() {
         const indent = indents.find(i => i.item_id === item.id);
         const openingBalance = indent?.opening_balance ?? 0;
         const expectedReceipts = indent?.expected_receipts ?? 0;
+        const currentSafetyStock = indent?.current_safety_stock ?? 0;
         
-        // Calculate using REAL numbers from indent
+        // Calculate using REAL numbers from indent with two-tier safety stock
         const metrics = calculateInventoryMetrics(
           openingBalance,
           expectedReceipts,
           itemData.pendingQty,
-          itemData.safetyStock
+          currentSafetyStock,
+          itemData.desiredSafetyStock
         );
         
         return {
           name: itemData.name,
           pendingQty: itemData.pendingQty,
-          workingStock: metrics.workingStock + metrics.safetyStock, // Total available
+          workingStock: metrics.usableStock, // Total available (working stock + current safety stock)
           shortfall: metrics.shortfallToFulfill, // Only what's needed to fulfill orders
           status: metrics.safetyStockStatus === 'critical' ? 'Critical' 
                 : metrics.safetyStockStatus === 'low' ? 'Low' 
