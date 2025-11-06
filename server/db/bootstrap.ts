@@ -19,9 +19,18 @@ async function addColumnIfNotExists(
     console.log(`✅ Added ${columnName} column to ${tableName}`);
   } catch (error: any) {
     // Ignore duplicate column errors - column already exists
-    if (!error.message.includes("duplicate column")) {
-      throw error; // Re-throw if it's a different error
+    const errorMessage = error?.message?.toLowerCase() || '';
+    const causeMessage = error?.cause?.message?.toLowerCase() || '';
+    
+    if (errorMessage.includes("duplicate column") || 
+        causeMessage.includes("duplicate column") ||
+        error?.cause?.code === 'SQLITE_ERROR') {
+      // Column already exists, silently continue
+      return;
     }
+    
+    // Re-throw if it's a different error
+    throw error;
   }
 }
 
