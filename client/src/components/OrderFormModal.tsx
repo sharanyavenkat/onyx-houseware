@@ -1,12 +1,23 @@
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Textarea } from '@/components/ui/textarea';
-import { Plus, X } from 'lucide-react';
-import { useState, useEffect } from 'react';
-import type { Item } from '@shared/schema';
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
+import type { Item } from "@shared/schema";
+import { Plus, X } from "lucide-react";
+import { useEffect, useState } from "react";
 
 interface OrderFormModalProps {
   isOpen: boolean;
@@ -34,34 +45,37 @@ export default function OrderFormModal({
   initialData = {},
   submitLabel,
   customers,
-  items = []
+  items = [],
 }: OrderFormModalProps) {
-  const [poNumber, setPoNumber] = useState('');
-  const [customerId, setCustomerId] = useState('');
-  const [orderDate, setOrderDate] = useState('');
-  const [fulfillmentDate, setFulfillmentDate] = useState('');
-  const [status, setStatus] = useState('');
-  const [notes, setNotes] = useState('');
+  const [poNumber, setPoNumber] = useState("");
+  const [customerId, setCustomerId] = useState("");
+  const [orderDate, setOrderDate] = useState("");
+  const [fulfillmentDate, setFulfillmentDate] = useState("");
+  const [status, setStatus] = useState("");
+  const [notes, setNotes] = useState("");
   const [lineItems, setLineItems] = useState<LineItem[]>([]);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
-  const activeItems = items.filter(item => item.is_active);
+  const activeItems = items.filter((item) => item.is_active);
 
   useEffect(() => {
     if (isOpen) {
-      setPoNumber(initialData.po_number || '');
-      setCustomerId(initialData.customer_id || '');
-      setOrderDate(initialData.order_date || '');
-      setFulfillmentDate(initialData.fulfillment_date || '');
-      setStatus(initialData.status || '');
-      setNotes(initialData.notes || '');
+      setPoNumber(initialData.po_number || "");
+      setCustomerId(initialData.customer_id || "");
+      setOrderDate(initialData.order_date || "");
+      setFulfillmentDate(initialData.fulfillment_date || "");
+      setStatus(initialData.status || "");
+      setNotes(initialData.notes || "");
       setLineItems(initialData.line_items || []);
       setErrors({});
     }
   }, [isOpen, initialData]);
 
   const addLineItem = () => {
-    setLineItems([...lineItems, { item_id: 0, item_name: '', sku: '', quantity: 1 }]);
+    setLineItems([
+      ...lineItems,
+      { item_id: 0, item_name: "", sku: "", quantity: 1 },
+    ]);
   };
 
   const removeLineItem = (index: number) => {
@@ -70,17 +84,19 @@ export default function OrderFormModal({
 
   const updateLineItem = (index: number, field: string, value: any) => {
     const newLineItems = [...lineItems];
-    if (field === 'item_id') {
-      const selectedItem = activeItems.find(item => item.id === parseInt(value));
+    if (field === "item_id") {
+      const selectedItem = activeItems.find(
+        (item) => item.id === parseInt(value)
+      );
       if (selectedItem) {
         newLineItems[index] = {
           item_id: selectedItem.id,
           item_name: selectedItem.name,
           sku: selectedItem.sku,
-          quantity: newLineItems[index].quantity
+          quantity: newLineItems[index].quantity,
         };
       }
-    } else if (field === 'quantity') {
+    } else if (field === "quantity") {
       newLineItems[index][field] = parseInt(value) || 0;
     }
     setLineItems(newLineItems);
@@ -90,30 +106,32 @@ export default function OrderFormModal({
     const newErrors: Record<string, string> = {};
 
     if (!poNumber.trim()) {
-      newErrors.po_number = 'PO Number is required';
+      newErrors.po_number = "PO Number is required";
     }
     if (!customerId) {
-      newErrors.customer_id = 'Customer is required';
+      newErrors.customer_id = "Customer is required";
     }
     if (!status) {
-      newErrors.status = 'Status is required';
+      newErrors.status = "Status is required";
     }
     if (lineItems.length === 0) {
-      newErrors.line_items = 'At least one item is required';
+      newErrors.line_items = "At least one item is required";
     }
 
-    const itemIds = lineItems.map(li => li.item_id).filter(id => id > 0);
+    const itemIds = lineItems.map((li) => li.item_id).filter((id) => id > 0);
     const uniqueItemIds = new Set(itemIds);
     if (itemIds.length !== uniqueItemIds.size) {
-      newErrors.line_items_duplicate = 'Cannot add the same item multiple times';
+      newErrors.line_items_duplicate =
+        "Cannot add the same item multiple times";
     }
 
     lineItems.forEach((item, index) => {
       if (!item.item_id || item.item_id === 0) {
-        newErrors[`line_item_${index}_item`] = 'Please select an item';
+        newErrors[`line_item_${index}_item`] = "Please select an item";
       }
       if (!item.quantity || item.quantity <= 0) {
-        newErrors[`line_item_${index}_quantity`] = 'Quantity must be greater than 0';
+        newErrors[`line_item_${index}_quantity`] =
+          "Quantity must be greater than 0";
       }
     });
 
@@ -123,7 +141,7 @@ export default function OrderFormModal({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     if (!validate()) {
       return;
     }
@@ -135,7 +153,7 @@ export default function OrderFormModal({
       fulfillment_date: fulfillmentDate || null,
       status,
       notes,
-      line_items: lineItems
+      line_items: lineItems,
     };
 
     onSubmit(formData);
@@ -143,20 +161,23 @@ export default function OrderFormModal({
 
   const getAvailableItems = (currentIndex: number) => {
     const selectedItemIds = lineItems
-      .map((li, idx) => idx !== currentIndex ? li.item_id : null)
-      .filter(id => id !== null);
-    
-    return activeItems.filter(item => !selectedItemIds.includes(item.id));
+      .map((li, idx) => (idx !== currentIndex ? li.item_id : null))
+      .filter((id) => id !== null);
+
+    return activeItems.filter((item) => !selectedItemIds.includes(item.id));
   };
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+      <DialogContent>
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
         </DialogHeader>
-        
-        <form onSubmit={handleSubmit} className="space-y-4">
+
+        <form
+          onSubmit={handleSubmit}
+          className="space-y-4 flex-1 overflow-y-auto pr-2"
+        >
           <div>
             <Label htmlFor="po_number">
               PO Number <span className="text-destructive">*</span>
@@ -169,7 +190,9 @@ export default function OrderFormModal({
               data-testid="input-po-number"
             />
             {errors.po_number && (
-              <p className="text-sm text-destructive mt-1">{errors.po_number}</p>
+              <p className="text-sm text-destructive mt-1">
+                {errors.po_number}
+              </p>
             )}
           </div>
 
@@ -190,7 +213,9 @@ export default function OrderFormModal({
               </SelectContent>
             </Select>
             {errors.customer_id && (
-              <p className="text-sm text-destructive mt-1">{errors.customer_id}</p>
+              <p className="text-sm text-destructive mt-1">
+                {errors.customer_id}
+              </p>
             )}
           </div>
 
@@ -254,10 +279,14 @@ export default function OrderFormModal({
             </div>
 
             {errors.line_items && (
-              <p className="text-sm text-destructive mb-2">{errors.line_items}</p>
+              <p className="text-sm text-destructive mb-2">
+                {errors.line_items}
+              </p>
             )}
             {errors.line_items_duplicate && (
-              <p className="text-sm text-destructive mb-2">{errors.line_items_duplicate}</p>
+              <p className="text-sm text-destructive mb-2">
+                {errors.line_items_duplicate}
+              </p>
             )}
 
             <div className="space-y-3">
@@ -271,7 +300,9 @@ export default function OrderFormModal({
                     <Label className="text-xs">Item</Label>
                     <Select
                       value={lineItem.item_id.toString()}
-                      onValueChange={(value) => updateLineItem(index, 'item_id', value)}
+                      onValueChange={(value) =>
+                        updateLineItem(index, "item_id", value)
+                      }
                     >
                       <SelectTrigger data-testid={`select-line-item-${index}`}>
                         <SelectValue placeholder="Select Item" />
@@ -297,7 +328,9 @@ export default function OrderFormModal({
                       type="number"
                       min="1"
                       value={lineItem.quantity}
-                      onChange={(e) => updateLineItem(index, 'quantity', e.target.value)}
+                      onChange={(e) =>
+                        updateLineItem(index, "quantity", e.target.value)
+                      }
                       data-testid={`input-quantity-${index}`}
                     />
                     {errors[`line_item_${index}_quantity`] && (
@@ -322,7 +355,8 @@ export default function OrderFormModal({
 
               {lineItems.length === 0 && (
                 <p className="text-sm text-muted-foreground text-center py-4">
-                  No items added yet. Click "Add Item" to add products to this order.
+                  No items added yet. Click "Add Item" to add products to this
+                  order.
                 </p>
               )}
             </div>
@@ -339,7 +373,7 @@ export default function OrderFormModal({
             />
           </div>
 
-          <div className="flex justify-end gap-2 pt-4">
+          <div className="flex justify-end gap-2 pt-4 flex-shrink-0 border-t -mx-2 px-2 -mb-4 pb-0 bg-background sticky bottom-0">
             <Button
               type="button"
               variant="outline"

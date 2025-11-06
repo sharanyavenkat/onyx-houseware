@@ -1,33 +1,37 @@
-import { Switch, Route, useLocation } from "wouter";
-import { queryClient } from "./lib/queryClient";
-import { QueryClientProvider, useQuery } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { QueryClientProvider, useQuery } from "@tanstack/react-query";
+import { ReactQueryDevtools } from "@tanstack/react-query-devtools";
+import { Route, Switch, useLocation } from "wouter";
+import { queryClient } from "./lib/queryClient";
 
 // Import pages
-import Dashboard from "@/pages/Dashboard";
-import Items from "@/pages/Items";
+import Sidebar from "@/components/Sidebar";
 import Customers from "@/pages/Customers";
-import Orders from "@/pages/Orders";
-import OrderDetails from "@/pages/OrderDetails";
+import Dashboard from "@/pages/Dashboard";
 import Indent from "@/pages/Indent";
+import Items from "@/pages/Items";
 import Login from "@/pages/Login";
 import NotFound from "@/pages/not-found";
-import Sidebar from "@/components/Sidebar";
+import OrderDetails from "@/pages/OrderDetails";
+import Orders from "@/pages/Orders";
 
 function AuthenticatedApp() {
   return (
-    <div className="flex h-screen bg-background" data-testid="app-authenticated">
+    <div
+      className="flex h-screen bg-background"
+      data-testid="app-authenticated"
+    >
       <Sidebar />
       <main className="flex-1 overflow-auto">
         <div className="p-6">
           <Switch>
             <Route path="/" component={Dashboard} />
-            <Route path="/items" component={Items} />
-            <Route path="/customers" component={Customers} />
             <Route path="/orders" component={Orders} />
             <Route path="/orders/:id" component={OrderDetails} />
             <Route path="/indent" component={Indent} />
+            <Route path="/items" component={Items} />
+            <Route path="/customers" component={Customers} />
             <Route component={NotFound} />
           </Switch>
         </div>
@@ -38,9 +42,13 @@ function AuthenticatedApp() {
 
 function AuthProvider({ children }: { children: React.ReactNode }) {
   const [, setLocation] = useLocation();
-  
-  const { data: user, isLoading, error } = useQuery({
-    queryKey: ['/api/auth/me'],
+
+  const {
+    data: user,
+    isLoading,
+    error,
+  } = useQuery({
+    queryKey: ["/api/auth/me"],
     retry: false,
   });
 
@@ -71,6 +79,8 @@ function App() {
         </AuthProvider>
         <Toaster />
       </TooltipProvider>
+      {/* Render the Devtools component */}
+      <ReactQueryDevtools initialIsOpen={false} />
     </QueryClientProvider>
   );
 }
