@@ -1,6 +1,7 @@
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClientProvider, useQuery } from "@tanstack/react-query";
+import { ReactQueryDevtools } from "@tanstack/react-query-devtools";
 import { Route, Switch, useLocation } from "wouter";
 import { queryClient } from "./lib/queryClient";
 
@@ -78,6 +79,8 @@ function App() {
         </AuthProvider>
         <Toaster />
       </TooltipProvider>
+      {/* Render the Devtools component */}
+      <ReactQueryDevtools initialIsOpen={false} />
     </QueryClientProvider>
   );
 }
