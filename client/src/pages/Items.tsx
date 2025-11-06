@@ -3,7 +3,7 @@ import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { Item } from "@shared/schema";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import ConfirmDialog from "../components/ConfirmDialog";
 import DataTable from "../components/DataTable";
 import FormModal from "../components/FormModal";
@@ -107,6 +107,15 @@ export default function Items() {
     queryKey: ["/api/items"],
   });
 
+  // Sort items: active first, inactive last
+  const sortedItems = useMemo(() => {
+    return [...items].sort((a, b) => {
+      // Active items (true) should come before inactive (false)
+      if (a.is_active === b.is_active) return 0;
+      return a.is_active ? -1 : 1;
+    });
+  }, [items]);
+
   const createMutation = useMutation({
     mutationFn: async (data: any) => {
       return await apiRequest("POST", "/api/items", data);
@@ -205,7 +214,7 @@ export default function Items() {
     <div className="space-y-6" data-testid="page-items">
       <DataTable
         columns={itemColumns}
-        data={items}
+        data={sortedItems}
         title="Items"
         addButtonLabel="Add Item"
         onAdd={handleAdd}

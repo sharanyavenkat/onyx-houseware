@@ -34,7 +34,7 @@ interface LineItem {
   item_id: number;
   item_name: string;
   sku: string;
-  quantity: number;
+  quantity: number | string;
 }
 
 export default function OrderFormModal({
@@ -97,7 +97,8 @@ export default function OrderFormModal({
         };
       }
     } else if (field === "quantity") {
-      newLineItems[index][field] = parseInt(value) || 0;
+      // Allow empty string while editing, will be validated on submit
+      newLineItems[index][field] = value === "" ? "" : (parseInt(value) || 0);
     }
     setLineItems(newLineItems);
   };
@@ -129,7 +130,8 @@ export default function OrderFormModal({
       if (!item.item_id || item.item_id === 0) {
         newErrors[`line_item_${index}_item`] = "Please select an item";
       }
-      if (!item.quantity || item.quantity <= 0) {
+      const qty = typeof item.quantity === 'string' ? parseInt(item.quantity) : item.quantity;
+      if (!qty || qty <= 0) {
         newErrors[`line_item_${index}_quantity`] =
           "Quantity must be greater than 0";
       }
@@ -289,15 +291,22 @@ export default function OrderFormModal({
               </p>
             )}
 
-            <div className="space-y-3">
+            <div className="space-y-2">
+              {lineItems.length > 0 && (
+                <div className="flex gap-2 items-center px-2 pb-1 text-xs font-medium text-muted-foreground">
+                  <div className="flex-1">Item</div>
+                  <div className="w-24">Quantity</div>
+                  <div className="w-9"></div>
+                </div>
+              )}
+              
               {lineItems.map((lineItem, index) => (
                 <div
                   key={index}
-                  className="flex gap-2 items-start p-3 border rounded-md"
+                  className="flex gap-2 items-start"
                   data-testid={`line-item-${index}`}
                 >
-                  <div className="flex-1">
-                    <Label className="text-xs">Item</Label>
+                  <div className="flex-1 space-y-1">
                     <Select
                       value={lineItem.item_id.toString()}
                       onValueChange={(value) =>
@@ -316,14 +325,13 @@ export default function OrderFormModal({
                       </SelectContent>
                     </Select>
                     {errors[`line_item_${index}_item`] && (
-                      <p className="text-xs text-destructive mt-1">
+                      <p className="text-xs text-destructive">
                         {errors[`line_item_${index}_item`]}
                       </p>
                     )}
                   </div>
 
-                  <div className="w-32">
-                    <Label className="text-xs">Quantity</Label>
+                  <div className="w-24 space-y-1">
                     <Input
                       type="number"
                       min="1"
@@ -334,7 +342,7 @@ export default function OrderFormModal({
                       data-testid={`input-quantity-${index}`}
                     />
                     {errors[`line_item_${index}_quantity`] && (
-                      <p className="text-xs text-destructive mt-1">
+                      <p className="text-xs text-destructive">
                         {errors[`line_item_${index}_quantity`]}
                       </p>
                     )}
@@ -345,7 +353,6 @@ export default function OrderFormModal({
                     variant="ghost"
                     size="icon"
                     onClick={() => removeLineItem(index)}
-                    className="mt-5"
                     data-testid={`button-remove-line-item-${index}`}
                   >
                     <X className="h-4 w-4" />

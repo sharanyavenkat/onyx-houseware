@@ -47,7 +47,8 @@ export default function OrderDetails() {
       const rejected = itemShipments.reduce((sum: number, s: any) => {
         return sum + (s.rejections_blowholes || 0) + (s.rejections_handles || 0) + (s.rejections_other || 0);
       }, 0);
-      const remaining = orderedQty - shipped;
+      // Remaining includes rejected items that need to be replaced
+      const remaining = orderedQty - shipped + rejected;
       
       summary[orderItemId] = { shipped, rejected, remaining };
     });

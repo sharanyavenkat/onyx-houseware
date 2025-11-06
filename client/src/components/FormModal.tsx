@@ -96,7 +96,8 @@ export default function FormModal({
   };
 
   const renderField = (field: FormField) => {
-    const value = formData[field.name] || "";
+    // For number fields, allow empty string or 0, otherwise use empty string as default
+    const value = formData[field.name] !== undefined && formData[field.name] !== null ? formData[field.name] : "";
     const error = errors[field.name];
 
     switch (field.type) {

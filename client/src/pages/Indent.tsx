@@ -13,7 +13,7 @@ export default function IndentPage() {
   const currentDate = new Date();
   const currentMonth = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}`;
   const [selectedMonth, setSelectedMonth] = useState(currentMonth);
-  const [editingCells, setEditingCells] = useState<Record<string, number>>({});
+  const [editingCells, setEditingCells] = useState<Record<string, string>>({});
   const [dirtyItems, setDirtyItems] = useState<Set<number>>(new Set());
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const { toast } = useToast();
@@ -63,10 +63,10 @@ export default function IndentPage() {
   const indentData = useMemo(() => {
     return items.map(item => {
       const indent = indents.find(i => i.item_id === item.id);
-      const openingBalance = editingCells[`${item.id}-opening_balance`] ?? indent?.opening_balance ?? 0;
-      const expectedReceipts = editingCells[`${item.id}-expected_receipts`] ?? indent?.expected_receipts ?? 0;
-      // Current safety stock: Use indent value if exists, otherwise fall back to desired from item
-      const currentSafetyStock = editingCells[`${item.id}-current_safety_stock`] ?? indent?.current_safety_stock ?? item.desired_safety_stock;
+      const openingBalance = editingCells[`${item.id}-opening_balance`] !== undefined ? parseInt(editingCells[`${item.id}-opening_balance`]) || 0 : indent?.opening_balance ?? 0;
+      const expectedReceipts = editingCells[`${item.id}-expected_receipts`] !== undefined ? parseInt(editingCells[`${item.id}-expected_receipts`]) || 0 : indent?.expected_receipts ?? 0;
+      // Current safety stock: Use indent value if exists, otherwise default to 0
+      const currentSafetyStock = editingCells[`${item.id}-current_safety_stock`] !== undefined ? parseInt(editingCells[`${item.id}-current_safety_stock`]) || 0 : indent?.current_safety_stock ?? 0;
       const pendingQty = pendingOrdersByItem[item.id] || 0;
       
       // Use shared inventory calculation with current_safety_stock
@@ -185,9 +185,9 @@ export default function IndentPage() {
   }, [dirtyItems, editingCells, indentData, selectedMonth]);
 
   const handleCellEdit = (itemId: number, field: string, value: string) => {
-    const numValue = parseInt(value) || 0;
     const key = `${itemId}-${field}`;
-    setEditingCells(prev => ({ ...prev, [key]: numValue }));
+    // Store the raw string value to avoid lag during typing
+    setEditingCells(prev => ({ ...prev, [key]: value }));
     
     // Mark this item as dirty if it's an indent field (including current_safety_stock)
     if (field === 'opening_balance' || field === 'expected_receipts' || field === 'current_safety_stock') {
@@ -200,28 +200,36 @@ export default function IndentPage() {
     { 
       key: 'opening_balance', 
       label: 'Opening Balance', 
-      render: (value: number, row: any) => (
-        <Input
-          type="number"
-          value={value}
-          onChange={(e) => handleCellEdit(row.id, 'opening_balance', e.target.value)}
-          className="w-24"
-          data-testid={`input-opening-balance-${row.id}`}
-        />
-      )
+      render: (value: number, row: any) => {
+        const key = `${row.id}-opening_balance`;
+        const displayValue = editingCells[key] !== undefined ? editingCells[key] : String(value);
+        return (
+          <Input
+            type="number"
+            value={displayValue}
+            onChange={(e) => handleCellEdit(row.id, 'opening_balance', e.target.value)}
+            className="w-24"
+            data-testid={`input-opening-balance-${row.id}`}
+          />
+        );
+      }
     },
     { 
       key: 'expected_receipts', 
       label: 'Expected Receipts', 
-      render: (value: number, row: any) => (
-        <Input
-          type="number"
-          value={value}
-          onChange={(e) => handleCellEdit(row.id, 'expected_receipts', e.target.value)}
-          className="w-24"
-          data-testid={`input-expected-receipts-${row.id}`}
-        />
-      )
+      render: (value: number, row: any) => {
+        const key = `${row.id}-expected_receipts`;
+        const displayValue = editingCells[key] !== undefined ? editingCells[key] : String(value);
+        return (
+          <Input
+            type="number"
+            value={displayValue}
+            onChange={(e) => handleCellEdit(row.id, 'expected_receipts', e.target.value)}
+            className="w-24"
+            data-testid={`input-expected-receipts-${row.id}`}
+          />
+        );
+      }
     },
     { 
       key: 'desired_safety_stock', 
@@ -235,15 +243,19 @@ export default function IndentPage() {
     { 
       key: 'current_safety_stock', 
       label: 'Current Safety Stock',
-      render: (value: number, row: any) => (
-        <Input
-          type="number"
-          value={value}
-          onChange={(e) => handleCellEdit(row.id, 'current_safety_stock', e.target.value)}
-          className="w-24"
-          data-testid={`input-current-safety-${row.id}`}
-        />
-      )
+      render: (value: number, row: any) => {
+        const key = `${row.id}-current_safety_stock`;
+        const displayValue = editingCells[key] !== undefined ? editingCells[key] : String(value);
+        return (
+          <Input
+            type="number"
+            value={displayValue}
+            onChange={(e) => handleCellEdit(row.id, 'current_safety_stock', e.target.value)}
+            className="w-24"
+            data-testid={`input-current-safety-${row.id}`}
+          />
+        );
+      }
     },
     { key: 'pending_order_qty', label: 'Pending Orders' },
     { 
