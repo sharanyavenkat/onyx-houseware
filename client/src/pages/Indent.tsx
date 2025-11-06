@@ -65,15 +65,16 @@ export default function IndentPage() {
       const indent = indents.find(i => i.item_id === item.id);
       const openingBalance = editingCells[`${item.id}-opening_balance`] ?? indent?.opening_balance ?? 0;
       const expectedReceipts = editingCells[`${item.id}-expected_receipts`] ?? indent?.expected_receipts ?? 0;
-      const safetyStock = editingCells[`${item.id}-safety_stock`] ?? item.safety_stock;
+      // Current safety stock: Use indent value if exists, otherwise fall back to desired from item
+      const currentSafetyStock = editingCells[`${item.id}-current_safety_stock`] ?? indent?.current_safety_stock ?? item.desired_safety_stock;
       const pendingQty = pendingOrdersByItem[item.id] || 0;
       
-      // Use shared inventory calculation
+      // Use shared inventory calculation with current_safety_stock
       const metrics = calculateInventoryMetrics(
         openingBalance,
         expectedReceipts,
         pendingQty,
-        safetyStock
+        currentSafetyStock
       );
 
       return {
@@ -81,7 +82,8 @@ export default function IndentPage() {
         item_name: item.name,
         opening_balance: openingBalance,
         expected_receipts: expectedReceipts,
-        safety_stock: safetyStock,
+        desired_safety_stock: item.desired_safety_stock,
+        current_safety_stock: currentSafetyStock,
         pending_order_qty: pendingQty,
         working_stock: metrics.workingStock,
         usable_stock: metrics.usableStock,
@@ -98,7 +100,7 @@ export default function IndentPage() {
 
   // Save mutation for indent data
   const saveIndentMutation = useMutation({
-    mutationFn: async (data: { item_id: number; month: string; opening_balance: number; expected_receipts: number }[]) => {
+    mutationFn: async (data: { item_id: number; month: string; opening_balance: number; expected_receipts: number; current_safety_stock: number }[]) => {
       await Promise.all(
         data.map(indent => apiRequest('POST', '/api/indents', indent))
       );
@@ -112,6 +114,7 @@ export default function IndentPage() {
         variables.forEach(item => {
           delete updated[`${item.item_id}-opening_balance`];
           delete updated[`${item.item_id}-expected_receipts`];
+          delete updated[`${item.item_id}-current_safety_stock`];
         });
         return updated;
       });
@@ -128,29 +131,6 @@ export default function IndentPage() {
     },
   });
 
-  // Save mutation for item safety stock
-  const saveItemMutation = useMutation({
-    mutationFn: async (data: { id: number; safety_stock: number }[]) => {
-      await Promise.all(
-        data.map(item => apiRequest('PATCH', `/api/items/${item.id}`, { safety_stock: item.safety_stock }))
-      );
-    },
-    onSuccess: (_, variables) => {
-      queryClient.invalidateQueries({ queryKey: ['/api/items'] });
-      
-      // Clear editing cells only for successfully saved items (safety stock field)
-      setEditingCells(prev => {
-        const updated = { ...prev };
-        variables.forEach(item => {
-          delete updated[`${item.id}-safety_stock`];
-        });
-        return updated;
-      });
-    },
-    onError: (error: Error) => {
-      toast({ title: 'Error updating safety stock', description: error.message, variant: 'destructive' });
-    },
-  });
 
   // Auto-save with debouncing
   useEffect(() => {
@@ -159,49 +139,40 @@ export default function IndentPage() {
       clearTimeout(saveTimeoutRef.current);
     }
 
-    // Check if there are any safety stock edits pending
-    const hasSafetyStockEdits = Object.keys(editingCells).some(key => key.endsWith('-safety_stock'));
+    // Check if there are any current_safety_stock edits pending
+    const hasCurrentSafetyStockEdits = Object.keys(editingCells).some(key => key.endsWith('-current_safety_stock'));
 
     // Don't save if nothing has been edited
-    if (dirtyItems.size === 0 && !hasSafetyStockEdits) {
+    if (dirtyItems.size === 0 && !hasCurrentSafetyStockEdits) {
       return;
     }
 
     // Set new timeout for auto-save (1 second debounce)
     saveTimeoutRef.current = setTimeout(() => {
-      // Prepare indent data ONLY for dirty items
+      // Prepare indent data ONLY for dirty items or items with current_safety_stock changes
+      const itemsWithChanges = new Set(dirtyItems);
+      
+      // Also include items with current_safety_stock changes
+      Object.keys(editingCells).forEach(key => {
+        if (key.endsWith('-current_safety_stock')) {
+          const itemId = parseInt(key.split('-')[0]);
+          itemsWithChanges.add(itemId);
+        }
+      });
+
       const indentsToSave = indentData
-        .filter(row => dirtyItems.has(row.id))
+        .filter(row => itemsWithChanges.has(row.id))
         .map(row => ({
           item_id: row.id,
           month: selectedMonth,
           opening_balance: row.opening_balance,
           expected_receipts: row.expected_receipts,
+          current_safety_stock: row.current_safety_stock,
         }));
 
-      // Prepare safety stock updates (only for items that have changed safety stock)
-      const itemsToUpdate: { id: number; safety_stock: number }[] = [];
-      Object.keys(editingCells).forEach(key => {
-        if (key.endsWith('-safety_stock')) {
-          const itemId = parseInt(key.split('-')[0]);
-          const newSafetyStock = editingCells[key];
-          const originalItem = items.find(i => i.id === itemId);
-          
-          // Only update if safety stock actually changed
-          if (originalItem && originalItem.safety_stock !== newSafetyStock) {
-            itemsToUpdate.push({ id: itemId, safety_stock: newSafetyStock });
-          }
-        }
-      });
-
-      // Save indent data (only for dirty items)
+      // Save indent data
       if (indentsToSave.length > 0) {
         saveIndentMutation.mutate(indentsToSave);
-      }
-
-      // Save safety stock updates
-      if (itemsToUpdate.length > 0) {
-        saveItemMutation.mutate(itemsToUpdate);
       }
     }, 1000);
 
@@ -211,15 +182,15 @@ export default function IndentPage() {
         clearTimeout(saveTimeoutRef.current);
       }
     };
-  }, [dirtyItems, editingCells, indentData, selectedMonth, items]);
+  }, [dirtyItems, editingCells, indentData, selectedMonth]);
 
   const handleCellEdit = (itemId: number, field: string, value: string) => {
     const numValue = parseInt(value) || 0;
     const key = `${itemId}-${field}`;
     setEditingCells(prev => ({ ...prev, [key]: numValue }));
     
-    // Mark this item as dirty if it's an indent field
-    if (field === 'opening_balance' || field === 'expected_receipts') {
+    // Mark this item as dirty if it's an indent field (including current_safety_stock)
+    if (field === 'opening_balance' || field === 'expected_receipts' || field === 'current_safety_stock') {
       setDirtyItems(prev => new Set(prev).add(itemId));
     }
   };
@@ -253,15 +224,24 @@ export default function IndentPage() {
       )
     },
     { 
-      key: 'safety_stock', 
-      label: 'Safety Stock',
+      key: 'desired_safety_stock', 
+      label: 'Target Safety Stock',
+      render: (value: number, row: any) => (
+        <span className="text-muted-foreground font-mono" data-testid={`text-desired-safety-${row.id}`}>
+          {value}
+        </span>
+      )
+    },
+    { 
+      key: 'current_safety_stock', 
+      label: 'Current Safety Stock',
       render: (value: number, row: any) => (
         <Input
           type="number"
           value={value}
-          onChange={(e) => handleCellEdit(row.id, 'safety_stock', e.target.value)}
+          onChange={(e) => handleCellEdit(row.id, 'current_safety_stock', e.target.value)}
           className="w-24"
-          data-testid={`input-safety-stock-${row.id}`}
+          data-testid={`input-current-safety-${row.id}`}
         />
       )
     },
@@ -356,11 +336,12 @@ export default function IndentPage() {
           </div>
         </div>
         <div>
-          <h3 className="font-medium mb-2">Editable Safety Stock:</h3>
-          <p className="text-sm text-muted-foreground">
-            Safety Stock is editable to reflect current production reality. Adjust based on caster bottlenecks, production capacity, 
-            and demand. Target is 500 pcs per item, but start lower as needed. Changes auto-save and sync to Items table.
-          </p>
+          <h3 className="font-medium mb-2">Safety Stock Management:</h3>
+          <div className="text-sm text-muted-foreground space-y-1">
+            <p><strong>Target Safety Stock</strong>: Long-term desired safety stock level (set in Items page)</p>
+            <p><strong>Current Safety Stock</strong>: Month-specific safety stock you can actually maintain based on production capacity, caster bottlenecks, and demand</p>
+            <p className="text-xs pt-1 italic">Current safety stock defaults to target but can be adjusted monthly. All changes auto-save.</p>
+          </div>
         </div>
         <div>
           <h3 className="font-medium mb-2">Safety Stock Status Legend:</h3>
