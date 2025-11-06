@@ -259,7 +259,6 @@ export default function IndentPage() {
         );
       }
     },
-    { key: 'pending_order_qty', label: 'Pending Orders' },
     { 
       key: 'usable_stock', 
       label: 'Total Usable Stock',
@@ -269,6 +268,7 @@ export default function IndentPage() {
         </span>
       )
     },
+    { key: 'pending_order_qty', label: 'Pending Orders' },
     { 
       key: 'post_pending_stock', 
       label: 'Stock After Pending',
@@ -362,15 +362,15 @@ export default function IndentPage() {
           <div className="flex items-center gap-4 text-sm flex-wrap">
             <div className="flex items-center gap-2">
               <Badge variant="destructive" data-testid="badge-legend-critical">Critical</Badge>
-              <span className="text-muted-foreground">Stock after pending &lt; 50% of safety stock or negative</span>
+              <span className="text-muted-foreground">Cannot fulfill orders (negative stock)</span>
             </div>
             <div className="flex items-center gap-2">
               <Badge variant="secondary" data-testid="badge-legend-low">Low</Badge>
-              <span className="text-muted-foreground">Stock after pending &lt; safety stock but ≥ 50%</span>
+              <span className="text-muted-foreground">Can fulfill orders but safety stock below target</span>
             </div>
             <div className="flex items-center gap-2">
               <Badge variant="default" data-testid="badge-legend-good">Good</Badge>
-              <span className="text-muted-foreground">Stock after pending ≥ safety stock</span>
+              <span className="text-muted-foreground">Stock after pending ≥ desired safety stock</span>
             </div>
             <div className="flex items-center gap-2">
               <Badge variant="outline" className="text-xs">Refill Needed</Badge>

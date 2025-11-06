@@ -58,13 +58,13 @@ export function calculateInventoryMetrics(
   
   let safetyStockStatus: 'critical' | 'low' | 'good' = 'good';
   if (postPendingStock < 0) {
-    // Negative stock after using safety buffer - critical
+    // Negative stock - cannot fulfill orders even with safety buffer - CRITICAL
     safetyStockStatus = 'critical';
   } else if (postPendingStock < desiredSafetyStock * 0.5) {
-    // Less than 50% of desired safety stock remaining - critical
-    safetyStockStatus = 'critical';
+    // Can fulfill orders but less than 50% of desired safety stock remaining - low
+    safetyStockStatus = 'low';
   } else if (postPendingStock < desiredSafetyStock) {
-    // Less than full desired safety stock remaining - low
+    // Can fulfill orders but less than full desired safety stock remaining - low
     safetyStockStatus = 'low';
   }
   
