@@ -131,13 +131,60 @@ export async function bootstrapDatabase() {
     // ========================================
     // Add new ALTER TABLE statements below using addColumnIfNotExists()
     // These will run once and then safely ignore duplicate column errors
-    //
-    // Example:
-    // await addColumnIfNotExists(
-    //   "items",
-    //   "discount REAL DEFAULT 0",
-    //   "discount"
-    // );
+
+    // Add notes fields to Items, Orders, Customers
+    await addColumnIfNotExists(
+      "items",
+      "notes TEXT",
+      "notes"
+    );
+
+    await addColumnIfNotExists(
+      "orders",
+      "notes TEXT",
+      "notes"
+    );
+
+    await addColumnIfNotExists(
+      "customers",
+      "notes TEXT",
+      "notes"
+    );
+
+    // Rename safety_stock to desired_safety_stock in Items
+    // Note: SQLite doesn't support column rename directly, so we:
+    // 1. Add new column desired_safety_stock
+    // 2. Copy data from safety_stock (if it exists)
+    // 3. Old column remains for backward compatibility
+    await addColumnIfNotExists(
+      "items",
+      "desired_safety_stock INTEGER NOT NULL DEFAULT 0",
+      "desired_safety_stock"
+    );
+
+    // Migrate data from old safety_stock to desired_safety_stock (one-time operation)
+    try {
+      const result = await db.run(sql`
+        UPDATE items 
+        SET desired_safety_stock = COALESCE(safety_stock, 0) 
+        WHERE desired_safety_stock = 0 AND safety_stock IS NOT NULL
+      `);
+      if (result.changes && result.changes > 0) {
+        console.log(`✅ Migrated ${result.changes} safety_stock values to desired_safety_stock`);
+      }
+    } catch (error: any) {
+      // Ignore errors if migration already done or safety_stock column doesn't exist
+      if (!error.message.includes("no such column")) {
+        console.log("ℹ️ Safety stock migration skipped (likely already completed)");
+      }
+    }
+
+    // Add current_safety_stock to Indents
+    await addColumnIfNotExists(
+      "indents",
+      "current_safety_stock INTEGER NOT NULL DEFAULT 0",
+      "current_safety_stock"
+    );
 
     console.log("✅ SQLite database tables initialized successfully");
   } catch (error) {

@@ -25,8 +25,9 @@ export const items = sqliteTable("items", {
   product_type: text("product_type").notNull(),
   size_specification: text("size_specification").notNull(),
   price: real("price").notNull(),
-  safety_stock: integer("safety_stock").notNull().default(0),
+  desired_safety_stock: integer("desired_safety_stock").notNull().default(0),
   is_active: integer("is_active", { mode: "boolean" }).notNull().default(true),
+  notes: text("notes"),
 });
 
 export const insertItemSchema = createInsertSchema(items).omit({
@@ -43,6 +44,7 @@ export const customers = sqliteTable("customers", {
   phone: text("phone"),
   email: text("email"),
   address: text("address"),
+  notes: text("notes"),
 });
 
 export const insertCustomerSchema = createInsertSchema(customers).omit({
@@ -61,6 +63,7 @@ export const orders = sqliteTable("orders", {
   order_date: text("order_date").notNull(),
   fulfillment_date: text("fulfillment_date"),
   status: text("status").notNull().default("draft"),
+  notes: text("notes"),
 });
 
 export const insertOrderSchema = createInsertSchema(orders).omit({
@@ -96,6 +99,7 @@ export const indents = sqliteTable("indents", {
   month: text("month").notNull(),
   opening_balance: integer("opening_balance").notNull().default(0),
   expected_receipts: integer("expected_receipts").notNull().default(0),
+  current_safety_stock: integer("current_safety_stock").notNull().default(0),
 });
 
 export const insertIndentSchema = createInsertSchema(indents).omit({
