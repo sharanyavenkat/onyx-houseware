@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ArrowLeft, Package } from 'lucide-react';
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import ShipmentTracking from '../components/ShipmentTracking';
 import { formatDate } from '@/lib/dateUtils';
 
@@ -22,6 +22,38 @@ export default function OrderDetails() {
       return response.json();
     },
   });
+
+  // Fetch all shipments for this order
+  const { data: shipments = [] } = useQuery<any[]>({
+    queryKey: ['/api/shipments', 'order', id],
+    enabled: !!id,
+  });
+
+  // Calculate shipment summary per order item
+  const shipmentSummary = useMemo(() => {
+    const summary: Record<number, { shipped: number; rejected: number; remaining: number }> = {};
+    
+    if (!order?.line_items || !shipments) return summary;
+    
+    order.line_items.forEach((item: any) => {
+      const orderItemId = item.order_item_id;
+      const orderedQty = item.quantity;
+      
+      // Find all shipments for this order item
+      const itemShipments = shipments.filter((s: any) => s.order_item_id === orderItemId);
+      
+      // Calculate totals
+      const shipped = itemShipments.reduce((sum: number, s: any) => sum + s.quantity_shipped, 0);
+      const rejected = itemShipments.reduce((sum: number, s: any) => {
+        return sum + (s.blowhole_rejects || 0) + (s.handle_rejects || 0) + (s.other_rejects || 0);
+      }, 0);
+      const remaining = orderedQty - shipped;
+      
+      summary[orderItemId] = { shipped, rejected, remaining };
+    });
+    
+    return summary;
+  }, [order, shipments]);
 
   if (isLoading) {
     return <div className="p-6">Loading...</div>;
@@ -99,35 +131,75 @@ export default function OrderDetails() {
         <CardContent>
           {order.line_items && order.line_items.length > 0 ? (
             <div className="border rounded-md divide-y">
-              {order.line_items.map((item: any, index: number) => (
-                <div
-                  key={index}
-                  className="px-4 py-3 flex justify-between items-center"
-                  data-testid={`order-detail-item-${index}`}
-                >
-                  <div>
-                    <div className="font-medium">{item.item_name}</div>
-                    <div className="text-sm text-muted-foreground">SKU: {item.sku}</div>
-                  </div>
-                  <div className="flex items-center gap-4">
-                    <div className="text-right">
-                      <div className="font-semibold">{item.quantity} pcs</div>
+              {order.line_items.map((item: any, index: number) => {
+                const orderItemId = item.order_item_id;
+                const summary = shipmentSummary[orderItemId];
+                const hasShipments = summary && summary.shipped > 0;
+                
+                return (
+                  <div
+                    key={index}
+                    className="px-4 py-3"
+                    data-testid={`order-detail-item-${index}`}
+                  >
+                    <div className="flex justify-between items-start">
+                      <div className="flex-1">
+                        <div className="font-medium">{item.item_name}</div>
+                        <div className="text-sm text-muted-foreground">SKU: {item.sku}</div>
+                        
+                        {hasShipments && (
+                          <div className="mt-2 flex items-center gap-4 text-sm">
+                            <div className="flex items-center gap-1">
+                              <span className="text-muted-foreground">Ordered:</span>
+                              <span className="font-mono font-semibold">{item.quantity}</span>
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <span className="text-muted-foreground">Shipped:</span>
+                              <span className="font-mono font-semibold text-green-600 dark:text-green-400">
+                                {summary.shipped}
+                              </span>
+                            </div>
+                            {summary.rejected > 0 && (
+                              <div className="flex items-center gap-1">
+                                <span className="text-muted-foreground">Rejected:</span>
+                                <span className="font-mono font-semibold text-destructive">
+                                  {summary.rejected}
+                                </span>
+                              </div>
+                            )}
+                            <div className="flex items-center gap-1">
+                              <span className="text-muted-foreground">Remaining:</span>
+                              <span className={`font-mono font-semibold ${summary.remaining === 0 ? 'text-muted-foreground' : 'text-orange-600 dark:text-orange-400'}`}>
+                                {summary.remaining}
+                              </span>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                      
+                      <div className="flex items-center gap-4 ml-4">
+                        {!hasShipments && (
+                          <div className="text-right">
+                            <div className="font-semibold">{item.quantity} pcs</div>
+                          </div>
+                        )}
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            setTrackingShipment(item);
+                            setIsTrackingOpen(true);
+                          }}
+                          data-testid={`button-track-shipment-${index}`}
+                        >
+                          <Package className="h-4 w-4 mr-1" />
+                          Track Shipments
+                        </Button>
+                      </div>
                     </div>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => {
-                        setTrackingShipment(item);
-                        setIsTrackingOpen(true);
-                      }}
-                      data-testid={`button-track-shipment-${index}`}
-                    >
-                      <Package className="h-4 w-4 mr-1" />
-                      Track Shipments
-                    </Button>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           ) : (
             <p className="text-sm text-muted-foreground">No items in this order</p>
