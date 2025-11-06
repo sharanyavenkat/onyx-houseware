@@ -2,13 +2,12 @@ import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogFooter,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
   SelectContent,
@@ -16,12 +15,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { useState, useEffect, useRef } from "react";
+import { Textarea } from "@/components/ui/textarea";
+import { useEffect, useRef, useState } from "react";
 
 interface FormField {
   name: string;
   label: string;
-  type: 'text' | 'number' | 'email' | 'textarea' | 'select';
+  type: "text" | "number" | "email" | "textarea" | "select";
   required?: boolean;
   options?: { value: string; label: string }[];
   placeholder?: string;
@@ -46,7 +46,7 @@ export default function FormModal({
   fields,
   initialData = {},
   submitLabel = "Save",
-  isLoading = false
+  isLoading = false,
 }: FormModalProps) {
   const [formData, setFormData] = useState<Record<string, any>>(initialData);
   const formRef = useRef<HTMLFormElement>(null);
@@ -58,18 +58,21 @@ export default function FormModal({
   const [errors, setErrors] = useState<Record<string, string>>({});
 
   const handleInputChange = (name: string, value: any) => {
-    setFormData(prev => ({ ...prev, [name]: value }));
+    setFormData((prev) => ({ ...prev, [name]: value }));
     // Clear error when user starts typing
     if (errors[name]) {
-      setErrors(prev => ({ ...prev, [name]: '' }));
+      setErrors((prev) => ({ ...prev, [name]: "" }));
     }
   };
 
   const validateForm = () => {
     const newErrors: Record<string, string> = {};
-    
-    fields.forEach(field => {
-      if (field.required && (!formData[field.name] || formData[field.name] === '')) {
+
+    fields.forEach((field) => {
+      if (
+        field.required &&
+        (!formData[field.name] || formData[field.name] === "")
+      ) {
         newErrors[field.name] = `${field.label} is required`;
       }
     });
@@ -81,7 +84,7 @@ export default function FormModal({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (validateForm()) {
-      console.log('Form submitted with data:', formData);
+      console.log("Form submitted with data:", formData);
       onSubmit(formData);
     }
   };
@@ -93,29 +96,34 @@ export default function FormModal({
   };
 
   const renderField = (field: FormField) => {
-    const value = formData[field.name] || '';
+    const value = formData[field.name] || "";
     const error = errors[field.name];
 
     switch (field.type) {
-      case 'textarea':
+      case "textarea":
         return (
           <Textarea
             value={value}
             onChange={(e) => handleInputChange(field.name, e.target.value)}
             placeholder={field.placeholder}
-            className={error ? 'border-destructive' : ''}
+            className={error ? "border-destructive" : ""}
             data-testid={`input-${field.name}`}
           />
         );
-      
-      case 'select':
+
+      case "select":
         return (
           <Select
             value={value}
             onValueChange={(value) => handleInputChange(field.name, value)}
           >
-            <SelectTrigger className={error ? 'border-destructive' : ''} data-testid={`select-${field.name}`}>
-              <SelectValue placeholder={field.placeholder || `Select ${field.label}`} />
+            <SelectTrigger
+              className={error ? "border-destructive" : ""}
+              data-testid={`select-${field.name}`}
+            >
+              <SelectValue
+                placeholder={field.placeholder || `Select ${field.label}`}
+              />
             </SelectTrigger>
             <SelectContent>
               {field.options?.map((option) => (
@@ -126,7 +134,7 @@ export default function FormModal({
             </SelectContent>
           </Select>
         );
-      
+
       default:
         return (
           <Input
@@ -134,7 +142,7 @@ export default function FormModal({
             value={value}
             onChange={(e) => handleInputChange(field.name, e.target.value)}
             placeholder={field.placeholder}
-            className={error ? 'border-destructive' : ''}
+            className={error ? "border-destructive" : ""}
             data-testid={`input-${field.name}`}
           />
         );
@@ -143,46 +151,51 @@ export default function FormModal({
 
   return (
     <Dialog open={isOpen} onOpenChange={handleClose}>
-      <DialogContent className="sm:max-w-[600px] max-h-[80vh]" data-testid="modal-form">
+      <DialogContent data-testid="modal-form">
         <DialogHeader>
           <DialogTitle data-testid="text-modal-title">{title}</DialogTitle>
         </DialogHeader>
-        
-        <div className="max-h-[60vh] overflow-y-auto pr-2">
+
+        <div className="flex-1 overflow-y-auto pr-2">
           <form ref={formRef} onSubmit={handleSubmit} className="space-y-4">
-          {fields.map((field) => (
-            <div key={field.name} className="space-y-2">
-              <Label htmlFor={field.name} className="text-sm font-medium">
-                {field.label}
-                {field.required && <span className="text-destructive ml-1">*</span>}
-              </Label>
-              {renderField(field)}
-              {errors[field.name] && (
-                <p className="text-sm text-destructive" data-testid={`error-${field.name}`}>
-                  {errors[field.name]}
-                </p>
-              )}
-            </div>
-          ))}
+            {fields.map((field) => (
+              <div key={field.name} className="space-y-2">
+                <Label htmlFor={field.name} className="text-sm font-medium">
+                  {field.label}
+                  {field.required && (
+                    <span className="text-destructive ml-1">*</span>
+                  )}
+                </Label>
+                {renderField(field)}
+                {errors[field.name] && (
+                  <p
+                    className="text-sm text-destructive"
+                    data-testid={`error-${field.name}`}
+                  >
+                    {errors[field.name]}
+                  </p>
+                )}
+              </div>
+            ))}
           </form>
         </div>
-        
-        <DialogFooter>
-          <Button 
-            type="button" 
-            variant="outline" 
+
+        <DialogFooter className="flex-shrink-0">
+          <Button
+            type="button"
+            variant="outline"
             onClick={handleClose}
             data-testid="button-cancel"
           >
             Cancel
           </Button>
-          <Button 
-            type="button" 
+          <Button
+            type="button"
             disabled={isLoading}
             onClick={() => formRef.current?.requestSubmit()}
             data-testid="button-submit"
           >
-            {isLoading ? 'Saving...' : submitLabel}
+            {isLoading ? "Saving..." : submitLabel}
           </Button>
         </DialogFooter>
       </DialogContent>

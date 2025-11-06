@@ -30,7 +30,7 @@ export default function ConfirmationDialog({
   confirmLabel = "Confirm",
   cancelLabel = "Cancel",
   isDestructive = false,
-  isLoading = false
+  isLoading = false,
 }: ConfirmationDialogProps) {
   const handleConfirm = () => {
     onConfirm();
@@ -39,37 +39,39 @@ export default function ConfirmationDialog({
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-[425px]" data-testid="dialog-confirmation">
+      <DialogContent className="sm:max-w-md" data-testid="dialog-confirmation">
         <DialogHeader>
           <div className="flex items-center gap-3">
             {isDestructive && (
               <AlertTriangle className="h-5 w-5 text-destructive" />
             )}
-            <DialogTitle data-testid="text-confirmation-title">{title}</DialogTitle>
+            <DialogTitle data-testid="text-confirmation-title">
+              {title}
+            </DialogTitle>
           </div>
           <DialogDescription data-testid="text-confirmation-description">
             {description}
           </DialogDescription>
         </DialogHeader>
-        
-        <DialogFooter>
-          <Button 
-            type="button" 
-            variant="outline" 
+
+        <DialogFooter className="flex-shrink-0">
+          <Button
+            type="button"
+            variant="outline"
             onClick={onClose}
             disabled={isLoading}
             data-testid="button-cancel"
           >
             {cancelLabel}
           </Button>
-          <Button 
-            type="button" 
+          <Button
+            type="button"
             variant={isDestructive ? "destructive" : "default"}
             onClick={handleConfirm}
             disabled={isLoading}
             data-testid="button-confirm"
           >
-            {isLoading ? 'Processing...' : confirmLabel}
+            {isLoading ? "Processing..." : confirmLabel}
           </Button>
         </DialogFooter>
       </DialogContent>
