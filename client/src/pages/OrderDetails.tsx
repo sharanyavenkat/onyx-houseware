@@ -14,10 +14,12 @@ export default function OrderDetails() {
   const [trackingShipment, setTrackingShipment] = useState<any>(null);
   const [isTrackingOpen, setIsTrackingOpen] = useState(false);
 
+  const orderId = parseInt(id || '0');
+
   const { data: order, isLoading } = useQuery<any>({
-    queryKey: ['/api/orders', id],
+    queryKey: ['/api/orders', orderId],
     queryFn: async () => {
-      const response = await fetch(`/api/orders/${id}`);
+      const response = await fetch(`/api/orders/${orderId}`);
       if (!response.ok) throw new Error('Failed to fetch order');
       return response.json();
     },
@@ -25,8 +27,8 @@ export default function OrderDetails() {
 
   // Fetch all shipments for this order
   const { data: shipments = [] } = useQuery<any[]>({
-    queryKey: ['/api/shipments', 'order', id],
-    enabled: !!id,
+    queryKey: ['/api/shipments', 'order', orderId],
+    enabled: !!orderId,
   });
 
   // Calculate shipment summary per order item

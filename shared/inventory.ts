@@ -3,8 +3,9 @@
  * 
  * In this model:
  * - Working Stock = Opening Balance + Expected Receipts (normal operational inventory)
- * - Safety Stock = Buffer inventory that can be used but should be maintained
- * - Usable Stock = Working Stock + Safety Stock (total available to fulfill orders)
+ * - Current Safety Stock = Buffer inventory currently available
+ * - Desired Safety Stock = Target buffer inventory level we want to maintain
+ * - Usable Stock = Working Stock + Current Safety Stock (total available to fulfill orders)
  */
 
 export interface InventoryMetrics {
@@ -12,16 +13,17 @@ export interface InventoryMetrics {
   openingBalance: number;
   expectedReceipts: number;
   pendingQty: number;
-  safetyStock: number;
+  currentSafetyStock: number;
+  desiredSafetyStock: number;
   
   // Calculated values
   workingStock: number;              // opening + expected
-  usableStock: number;                // working + safety
+  usableStock: number;                // working + current safety stock
   postPendingStock: number;           // usable - pending
   
   // Requirements
   shortfallToFulfill: number;         // How much needed to fulfill pending orders
-  shortfallToRestoreSafety: number;   // How much needed to restore safety stock
+  shortfallToRestoreSafety: number;   // How much needed to restore to DESIRED safety stock level
   totalRequired: number;              // Total to order
   
   // Status flags
@@ -30,23 +32,25 @@ export interface InventoryMetrics {
 }
 
 /**
- * Calculate inventory metrics for an item
+ * Calculate inventory metrics for an item with two-tier safety stock model
  */
 export function calculateInventoryMetrics(
   openingBalance: number,
   expectedReceipts: number,
   pendingQty: number,
-  safetyStock: number
+  currentSafetyStock: number,
+  desiredSafetyStock: number
 ): InventoryMetrics {
   // Core calculations
   const workingStock = openingBalance + expectedReceipts;
-  const usableStock = workingStock + safetyStock;
+  const usableStock = workingStock + currentSafetyStock;
   const postPendingStock = usableStock - pendingQty;
   
   // Requirements
-  // Shortfall to fulfill uses USABLE stock (including safety stock), not just working stock
+  // Shortfall to fulfill uses USABLE stock (including current safety stock), not just working stock
   const shortfallToFulfill = Math.max(0, pendingQty - usableStock);
-  const shortfallToRestoreSafety = Math.max(0, safetyStock - Math.max(0, postPendingStock));
+  // Shortfall to restore uses DESIRED safety stock as the target
+  const shortfallToRestoreSafety = Math.max(0, desiredSafetyStock - Math.max(0, postPendingStock));
   const totalRequired = shortfallToFulfill + shortfallToRestoreSafety;
   
   // Status flags
@@ -56,11 +60,11 @@ export function calculateInventoryMetrics(
   if (postPendingStock < 0) {
     // Negative stock after using safety buffer - critical
     safetyStockStatus = 'critical';
-  } else if (postPendingStock < safetyStock * 0.5) {
-    // Less than 50% of safety stock remaining - critical
+  } else if (postPendingStock < desiredSafetyStock * 0.5) {
+    // Less than 50% of desired safety stock remaining - critical
     safetyStockStatus = 'critical';
-  } else if (postPendingStock < safetyStock) {
-    // Less than full safety stock remaining - low
+  } else if (postPendingStock < desiredSafetyStock) {
+    // Less than full desired safety stock remaining - low
     safetyStockStatus = 'low';
   }
   
@@ -68,7 +72,8 @@ export function calculateInventoryMetrics(
     openingBalance,
     expectedReceipts,
     pendingQty,
-    safetyStock,
+    currentSafetyStock,
+    desiredSafetyStock,
     workingStock,
     usableStock,
     postPendingStock,

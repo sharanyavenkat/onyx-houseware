@@ -69,12 +69,13 @@ export default function IndentPage() {
       const currentSafetyStock = editingCells[`${item.id}-current_safety_stock`] !== undefined ? parseInt(editingCells[`${item.id}-current_safety_stock`]) || 0 : indent?.current_safety_stock ?? 0;
       const pendingQty = pendingOrdersByItem[item.id] || 0;
       
-      // Use shared inventory calculation with current_safety_stock
+      // Use shared inventory calculation with both current and desired safety stock
       const metrics = calculateInventoryMetrics(
         openingBalance,
         expectedReceipts,
         pendingQty,
-        currentSafetyStock
+        currentSafetyStock,
+        item.desired_safety_stock
       );
 
       return {
@@ -105,8 +106,9 @@ export default function IndentPage() {
         data.map(indent => apiRequest('POST', '/api/indents', indent))
       );
     },
-    onSuccess: (_, variables) => {
-      queryClient.invalidateQueries({ queryKey: ['/api/indents', selectedMonth] });
+    onSuccess: async (_, variables) => {
+      // Refetch and wait for the query to complete before clearing editing state
+      await queryClient.refetchQueries({ queryKey: ['/api/indents', selectedMonth] });
       
       // Clear editing cells only for successfully saved items (indent fields)
       setEditingCells(prev => {
