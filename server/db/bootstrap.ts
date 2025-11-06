@@ -61,8 +61,9 @@ export async function bootstrapDatabase() {
         product_type TEXT NOT NULL,
         size_specification TEXT NOT NULL,
         price REAL NOT NULL,
-        safety_stock INTEGER NOT NULL DEFAULT 0,
-        is_active INTEGER NOT NULL DEFAULT 1
+        desired_safety_stock INTEGER NOT NULL DEFAULT 0,
+        is_active INTEGER NOT NULL DEFAULT 1,
+        notes TEXT
       )
     `);
 
@@ -74,7 +75,8 @@ export async function bootstrapDatabase() {
         contact_person TEXT,
         phone TEXT,
         email TEXT,
-        address TEXT
+        address TEXT,
+        notes TEXT
       )
     `);
 
@@ -86,7 +88,8 @@ export async function bootstrapDatabase() {
         customer_id INTEGER NOT NULL REFERENCES customers(id),
         order_date TEXT NOT NULL,
         fulfillment_date TEXT,
-        status TEXT NOT NULL DEFAULT 'draft'
+        status TEXT NOT NULL DEFAULT 'draft',
+        notes TEXT
       )
     `);
 
@@ -107,7 +110,8 @@ export async function bootstrapDatabase() {
         item_id INTEGER NOT NULL REFERENCES items(id),
         month TEXT NOT NULL,
         opening_balance INTEGER NOT NULL DEFAULT 0,
-        expected_receipts INTEGER NOT NULL DEFAULT 0
+        expected_receipts INTEGER NOT NULL DEFAULT 0,
+        current_safety_stock INTEGER NOT NULL DEFAULT 0
       )
     `);
 

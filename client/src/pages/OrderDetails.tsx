@@ -45,7 +45,7 @@ export default function OrderDetails() {
       // Calculate totals
       const shipped = itemShipments.reduce((sum: number, s: any) => sum + s.quantity_shipped, 0);
       const rejected = itemShipments.reduce((sum: number, s: any) => {
-        return sum + (s.blowhole_rejects || 0) + (s.handle_rejects || 0) + (s.other_rejects || 0);
+        return sum + (s.rejections_blowholes || 0) + (s.rejections_handles || 0) + (s.rejections_other || 0);
       }, 0);
       const remaining = orderedQty - shipped;
       
