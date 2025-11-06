@@ -49,8 +49,8 @@ const itemFields = [
     placeholder: "",
   },
   {
-    name: "safety_stock",
-    label: "Safety Stock",
+    name: "desired_safety_stock",
+    label: "Desired Safety Stock",
     type: "number" as const,
     placeholder: "",
     required: true,
@@ -84,7 +84,7 @@ const itemColumns = [
     render: (value: string) =>
       value ? `₹${parseFloat(value).toFixed(2)}` : "-",
   },
-  { key: "safety_stock", label: "Safety Stock" },
+  { key: "desired_safety_stock", label: "Desired Safety Stock" },
   {
     key: "is_active",
     label: "Status",
@@ -189,7 +189,7 @@ export default function Items() {
       ...data,
       is_active: data.is_active === "true",
       price: parseFloat(data.price),
-      safety_stock: parseInt(data.safety_stock),
+      desired_safety_stock: parseInt(data.desired_safety_stock),
     };
 
     if (editingItem) {
@@ -228,7 +228,7 @@ export default function Items() {
                 ...editingItem,
                 is_active: editingItem.is_active ? "true" : "false",
                 price: editingItem.price || "0",
-                safety_stock: editingItem.safety_stock || "0",
+                desired_safety_stock: editingItem.desired_safety_stock || "0",
               }
             : { is_active: "true" }
         }

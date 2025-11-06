@@ -13,6 +13,7 @@ const customerFields = [
   { name: 'email', label: 'Email', type: 'email' as const, placeholder: 'company@example.com' },
   { name: 'phone', label: 'Phone', type: 'text' as const, placeholder: '555-0000' },
   { name: 'address', label: 'Address', type: 'textarea' as const, placeholder: 'Complete address...' },
+  { name: 'notes', label: 'Notes', type: 'textarea' as const, placeholder: 'Additional notes...' },
 ];
 
 const customerColumns = [
