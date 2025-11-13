@@ -3,7 +3,7 @@ import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { verifyPassword } from "./auth";
 import { requireAuth } from "./middleware";
-import { insertItemSchema, insertCustomerSchema, insertOrderSchema, insertOrderItemSchema, insertIndentSchema, insertShipmentSchema } from "@shared/schema";
+import { insertItemSchema, insertCustomerSchema, insertOrderSchema, insertOrderItemSchema, insertIndentSchema, insertShipmentSchema, insertBatchSchema } from "@shared/schema";
 
 export async function registerRoutes(app: Express): Promise<Server> {
   
@@ -129,6 +129,171 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ 
           message: "Cannot delete this item because it is referenced in existing orders. Please delete the related orders first." 
         });
+      }
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Batch routes
+  app.get("/api/batches", async (req, res) => {
+    try {
+      const batches = await storage.getAllBatches();
+      res.json(batches);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.get("/api/batches/by-item/:itemId", async (req, res) => {
+    try {
+      const itemId = parseInt(req.params.itemId);
+      const batches = await storage.getBatchesByItemId(itemId);
+      res.json(batches);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.get("/api/batches/active/by-item/:itemId", async (req, res) => {
+    try {
+      const itemId = parseInt(req.params.itemId);
+      const batches = await storage.getActiveBatchesByItemId(itemId);
+      res.json(batches);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/batches", async (req, res) => {
+    try {
+      // Extract and validate only required fields via schema
+      const requiredInput = {
+        item_id: req.body.item_id,
+        batch_number: req.body.batch_number,
+        received_date: req.body.received_date,
+        quantity_produced: req.body.quantity_produced
+      };
+
+      // Schema validation for required fields only
+      const validated = insertBatchSchema.pick({
+        item_id: true,
+        batch_number: true,
+        received_date: true,
+        quantity_produced: true
+      }).parse(requiredInput);
+
+      // Handle optional fields separately (preserve caller intent)
+      const quality_status = req.body.quality_status ?? 'Good';
+      const notes = req.body.notes ?? null;
+
+      // Additional business rules validation
+      if (validated.quantity_produced < 0) {
+        return res.status(400).json({ message: "Quantity produced cannot be negative" });
+      }
+
+      // Validate ISO date format
+      const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+      if (!dateRegex.test(validated.received_date)) {
+        return res.status(400).json({ message: "Received date must be in ISO format (YYYY-MM-DD)" });
+      }
+
+      // Validate quality status enum
+      const validStatuses = ['Good', 'Acceptable', 'Rejected'];
+      if (!validStatuses.includes(quality_status)) {
+        return res.status(400).json({ message: "Quality status must be Good, Acceptable, or Rejected" });
+      }
+
+      // Verify that the referenced item exists
+      const item = await storage.getItemById(validated.item_id);
+      if (!item) {
+        return res.status(404).json({ message: `Item with ID ${validated.item_id} not found` });
+      }
+
+      // Compute derived fields server-side
+      // For new batches: remaining = produced (no shipments/rejections yet)
+      const batchData = {
+        item_id: validated.item_id,
+        batch_number: validated.batch_number,
+        received_date: validated.received_date,
+        quantity_produced: validated.quantity_produced,
+        quantity_remaining: validated.quantity_produced,  // Server-computed
+        quantity_rejected: 0,                             // Server-computed
+        quality_status: quality_status,                   // Server-defaulted
+        is_depleted: validated.quantity_produced === 0,   // Server-computed
+        notes: notes                                      // Preserves empty strings
+      };
+
+      // Create batch
+      const batch = await storage.createBatch(batchData);
+      res.status(201).json(batch);
+    } catch (error: any) {
+      if (error.name === 'ZodError') {
+        return res.status(400).json({ message: error.message });
+      }
+      if (error.message && error.message.includes('UNIQUE constraint failed')) {
+        return res.status(400).json({ message: "Batch number already exists" });
+      }
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.patch("/api/batches/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      
+      // Only allow metadata updates (not quantities)
+      const allowedFields = ['batch_number', 'received_date', 'quality_status', 'notes'];
+      const updates: any = {};
+      for (const key of allowedFields) {
+        if (req.body[key] !== undefined) {
+          updates[key] = req.body[key];
+        }
+      }
+
+      if (Object.keys(updates).length === 0) {
+        return res.status(400).json({ message: "No valid fields to update" });
+      }
+
+      // Validate quality status if provided
+      if (updates.quality_status && !['Good', 'Acceptable', 'Rejected'].includes(updates.quality_status)) {
+        return res.status(400).json({ message: "Quality status must be Good, Acceptable, or Rejected" });
+      }
+
+      const batch = await storage.updateBatchMetadata(id, updates);
+      if (!batch) {
+        return res.status(404).json({ message: "Batch not found" });
+      }
+      res.json(batch);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/batches/:batchNumber/adjust", async (req, res) => {
+    try {
+      const { batchNumber } = req.params;
+      const { shipped, rejected } = req.body;
+
+      // Validate adjustment quantities
+      if (shipped !== undefined && (typeof shipped !== 'number' || shipped < 0)) {
+        return res.status(400).json({ message: "Shipped quantity must be a non-negative number" });
+      }
+      if (rejected !== undefined && (typeof rejected !== 'number' || rejected < 0)) {
+        return res.status(400).json({ message: "Rejected quantity must be a non-negative number" });
+      }
+      if (!shipped && !rejected) {
+        return res.status(400).json({ message: "At least one of shipped or rejected must be provided" });
+      }
+
+      const batch = await storage.adjustBatchQuantities(batchNumber, { shipped, rejected });
+      res.json(batch);
+    } catch (error: any) {
+      // Map storage errors to HTTP status codes
+      if (error.code === 'BATCH_NOT_FOUND') {
+        return res.status(404).json({ message: error.message });
+      }
+      if (error.code === 'INSUFFICIENT_QUANTITY' || error.code === 'INVALID_ADJUSTMENT' || error.code === 'INVARIANT_VIOLATION') {
+        return res.status(422).json({ message: error.message });
       }
       res.status(500).json({ message: error.message });
     }

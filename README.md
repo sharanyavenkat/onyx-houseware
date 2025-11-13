@@ -72,7 +72,8 @@ Preferred communication style: Simple, everyday language.
 - Orders: Header/line-item pattern, unique PO numbers, status workflow
 - Order Items: Links orders to items with quantities
 - Indents: Monthly inventory planning per item
-- Shipments: Tracks partial fulfillments with lot numbers and rejection counts
+- Batches: Production batch tracking with batch_number (SKU+YYMMDD format), quantity management (produced, remaining, rejected), quality status (Good/Acceptable/Rejected), received_date, is_depleted flag. Canonical invariant: quantity_remaining = quantity_produced - quantity_shipped - quantity_rejected
+- Shipments: Tracks partial fulfillments with batch_number (renamed from lot_number) and rejection counts
 
 ## Authentication System
 

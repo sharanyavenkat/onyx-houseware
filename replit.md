@@ -84,7 +84,8 @@ Preferred communication style: Simple, everyday language.
 - Orders: PO number tracking, status workflow (draft → confirmed → fulfilled/cancelled), date tracking
 - Order Items: Line items with quantity and item references
 - Indents: Monthly inventory planning with opening balance and expected receipts
-- Shipments: Lot-based shipment tracking with rejection counts (blowhole, handles, other)
+- Batches: Production batch tracking with batch_number (SKU+YYMMDD format), quantity management (produced, remaining, rejected), quality status (Good/Acceptable/Rejected), received_date, is_depleted flag. Canonical invariant: quantity_remaining = quantity_produced - quantity_shipped - quantity_rejected
+- Shipments: Batch-based shipment tracking (renamed from lot_number to batch_number) with rejection counts (blowhole, handles, other)
 
 **Type Conversions from PostgreSQL:**
 - `serial` → `integer` with autoIncrement

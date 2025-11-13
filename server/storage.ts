@@ -1,4 +1,4 @@
-import { eq, and, sql } from "drizzle-orm";
+import { eq, and, sql, desc } from "drizzle-orm";
 import { db, sqlite } from "./db/client";
 import { 
   type User, 
@@ -15,13 +15,16 @@ import {
   type InsertIndent,
   type Shipment,
   type InsertShipment,
+  type Batch,
+  type InsertBatch,
   users,
   items,
   customers,
   orders,
   orderItems,
   indents,
-  shipments
+  shipments,
+  batches
 } from "@shared/schema";
 
 export interface IStorage {
@@ -58,6 +61,14 @@ export interface IStorage {
   createShipment(shipment: InsertShipment): Promise<Shipment>;
   updateShipment(id: number, shipment: Partial<InsertShipment>): Promise<Shipment | undefined>;
   deleteShipment(id: number): Promise<void>;
+
+  getAllBatches(): Promise<Batch[]>;
+  getBatchesByItemId(itemId: number): Promise<Batch[]>;
+  getBatchByNumber(batchNumber: string): Promise<Batch | undefined>;
+  getActiveBatchesByItemId(itemId: number): Promise<Batch[]>;
+  createBatch(batch: InsertBatch): Promise<Batch>;
+  updateBatchMetadata(id: number, updates: { batch_number?: string, received_date?: string, quality_status?: string, notes?: string }): Promise<Batch | undefined>;
+  adjustBatchQuantities(batchNumber: string, adjustments: { shipped?: number, rejected?: number }): Promise<Batch>;
 }
 
 export class DbStorage implements IStorage {
@@ -236,6 +247,166 @@ export class DbStorage implements IStorage {
 
   async deleteShipment(id: number): Promise<void> {
     await db.delete(shipments).where(eq(shipments.id, id));
+  }
+
+  async getAllBatches(): Promise<Batch[]> {
+    return await db.select().from(batches).orderBy(desc(batches.received_date));
+  }
+
+  async getBatchesByItemId(itemId: number): Promise<Batch[]> {
+    return await db.select().from(batches)
+      .where(eq(batches.item_id, itemId))
+      .orderBy(desc(batches.received_date));
+  }
+
+  async getBatchByNumber(batchNumber: string): Promise<Batch | undefined> {
+    const [batch] = await db.select().from(batches).where(eq(batches.batch_number, batchNumber));
+    return batch;
+  }
+
+  async getActiveBatchesByItemId(itemId: number): Promise<Batch[]> {
+    return await db.select().from(batches)
+      .where(
+        and(
+          eq(batches.item_id, itemId),
+          eq(batches.is_depleted, false)
+        )
+      )
+      .orderBy(desc(batches.received_date));
+  }
+
+  async createBatch(insertBatch: InsertBatch): Promise<Batch> {
+    const [batch] = await db.insert(batches).values(insertBatch).returning();
+    return batch;
+  }
+
+  async updateBatchMetadata(id: number, updates: { batch_number?: string, received_date?: string, quality_status?: string, notes?: string }): Promise<Batch | undefined> {
+    // Only allow updating metadata fields, not quantities
+    const [batch] = await db.update(batches).set(updates).where(eq(batches.id, id)).returning();
+    return batch;
+  }
+
+  async adjustBatchQuantities(
+    batchNumber: string, 
+    adjustments: { shipped?: number, rejected?: number }
+  ): Promise<Batch> {
+    // Coerce absent values to zero and validate
+    const shippedDelta = adjustments.shipped ?? 0;
+    const rejectedDelta = adjustments.rejected ?? 0;
+
+    // Input validation: require positive deltas
+    if (shippedDelta <= 0 && rejectedDelta <= 0) {
+      const error: any = new Error('At least one adjustment (shipped or rejected) must be positive');
+      error.code = 'INVALID_ADJUSTMENT';
+      throw error;
+    }
+    if (shippedDelta < 0) {
+      const error: any = new Error(`Shipped quantity cannot be negative: ${shippedDelta}`);
+      error.code = 'INVALID_ADJUSTMENT';
+      throw error;
+    }
+    if (rejectedDelta < 0) {
+      const error: any = new Error(`Rejected quantity cannot be negative: ${rejectedDelta}`);
+      error.code = 'INVALID_ADJUSTMENT';
+      throw error;
+    }
+
+    return await db.transaction(async (tx) => {
+      // Lock the row and get current state using transaction handle
+      const [batch] = await tx.select().from(batches)
+        .where(eq(batches.batch_number, batchNumber));
+
+      if (!batch) {
+        const error: any = new Error(`Batch ${batchNumber} not found`);
+        error.code = 'BATCH_NOT_FOUND';
+        throw error;
+      }
+
+      // Calculate total shipped from current state: produced - remaining - rejected
+      const currentShipped = batch.quantity_produced - batch.quantity_remaining - batch.quantity_rejected;
+      
+      // Validate that existing data doesn't violate invariants (catches bad historical data)
+      if (currentShipped < 0) {
+        const error: any = new Error(
+          `Batch ${batchNumber} has invalid historical data (shipped cannot be negative). ` +
+          `Produced: ${batch.quantity_produced}, ` +
+          `Remaining: ${batch.quantity_remaining}, ` +
+          `Rejected: ${batch.quantity_rejected}, ` +
+          `Derived shipped: ${currentShipped}`
+        );
+        error.code = 'INVARIANT_VIOLATION';
+        throw error;
+      }
+
+      // Apply adjustments to get new totals
+      const totalShipped = currentShipped + shippedDelta;
+      const totalRejected = batch.quantity_rejected + rejectedDelta;
+
+      // Validate sufficient quantity for this adjustment
+      const requiredQuantity = shippedDelta + rejectedDelta;
+      if (batch.quantity_remaining < requiredQuantity) {
+        const error: any = new Error(
+          `Insufficient quantity in batch ${batchNumber}. ` +
+          `Requested: ${requiredQuantity} (${shippedDelta} shipped + ${rejectedDelta} rejected), ` +
+          `Available: ${batch.quantity_remaining}`
+        );
+        error.code = 'INSUFFICIENT_QUANTITY';
+        throw error;
+      }
+
+      // Recompute remaining using canonical invariant: remaining = produced - shipped - rejected
+      const newRemaining = batch.quantity_produced - totalShipped - totalRejected;
+
+      // Enforce non-negative invariant
+      if (newRemaining < 0) {
+        const error: any = new Error(
+          `Batch ${batchNumber} adjustment violated invariant (remaining cannot be negative). ` +
+          `Produced: ${batch.quantity_produced}, ` +
+          `Total shipped: ${totalShipped}, ` +
+          `Total rejected: ${totalRejected}, ` +
+          `Calculated remaining: ${newRemaining}`
+        );
+        error.code = 'INVARIANT_VIOLATION';
+        throw error;
+      }
+
+      // Validate that remaining doesn't exceed produced (catches over-counting)
+      if (newRemaining > batch.quantity_produced) {
+        const error: any = new Error(
+          `Batch ${batchNumber} adjustment violated invariant (remaining cannot exceed produced). ` +
+          `Produced: ${batch.quantity_produced}, ` +
+          `Calculated remaining: ${newRemaining}, ` +
+          `Total shipped: ${totalShipped}, ` +
+          `Total rejected: ${totalRejected}`
+        );
+        error.code = 'INVARIANT_VIOLATION';
+        throw error;
+      }
+
+      // Validate canonical relationship: produced >= shipped + rejected
+      if (batch.quantity_produced < totalShipped + totalRejected) {
+        const error: any = new Error(
+          `Batch ${batchNumber} adjustment violated invariant (produced must be >= shipped + rejected). ` +
+          `Produced: ${batch.quantity_produced}, ` +
+          `Total shipped: ${totalShipped}, ` +
+          `Total rejected: ${totalRejected}`
+        );
+        error.code = 'INVARIANT_VIOLATION';
+        throw error;
+      }
+
+      // Update batch with new calculated values and auto-compute depleted flag
+      const [updated] = await tx.update(batches)
+        .set({
+          quantity_remaining: newRemaining,
+          quantity_rejected: totalRejected,
+          is_depleted: newRemaining === 0
+        })
+        .where(eq(batches.batch_number, batchNumber))
+        .returning();
+
+      return updated;
+    });
   }
 }
 

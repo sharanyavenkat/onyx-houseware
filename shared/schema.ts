@@ -109,6 +109,28 @@ export const insertIndentSchema = createInsertSchema(indents).omit({
 export type InsertIndent = z.infer<typeof insertIndentSchema>;
 export type Indent = typeof indents.$inferSelect;
 
+export const batches = sqliteTable("batches", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  item_id: integer("item_id")
+    .notNull()
+    .references(() => items.id),
+  batch_number: text("batch_number").notNull().unique(),
+  received_date: text("received_date").notNull(),
+  quantity_produced: integer("quantity_produced").notNull(),
+  quantity_remaining: integer("quantity_remaining").notNull(),
+  quantity_rejected: integer("quantity_rejected").notNull().default(0),
+  quality_status: text("quality_status").notNull().default("Good"),
+  notes: text("notes"),
+  is_depleted: integer("is_depleted", { mode: "boolean" }).notNull().default(false),
+});
+
+export const insertBatchSchema = createInsertSchema(batches).omit({
+  id: true,
+});
+
+export type InsertBatch = z.infer<typeof insertBatchSchema>;
+export type Batch = typeof batches.$inferSelect;
+
 export const shipments = sqliteTable("shipments", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   order_id: integer("order_id")
@@ -117,7 +139,7 @@ export const shipments = sqliteTable("shipments", {
   order_item_id: integer("order_item_id")
     .notNull()
     .references(() => orderItems.id, { onDelete: "cascade" }),
-  lot_number: text("lot_number"),
+  batch_number: text("batch_number"),
   quantity_shipped: integer("quantity_shipped").notNull(),
   rejections_blowholes: integer("rejections_blowholes").notNull().default(0),
   rejections_handles: integer("rejections_handles").notNull().default(0),

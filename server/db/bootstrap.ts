@@ -124,13 +124,29 @@ export async function bootstrapDatabase() {
       )
     `);
 
-    // Create shipments table
+    // Create batches table
+    await db.run(sql`
+      CREATE TABLE IF NOT EXISTS batches (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        item_id INTEGER NOT NULL REFERENCES items(id),
+        batch_number TEXT NOT NULL UNIQUE,
+        received_date TEXT NOT NULL,
+        quantity_produced INTEGER NOT NULL,
+        quantity_remaining INTEGER NOT NULL,
+        quantity_rejected INTEGER NOT NULL DEFAULT 0,
+        quality_status TEXT NOT NULL DEFAULT 'Good',
+        notes TEXT,
+        is_depleted INTEGER NOT NULL DEFAULT 0
+      )
+    `);
+
+    // Create shipments table (using batch_number from the start)
     await db.run(sql`
       CREATE TABLE IF NOT EXISTS shipments (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         order_id INTEGER NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
         order_item_id INTEGER NOT NULL REFERENCES order_items(id) ON DELETE CASCADE,
-        lot_number TEXT,
+        batch_number TEXT,
         quantity_shipped INTEGER NOT NULL,
         rejections_blowholes INTEGER NOT NULL DEFAULT 0,
         rejections_handles INTEGER NOT NULL DEFAULT 0,
@@ -198,6 +214,94 @@ export async function bootstrapDatabase() {
       "current_safety_stock INTEGER NOT NULL DEFAULT 0",
       "current_safety_stock"
     );
+
+    // Migration: Rename lot_number to batch_number in existing databases
+    // For databases created before batch_number was added
+    await addColumnIfNotExists(
+      "shipments",
+      "batch_number TEXT",
+      "batch_number"
+    );
+
+    // Migrate data from lot_number to batch_number (one-time operation)
+    try {
+      const result = await db.run(sql`
+        UPDATE shipments 
+        SET batch_number = lot_number 
+        WHERE batch_number IS NULL AND lot_number IS NOT NULL
+      `);
+      if (result.changes && result.changes > 0) {
+        console.log(`✅ Migrated ${result.changes} lot_number values to batch_number`);
+      }
+    } catch (error: any) {
+      // Ignore if lot_number column doesn't exist (new databases)
+      if (!error.message.includes("no such column")) {
+        console.log("ℹ️ Lot number migration skipped");
+      }
+    }
+
+    // Create UNBATCHED batches for existing items with current inventory levels
+    // Derives initial quantity from most recent indent's opening_balance for each item
+    // Marks zero-quantity batches as depleted to prevent them from appearing usable
+    try {
+      const result = await db.run(sql`
+        INSERT OR IGNORE INTO batches (
+          item_id, 
+          batch_number, 
+          received_date, 
+          quantity_produced, 
+          quantity_remaining, 
+          quality_status,
+          is_depleted,
+          notes
+        )
+        SELECT 
+          items.id,
+          'UNBATCHED-' || items.id,
+          date('now'),
+          COALESCE(
+            (SELECT opening_balance + current_safety_stock 
+             FROM indents 
+             WHERE indents.item_id = items.id 
+             ORDER BY month DESC 
+             LIMIT 1), 
+            0
+          ),
+          COALESCE(
+            (SELECT opening_balance + current_safety_stock 
+             FROM indents 
+             WHERE indents.item_id = items.id 
+             ORDER BY month DESC 
+             LIMIT 1), 
+            0
+          ),
+          'Good',
+          CASE 
+            WHEN COALESCE(
+              (SELECT opening_balance + current_safety_stock 
+               FROM indents 
+               WHERE indents.item_id = items.id 
+               ORDER BY month DESC 
+               LIMIT 1), 
+              0
+            ) = 0 THEN 1 
+            ELSE 0 
+          END,
+          'Legacy inventory migrated from indent system. PLEASE VERIFY quantities before use.'
+        FROM items
+        WHERE NOT EXISTS (
+          SELECT 1 FROM batches 
+          WHERE batches.item_id = items.id 
+          AND batches.batch_number = 'UNBATCHED-' || items.id
+        )
+      `);
+      if (result.changes && result.changes > 0) {
+        console.log(`✅ Created ${result.changes} UNBATCHED batch records with current inventory levels`);
+        console.log(`⚠️  IMPORTANT: Review UNBATCHED quantities before go-live - they may not reflect actual stock`);
+      }
+    } catch (error: any) {
+      console.log("ℹ️ UNBATCHED batch creation skipped (likely already completed)");
+    }
 
     console.log("✅ SQLite database tables initialized successfully");
   } catch (error) {
