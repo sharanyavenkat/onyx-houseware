@@ -135,6 +135,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Batch routes
+  // Get opening balance from batches (must come before general /api/batches route)
+  app.get("/api/batches/opening-balance", async (req, res) => {
+    try {
+      const openingBalance = await storage.getOpeningBalanceByItem();
+      res.json(openingBalance);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
   app.get("/api/batches", async (req, res) => {
     try {
       const batches = await storage.getAllBatches();

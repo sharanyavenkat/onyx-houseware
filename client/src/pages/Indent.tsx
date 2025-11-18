@@ -41,6 +41,11 @@ export default function IndentPage() {
     queryKey: ['/api/order-items'],
   });
 
+  // Fetch opening balance from batches (read-only, calculated from batch quantities)
+  const { data: batchOpeningBalance = {} } = useQuery<Record<number, number>>({
+    queryKey: ['/api/batches/opening-balance'],
+  });
+
   // Calculate pending orders per item
   const pendingOrdersByItem = useMemo(() => {
     const pending: Record<number, number> = {};
@@ -63,7 +68,8 @@ export default function IndentPage() {
   const indentData = useMemo(() => {
     return items.map(item => {
       const indent = indents.find(i => i.item_id === item.id);
-      const openingBalance = editingCells[`${item.id}-opening_balance`] !== undefined ? parseInt(editingCells[`${item.id}-opening_balance`]) || 0 : indent?.opening_balance ?? 0;
+      // Opening balance is now read-only, calculated from batches
+      const openingBalance = batchOpeningBalance[item.id] || 0;
       const expectedReceipts = editingCells[`${item.id}-expected_receipts`] !== undefined ? parseInt(editingCells[`${item.id}-expected_receipts`]) || 0 : indent?.expected_receipts ?? 0;
       // Current safety stock: Use indent value if exists, otherwise default to 0
       const currentSafetyStock = editingCells[`${item.id}-current_safety_stock`] !== undefined ? parseInt(editingCells[`${item.id}-current_safety_stock`]) || 0 : indent?.current_safety_stock ?? 0;
@@ -97,7 +103,7 @@ export default function IndentPage() {
         is_safety_buffer_breached: metrics.isSafetyBufferBreached,
       };
     });
-  }, [items, indents, pendingOrdersByItem, editingCells]);
+  }, [items, indents, pendingOrdersByItem, editingCells, batchOpeningBalance]);
 
   // Save mutation for indent data
   const saveIndentMutation = useMutation({
@@ -111,10 +117,10 @@ export default function IndentPage() {
       await queryClient.refetchQueries({ queryKey: ['/api/indents', selectedMonth] });
       
       // Clear editing cells only for successfully saved items (indent fields)
+      // Note: opening_balance is not editable anymore, but keeping deletion for cleanup
       setEditingCells(prev => {
         const updated = { ...prev };
         variables.forEach(item => {
-          delete updated[`${item.item_id}-opening_balance`];
           delete updated[`${item.item_id}-expected_receipts`];
           delete updated[`${item.item_id}-current_safety_stock`];
         });
@@ -191,8 +197,8 @@ export default function IndentPage() {
     // Store the raw string value to avoid lag during typing
     setEditingCells(prev => ({ ...prev, [key]: value }));
     
-    // Mark this item as dirty if it's an indent field (including current_safety_stock)
-    if (field === 'opening_balance' || field === 'expected_receipts' || field === 'current_safety_stock') {
+    // Mark this item as dirty if it's an indent field (opening_balance is now read-only from batches)
+    if (field === 'expected_receipts' || field === 'current_safety_stock') {
       setDirtyItems(prev => new Set(prev).add(itemId));
     }
   };
@@ -202,19 +208,15 @@ export default function IndentPage() {
     { 
       key: 'opening_balance', 
       label: 'Opening Balance', 
-      render: (value: number, row: any) => {
-        const key = `${row.id}-opening_balance`;
-        const displayValue = editingCells[key] !== undefined ? editingCells[key] : String(value);
-        return (
-          <Input
-            type="number"
-            value={displayValue}
-            onChange={(e) => handleCellEdit(row.id, 'opening_balance', e.target.value)}
-            className="w-24"
-            data-testid={`input-opening-balance-${row.id}`}
-          />
-        );
-      }
+      render: (value: number) => (
+        <div 
+          className="font-mono text-sm px-2 py-1"
+          data-testid={`text-opening-balance`}
+          title="Read-only: Calculated from batch quantities"
+        >
+          {value.toLocaleString()}
+        </div>
+      )
     },
     { 
       key: 'expected_receipts', 

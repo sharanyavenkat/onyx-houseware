@@ -120,6 +120,7 @@ export default function Batches() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/batches"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/batches/opening-balance"] });
       toast({ title: "Batch updated successfully" });
       setIsEditDialogOpen(false);
       setEditingBatch(null);

@@ -408,6 +408,20 @@ export class DbStorage implements IStorage {
       return updated;
     });
   }
+  async getOpeningBalanceByItem(): Promise<Record<number, number>> {
+    // Calculate opening balance as sum of quantity_remaining for all non-depleted batches per item
+    const allBatches = await db.select().from(batches);
+    
+    const openingBalance: Record<number, number> = {};
+    
+    allBatches.forEach((batch) => {
+      if (!batch.is_depleted && batch.quantity_remaining > 0) {
+        openingBalance[batch.item_id] = (openingBalance[batch.item_id] || 0) + batch.quantity_remaining;
+      }
+    });
+    
+    return openingBalance;
+  }
 }
 
 export const storage = new DbStorage();

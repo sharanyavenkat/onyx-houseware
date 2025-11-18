@@ -78,6 +78,7 @@ export default function BatchFormModal({
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/batches"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/batches/opening-balance"] });
       toast({ title: "Batch created successfully" });
       form.reset();
       onOpenChange(false);
