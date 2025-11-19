@@ -100,7 +100,7 @@ Preferred communication style: Simple, everyday language.
 - Two-tier inventory model: Working Stock (opening + expected) and Safety Stock (buffer)
 - Calculation logic in `shared/inventory.ts` determines order requirements
 - Formula: `required_to_order = max(0, (pending_orders + safety_stock) - (opening_balance + expected_receipts))`
-- Pending orders calculated from draft/confirmed orders within selected month
+- Pending orders fetched from backend API `/api/orders/pending-by-item` for consistency
 - Auto-save functionality with debouncing for indent updates
 
 **Order Management:**
@@ -109,11 +109,22 @@ Preferred communication style: Simple, everyday language.
 - Purchase order number (PO) uniqueness validation
 - Date tracking for order date and fulfillment date
 
-**Shipment Tracking:**
-- Lot-based shipment records linked to order items
-- Rejection tracking by category (blowhole defects, handle issues, other)
-- Quantity shipped vs ordered tracking
-- CRUD operations on shipments per order item
+**Pending Orders Calculation (November 2025 Architecture):**
+- **Formula:** `pending = ordered - shipped + rejected`
+- **Rationale:** Rejected pieces need replacement, so they count against fulfillment
+- **Single Source of Truth:** Backend method `getPendingOrdersByItem()` used across all pages (Dashboard, Indent, Order Details)
+- **Implementation:** Aggregates rejection totals (blowholes + handles + other) per order item from shipments table
+- **Consistency:** All UI components fetch from `/api/orders/pending-by-item` endpoint instead of local calculations
+
+**Shipment & Rejection Tracking (November 2025 Architecture):**
+- **Single Source of Truth:** Shipments table captures all rejection data at inspection time
+- **Batch-based shipments:** Each shipment links to order item with batch_number (required field, renamed from lot_number)
+- **Rejection Categories:** blowholes, handles, other defects tracked per shipment
+- **Read-only Aggregation:** `batch.quantity_rejected` is calculated sum of rejections, not directly editable
+- **Batch Updates:** Automated triggers update `batch.quantity_remaining` and `quantity_rejected` when shipments change
+- **Canonical Invariant:** `quantity_remaining = quantity_produced - quantity_shipped - quantity_rejected`
+- **UI Terminology:** "Batch number" (not "Lot number"), "Available" batches (not "Active"), "Desired Safety Stock" (not "Target")
+- **CRUD Operations:** Shipments can be added/edited/deleted per order item with rejection tracking
 
 ## Build & Deployment
 
