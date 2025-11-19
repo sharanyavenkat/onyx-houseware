@@ -135,10 +135,6 @@ export const updateBatchSchema = z.object({
     (val) => val === undefined || val === "" ? undefined : typeof val === "string" ? parseInt(val, 10) : val,
     z.number().int().min(1).optional()
   ),
-  quantity_rejected: z.preprocess(
-    (val) => val === undefined || val === "" ? undefined : typeof val === "string" ? parseInt(val, 10) : val,
-    z.number().int().min(0).optional()
-  ),
   quality_status: z.enum(["Good", "Acceptable", "Rejected"]).optional(),
   notes: z.string().optional(),
 }).refine(data => {

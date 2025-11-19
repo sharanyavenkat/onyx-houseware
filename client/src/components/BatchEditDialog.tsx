@@ -38,10 +38,6 @@ const batchEditSchema = z.object({
     z.number().int().min(1, "Produced quantity must be at least 1")
   ),
   quality_status: z.enum(["Good", "Acceptable", "Rejected"]),
-  quantity_rejected: z.preprocess(
-    (val) => val === undefined || val === "" ? 0 : val,
-    z.number().int().min(0, "Rejected quantity cannot be negative")
-  ),
   notes: z.string().optional(),
 });
 
@@ -73,7 +69,6 @@ export default function BatchEditDialog({
       received_date: "",
       quantity_produced: 0,
       quality_status: "Good",
-      quantity_rejected: 0,
       notes: "",
     },
   });
@@ -86,7 +81,6 @@ export default function BatchEditDialog({
         received_date: batch.received_date,
         quantity_produced: batch.quantity_produced,
         quality_status: batch.quality_status as "Good" | "Acceptable" | "Rejected",
-        quantity_rejected: batch.quantity_rejected,
         notes: batch.notes || "",
       });
     }
@@ -228,28 +222,21 @@ export default function BatchEditDialog({
                   )}
                 />
 
-                <FormField
-                  control={form.control}
-                  name="quantity_rejected"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Rejected Quantity</FormLabel>
-                      <FormControl>
-                        <Input
-                          type="number"
-                          value={field.value ?? ""}
-                          onChange={(e) => {
-                            const value = e.target.value;
-                            const newValue = value === "" ? undefined : parseInt(value);
-                            field.onChange(newValue);
-                          }}
-                          data-testid="input-edit-quantity-rejected"
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
+                <FormItem>
+                  <FormLabel>Rejected Quantity</FormLabel>
+                  <FormControl>
+                    <Input
+                      type="number"
+                      value={batch.quantity_rejected}
+                      disabled
+                      className="bg-muted cursor-not-allowed"
+                      data-testid="input-edit-quantity-rejected"
+                    />
+                  </FormControl>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Read-only: Rejections are tracked in shipments (blowholes, handles, other defects)
+                  </p>
+                </FormItem>
 
                 <FormField
                   control={form.control}

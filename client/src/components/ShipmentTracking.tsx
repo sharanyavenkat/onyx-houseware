@@ -47,7 +47,7 @@ export default function ShipmentTracking({
   const [editingShipment, setEditingShipment] = useState<Shipment | null>(null);
   const [isConfirmOpen, setIsConfirmOpen] = useState(false);
   const [shipmentToDelete, setShipmentToDelete] = useState<number | null>(null);
-  const [lotNumber, setLotNumber] = useState("");
+  const [batchNumber, setBatchNumber] = useState("");
   const [quantityShipped, setQuantityShipped] = useState("");
   const [shipmentDate, setShipmentDate] = useState("");
   const [rejectionsBlowhole, setRejectionsBlowhole] = useState("");
@@ -163,7 +163,7 @@ export default function ShipmentTracking({
   });
 
   const resetForm = () => {
-    setLotNumber("");
+    setBatchNumber("");
     setQuantityShipped("");
     setShipmentDate("");
     setRejectionsBlowhole("");
@@ -185,7 +185,7 @@ export default function ShipmentTracking({
     const data = {
       order_id: orderId,
       order_item_id: orderItemId,
-      lot_number: lotNumber || null,
+      batch_number: batchNumber || null,
       quantity_shipped: parseInt(quantityShipped),
       rejections_blowholes: parseInt(rejectionsBlowhole) || 0,
       rejections_handles: parseInt(rejectionsHandles) || 0,
@@ -202,7 +202,7 @@ export default function ShipmentTracking({
 
   const handleEdit = (shipment: Shipment) => {
     setEditingShipment(shipment);
-    setLotNumber(shipment.lot_number || "");
+    setBatchNumber(shipment.batch_number || "");
     setQuantityShipped(shipment.quantity_shipped.toString());
     setShipmentDate(toInputDate(shipment.shipment_date));
     setRejectionsBlowhole(shipment.rejections_blowholes.toString());
@@ -351,15 +351,16 @@ export default function ShipmentTracking({
                   <form onSubmit={handleSubmit} className="space-y-4">
                     <div className="grid grid-cols-3 gap-4">
                       <div>
-                        <Label htmlFor="lot_number">
-                          Lot Number (Optional)
+                        <Label htmlFor="batch_number">
+                          Batch Number
                         </Label>
                         <Input
-                          id="lot_number"
-                          value={lotNumber}
-                          onChange={(e) => setLotNumber(e.target.value)}
-                          placeholder="e.g., LOT-001"
-                          data-testid="input-lot-number"
+                          id="batch_number"
+                          value={batchNumber}
+                          onChange={(e) => setBatchNumber(e.target.value)}
+                          placeholder="e.g., PAN10-250120"
+                          data-testid="input-batch-number"
+                          required
                         />
                       </div>
 
@@ -484,7 +485,7 @@ export default function ShipmentTracking({
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Lot Number</TableHead>
+                      <TableHead>Batch Number</TableHead>
                       <TableHead>Date</TableHead>
                       <TableHead className="text-right">Shipped</TableHead>
                       <TableHead className="text-right">Blowholes</TableHead>
@@ -511,7 +512,7 @@ export default function ShipmentTracking({
                           data-testid={`row-shipment-${shipment.id}`}
                         >
                           <TableCell className="font-medium">
-                            {shipment.lot_number || "-"}
+                            {shipment.batch_number || "-"}
                           </TableCell>
                           <TableCell>
                             {formatDate(shipment.shipment_date)}
