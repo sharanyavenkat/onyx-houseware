@@ -78,6 +78,12 @@ export default function ShipmentTracking({
       queryClient.invalidateQueries({
         queryKey: ["/api/shipments", "order", orderId],
       });
+      queryClient.invalidateQueries({
+        queryKey: ["/api/batches"],
+      });
+      queryClient.invalidateQueries({
+        queryKey: ["/api/batches/opening-balance"],
+      });
       toast({ title: "Shipment recorded successfully" });
       resetForm();
       setIsFormOpen(false);
@@ -104,6 +110,12 @@ export default function ShipmentTracking({
       });
       queryClient.invalidateQueries({
         queryKey: ["/api/shipments", "order", orderId],
+      });
+      queryClient.invalidateQueries({
+        queryKey: ["/api/batches"],
+      });
+      queryClient.invalidateQueries({
+        queryKey: ["/api/batches/opening-balance"],
       });
       toast({ title: "Shipment updated successfully" });
       resetForm();
@@ -132,6 +144,12 @@ export default function ShipmentTracking({
       });
       queryClient.invalidateQueries({
         queryKey: ["/api/shipments", "order", orderId],
+      });
+      queryClient.invalidateQueries({
+        queryKey: ["/api/batches"],
+      });
+      queryClient.invalidateQueries({
+        queryKey: ["/api/batches/opening-balance"],
       });
       toast({ title: "Shipment deleted successfully" });
     },

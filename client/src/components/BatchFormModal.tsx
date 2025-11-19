@@ -118,7 +118,7 @@ export default function BatchFormModal({
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl">
+      <DialogContent className="max-w-6xl h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Create New Batch</DialogTitle>
         </DialogHeader>

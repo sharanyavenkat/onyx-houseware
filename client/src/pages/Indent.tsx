@@ -64,9 +64,21 @@ export default function IndentPage() {
     return pending;
   }, [orders, allOrderItems]);
 
+  // Sort items: active first, then by name alphabetically
+  const sortedItems = useMemo(() => {
+    return [...items].sort((a, b) => {
+      // Active items (true) should come before inactive (false)
+      if (a.is_active !== b.is_active) {
+        return a.is_active ? -1 : 1;
+      }
+      // Within same active status, sort by name
+      return a.name.localeCompare(b.name);
+    });
+  }, [items]);
+
   // Merge data
   const indentData = useMemo(() => {
-    return items.map(item => {
+    return sortedItems.map(item => {
       const indent = indents.find(i => i.item_id === item.id);
       // Opening balance is now read-only, calculated from batches
       const openingBalance = batchOpeningBalance[item.id] || 0;
@@ -103,7 +115,7 @@ export default function IndentPage() {
         is_safety_buffer_breached: metrics.isSafetyBufferBreached,
       };
     });
-  }, [items, indents, pendingOrdersByItem, editingCells, batchOpeningBalance]);
+  }, [sortedItems, indents, pendingOrdersByItem, editingCells, batchOpeningBalance]);
 
   // Save mutation for indent data
   const saveIndentMutation = useMutation({

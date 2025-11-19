@@ -73,6 +73,18 @@ export default function Batches() {
     });
   }, [enrichedBatches, selectedItem, qualityFilter, statusFilter]);
 
+  // Sort items: active first, then by name alphabetically
+  const sortedItems = useMemo(() => {
+    return [...items].sort((a, b) => {
+      // Active items (true) should come before inactive (false)
+      if (a.is_active !== b.is_active) {
+        return a.is_active ? -1 : 1;
+      }
+      // Within same active status, sort by name
+      return a.name.localeCompare(b.name);
+    });
+  }, [items]);
+
   // Group batches by item
   const batchesByItem = useMemo(() => {
     const grouped = new Map<number, typeof filteredBatches>();
@@ -92,10 +104,20 @@ export default function Batches() {
     return grouped;
   }, [filteredBatches]);
 
-  // Update mutation for editing batch metadata
+  // Update mutation for editing batch metadata and rejection quantity
   const updateMutation = useMutation({
     mutationFn: async ({ id, data }: { id: number; data: any }) => {
-      return await apiRequest("PATCH", `/api/batches/${id}`, data);
+      // If quantity_rejected is included, use the rejection endpoint (which also handles quality_status and notes)
+      if ('quantity_rejected' in data) {
+        return await apiRequest("PATCH", `/api/batches/${id}/rejection`, {
+          quantity_rejected: data.quantity_rejected,
+          quality_status: data.quality_status,
+          notes: data.notes,
+        });
+      } else {
+        // Otherwise use the metadata endpoint
+        return await apiRequest("PATCH", `/api/batches/${id}`, data);
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/batches"] });
@@ -186,9 +208,9 @@ export default function Batches() {
         </div>
       ) : (
         <Accordion type="multiple" className="space-y-3">
-          {Array.from(batchesByItem.entries()).map(([itemId, itemBatches]) => {
-            const item = items.find((i) => i.id === itemId);
-            if (!item) return null;
+          {sortedItems.map((item) => {
+            const itemBatches = batchesByItem.get(item.id);
+            if (!itemBatches || itemBatches.length === 0) return null;
 
             // Calculate summary stats for this item
             const totalRemaining = itemBatches.reduce((sum, b) => sum + b.quantity_remaining, 0);
@@ -198,10 +220,10 @@ export default function Batches() {
             
             return (
               <AccordionItem
-                key={itemId}
-                value={`item-${itemId}`}
+                key={item.id}
+                value={`item-${item.id}`}
                 className="border rounded-lg px-4"
-                data-testid={`accordion-item-${itemId}`}
+                data-testid={`accordion-item-${item.id}`}
               >
                 <AccordionTrigger className="hover:no-underline py-4">
                   <div className="flex items-center justify-between w-full pr-4">

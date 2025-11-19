@@ -21,6 +21,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { Input } from "@/components/ui/input";
 import type { Batch } from "@shared/schema";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useEffect } from "react";
@@ -29,6 +30,7 @@ import { z } from "zod";
 
 const batchEditSchema = z.object({
   quality_status: z.enum(["Good", "Acceptable", "Rejected"]),
+  quantity_rejected: z.number().int().min(0, "Rejected quantity cannot be negative"),
   notes: z.string().optional(),
 });
 
@@ -53,6 +55,7 @@ export default function BatchEditDialog({
     resolver: zodResolver(batchEditSchema),
     defaultValues: {
       quality_status: "Good",
+      quantity_rejected: 0,
       notes: "",
     },
   });
@@ -62,6 +65,7 @@ export default function BatchEditDialog({
     if (batch) {
       form.reset({
         quality_status: batch.quality_status as "Good" | "Acceptable" | "Rejected",
+        quantity_rejected: batch.quantity_rejected,
         notes: batch.notes || "",
       });
     }
@@ -83,8 +87,14 @@ export default function BatchEditDialog({
           <p className="text-sm">
             <span className="font-medium">Batch:</span> {batch.batch_number}
           </p>
-          <p className="text-sm text-muted-foreground">
-            Note: Quantity fields are computed by the system and cannot be edited manually.
+          <p className="text-sm">
+            <span className="font-medium">Produced:</span> {batch.quantity_produced.toLocaleString()}
+          </p>
+          <p className="text-sm">
+            <span className="font-medium">Remaining:</span> {batch.quantity_remaining.toLocaleString()}
+          </p>
+          <p className="text-sm text-muted-foreground text-xs mt-2">
+            Note: Editing rejected quantity will automatically recalculate remaining quantity.
           </p>
         </div>
         <Form {...form}>
@@ -107,6 +117,26 @@ export default function BatchEditDialog({
                       <SelectItem value="Rejected">Rejected</SelectItem>
                     </SelectContent>
                   </Select>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name="quantity_rejected"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Rejected Quantity</FormLabel>
+                  <FormControl>
+                    <Input
+                      type="number"
+                      {...field}
+                      value={field.value}
+                      onChange={(e) => field.onChange(parseInt(e.target.value) || 0)}
+                      data-testid="input-edit-quantity-rejected"
+                    />
+                  </FormControl>
                   <FormMessage />
                 </FormItem>
               )}

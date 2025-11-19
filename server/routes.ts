@@ -279,6 +279,35 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.patch("/api/batches/:id/rejection", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const { quantity_rejected, quality_status, notes } = req.body;
+
+      // Validate quantity_rejected
+      if (typeof quantity_rejected !== 'number' || quantity_rejected < 0) {
+        return res.status(400).json({ message: "quantity_rejected must be a non-negative number" });
+      }
+
+      // Validate quality_status if provided
+      if (quality_status !== undefined && !['Good', 'Acceptable', 'Rejected'].includes(quality_status)) {
+        return res.status(400).json({ message: "quality_status must be Good, Acceptable, or Rejected" });
+      }
+
+      const batch = await storage.updateBatchRejection(id, quantity_rejected, quality_status, notes);
+      res.json(batch);
+    } catch (error: any) {
+      // Map storage errors to HTTP status codes
+      if (error.code === 'BATCH_NOT_FOUND') {
+        return res.status(404).json({ message: error.message });
+      }
+      if (error.code === 'INSUFFICIENT_QUANTITY' || error.code === 'INVALID_REJECTED_QUANTITY' || error.code === 'INVARIANT_VIOLATION') {
+        return res.status(422).json({ message: error.message });
+      }
+      res.status(500).json({ message: error.message });
+    }
+  });
+
   app.post("/api/batches/:batchNumber/adjust", async (req, res) => {
     try {
       const { batchNumber } = req.params;

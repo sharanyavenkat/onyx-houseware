@@ -68,6 +68,7 @@ export interface IStorage {
   getActiveBatchesByItemId(itemId: number): Promise<Batch[]>;
   createBatch(batch: InsertBatch): Promise<Batch>;
   updateBatchMetadata(id: number, updates: { batch_number?: string, received_date?: string, quality_status?: string, notes?: string }): Promise<Batch | undefined>;
+  updateBatchRejection(id: number, newRejected: number, quality_status?: string, notes?: string): Promise<Batch>;
   adjustBatchQuantities(batchNumber: string, adjustments: { shipped?: number, rejected?: number }): Promise<Batch>;
 }
 
@@ -284,6 +285,95 @@ export class DbStorage implements IStorage {
     // Only allow updating metadata fields, not quantities
     const [batch] = await db.update(batches).set(updates).where(eq(batches.id, id)).returning();
     return batch;
+  }
+
+  async updateBatchRejection(id: number, newRejected: number, quality_status?: string, notes?: string): Promise<Batch> {
+    // Validate non-negative rejected quantity
+    if (newRejected < 0) {
+      const error: any = new Error(`Rejected quantity cannot be negative: ${newRejected}`);
+      error.code = 'INVALID_REJECTED_QUANTITY';
+      throw error;
+    }
+
+    return await db.transaction(async (tx) => {
+      // Lock the row and get current state
+      const [batch] = await tx.select().from(batches).where(eq(batches.id, id));
+
+      if (!batch) {
+        const error: any = new Error(`Batch ID ${id} not found`);
+        error.code = 'BATCH_NOT_FOUND';
+        throw error;
+      }
+
+      // Calculate current shipped quantity: produced - remaining - rejected
+      const currentShipped = batch.quantity_produced - batch.quantity_remaining - batch.quantity_rejected;
+
+      // Validate that existing data doesn't violate invariants
+      if (currentShipped < 0) {
+        const error: any = new Error(
+          `Batch ${batch.batch_number} has invalid historical data (shipped cannot be negative). ` +
+          `Produced: ${batch.quantity_produced}, ` +
+          `Remaining: ${batch.quantity_remaining}, ` +
+          `Rejected: ${batch.quantity_rejected}, ` +
+          `Derived shipped: ${currentShipped}`
+        );
+        error.code = 'INVARIANT_VIOLATION';
+        throw error;
+      }
+
+      // Validate that new rejected quantity doesn't exceed available quantity
+      if (newRejected + currentShipped > batch.quantity_produced) {
+        const error: any = new Error(
+          `Rejected quantity exceeds available quantity in batch ${batch.batch_number}. ` +
+          `Produced: ${batch.quantity_produced}, ` +
+          `Shipped: ${currentShipped}, ` +
+          `New rejected: ${newRejected}, ` +
+          `Exceeds by: ${(newRejected + currentShipped) - batch.quantity_produced}`
+        );
+        error.code = 'INSUFFICIENT_QUANTITY';
+        throw error;
+      }
+
+      // Recompute remaining using canonical invariant: remaining = produced - shipped - rejected
+      const newRemaining = batch.quantity_produced - currentShipped - newRejected;
+
+      // Enforce non-negative invariant (should always pass if previous check passed)
+      if (newRemaining < 0) {
+        const error: any = new Error(
+          `Batch ${batch.batch_number} update violated invariant (remaining cannot be negative). ` +
+          `Produced: ${batch.quantity_produced}, ` +
+          `Shipped: ${currentShipped}, ` +
+          `New rejected: ${newRejected}, ` +
+          `Calculated remaining: ${newRemaining}`
+        );
+        error.code = 'INVARIANT_VIOLATION';
+        throw error;
+      }
+
+      // Update batch with new rejected quantity and recalculated remaining
+      const updates: any = {
+        quantity_rejected: newRejected,
+        quantity_remaining: newRemaining,
+        is_depleted: newRemaining === 0,
+      };
+
+      // Optionally update quality_status if provided
+      if (quality_status !== undefined) {
+        updates.quality_status = quality_status;
+      }
+
+      // Optionally update notes if provided
+      if (notes !== undefined) {
+        updates.notes = notes;
+      }
+
+      const [updatedBatch] = await tx.update(batches)
+        .set(updates)
+        .where(eq(batches.id, id))
+        .returning();
+
+      return updatedBatch;
+    });
   }
 
   async adjustBatchQuantities(

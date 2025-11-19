@@ -107,12 +107,15 @@ export default function Items() {
     queryKey: ["/api/items"],
   });
 
-  // Sort items: active first, inactive last
+  // Sort items: active first, then by name alphabetically
   const sortedItems = useMemo(() => {
     return [...items].sort((a, b) => {
       // Active items (true) should come before inactive (false)
-      if (a.is_active === b.is_active) return 0;
-      return a.is_active ? -1 : 1;
+      if (a.is_active !== b.is_active) {
+        return a.is_active ? -1 : 1;
+      }
+      // Within same active status, sort by name
+      return a.name.localeCompare(b.name);
     });
   }, [items]);
 
