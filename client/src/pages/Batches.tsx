@@ -7,61 +7,21 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from "@/components/ui/accordion";
 import { useToast } from "@/hooks/use-toast";
 import { formatDate } from "@/lib/dateUtils";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { Batch, Item } from "@shared/schema";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
-import DataTable from "../components/DataTable";
 import BatchFormModal from "../components/BatchFormModal";
 import BatchEditDialog from "../components/BatchEditDialog";
-
-const batchColumns = [
-  { key: "batch_number", label: "Batch Number" },
-  { key: "item_name", label: "Item" },
-  {
-    key: "received_date",
-    label: "Received Date",
-    render: (value: string) => formatDate(value),
-  },
-  {
-    key: "quantity_produced",
-    label: "Produced",
-    render: (value: number) => value.toLocaleString(),
-  },
-  {
-    key: "quantity_remaining",
-    label: "Remaining",
-    render: (value: number) => value.toLocaleString(),
-  },
-  {
-    key: "quantity_rejected",
-    label: "Rejected",
-    render: (value: number) => value.toLocaleString(),
-  },
-  {
-    key: "quality_status",
-    label: "Quality",
-    render: (value: string) => {
-      const variants: Record<string, any> = {
-        Good: "default",
-        Acceptable: "secondary",
-        Rejected: "destructive",
-      };
-      return <Badge variant={variants[value] || "default"}>{value}</Badge>;
-    },
-  },
-  {
-    key: "is_depleted",
-    label: "Status",
-    render: (value: boolean) => (
-      <Badge variant={value ? "secondary" : "default"}>
-        {value ? "Depleted" : "Active"}
-      </Badge>
-    ),
-  },
-];
+import { Edit } from "lucide-react";
 
 export default function Batches() {
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
@@ -200,14 +160,192 @@ export default function Batches() {
         </div>
       </div>
 
-      {/* Batches Table */}
-      <DataTable
-        columns={batchColumns}
-        data={filteredBatches}
-        title=""
-        searchable={true}
-        onEdit={handleEdit}
-      />
+      {/* Batches List - Collapsible Rows */}
+      {filteredBatches.length === 0 ? (
+        <div className="text-center py-12 text-muted-foreground">
+          No batches found. Add a batch to get started.
+        </div>
+      ) : (
+        <Accordion type="multiple" className="space-y-2">
+          {filteredBatches.map((batch) => {
+            const qualityVariants: Record<string, any> = {
+              Good: "default",
+              Acceptable: "secondary",
+              Rejected: "destructive",
+            };
+            
+            return (
+              <AccordionItem
+                key={batch.id}
+                value={`batch-${batch.id}`}
+                className="border rounded-lg px-4"
+                data-testid={`accordion-batch-${batch.id}`}
+              >
+                <AccordionTrigger className="hover:no-underline py-4">
+                  <div className="flex items-center justify-between w-full pr-4">
+                    {/* Left: Batch Number & Item */}
+                    <div className="flex items-center gap-4">
+                      <div className="text-left">
+                        <div className="font-semibold font-mono text-sm">
+                          {batch.batch_number}
+                        </div>
+                        <div className="text-xs text-muted-foreground">
+                          {batch.item_name}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Center: Quantities */}
+                    <div className="flex items-center gap-6 font-mono text-sm">
+                      <div className="text-center">
+                        <div className="text-xs text-muted-foreground mb-1">
+                          Remaining
+                        </div>
+                        <div className="font-semibold">
+                          {batch.quantity_remaining.toLocaleString()}
+                        </div>
+                      </div>
+                      <div className="text-center">
+                        <div className="text-xs text-muted-foreground mb-1">
+                          Produced
+                        </div>
+                        <div>{batch.quantity_produced.toLocaleString()}</div>
+                      </div>
+                      {batch.quantity_rejected > 0 && (
+                        <div className="text-center">
+                          <div className="text-xs text-muted-foreground mb-1">
+                            Rejected
+                          </div>
+                          <div className="text-destructive">
+                            {batch.quantity_rejected.toLocaleString()}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Right: Status Badges */}
+                    <div className="flex items-center gap-2">
+                      <Badge
+                        variant={
+                          qualityVariants[batch.quality_status || "Good"] ||
+                          "default"
+                        }
+                      >
+                        {batch.quality_status || "Good"}
+                      </Badge>
+                      <Badge
+                        variant={batch.is_depleted ? "secondary" : "default"}
+                      >
+                        {batch.is_depleted ? "Depleted" : "Active"}
+                      </Badge>
+                    </div>
+                  </div>
+                </AccordionTrigger>
+
+                <AccordionContent className="pb-4 pt-2">
+                  <div className="grid grid-cols-2 gap-6 pl-4">
+                    {/* Left Column: Batch Details */}
+                    <div className="space-y-3">
+                      <h4 className="font-medium text-sm">Batch Details</h4>
+                      <div className="space-y-2 text-sm">
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">
+                            Received Date:
+                          </span>
+                          <span className="font-medium">
+                            {formatDate(batch.received_date)}
+                          </span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">
+                            Quantity Produced:
+                          </span>
+                          <span className="font-mono">
+                            {batch.quantity_produced.toLocaleString()}
+                          </span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">
+                            Quantity Remaining:
+                          </span>
+                          <span className="font-mono font-semibold">
+                            {batch.quantity_remaining.toLocaleString()}
+                          </span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">
+                            Quantity Rejected:
+                          </span>
+                          <span
+                            className={`font-mono ${
+                              batch.quantity_rejected > 0
+                                ? "text-destructive font-medium"
+                                : ""
+                            }`}
+                          >
+                            {batch.quantity_rejected.toLocaleString()}
+                          </span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">
+                            Quality Status:
+                          </span>
+                          <Badge
+                            variant={
+                              qualityVariants[
+                                batch.quality_status || "Good"
+                              ] || "default"
+                            }
+                          >
+                            {batch.quality_status || "Good"}
+                          </Badge>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">
+                            Depletion Status:
+                          </span>
+                          <Badge
+                            variant={
+                              batch.is_depleted ? "secondary" : "default"
+                            }
+                          >
+                            {batch.is_depleted ? "Depleted" : "Active"}
+                          </Badge>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Right Column: Notes & Actions */}
+                    <div className="space-y-3">
+                      <div>
+                        <h4 className="font-medium text-sm mb-2">Notes</h4>
+                        <p className="text-sm text-muted-foreground">
+                          {batch.notes || "No notes"}
+                        </p>
+                      </div>
+
+                      <div className="pt-4">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleEdit(batch);
+                          }}
+                          data-testid={`button-edit-batch-${batch.id}`}
+                        >
+                          <Edit className="w-4 h-4 mr-2" />
+                          Edit Metadata
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                </AccordionContent>
+              </AccordionItem>
+            );
+          })}
+        </Accordion>
+      )}
 
       {/* Create Batch Modal */}
       <BatchFormModal
