@@ -104,20 +104,12 @@ export default function Batches() {
     return grouped;
   }, [filteredBatches]);
 
-  // Update mutation for editing batch metadata and rejection quantity
+  // Update mutation for editing batch
   const updateMutation = useMutation({
     mutationFn: async ({ id, data }: { id: number; data: any }) => {
-      // If quantity_rejected is included, use the rejection endpoint (which also handles quality_status and notes)
-      if ('quantity_rejected' in data) {
-        return await apiRequest("PATCH", `/api/batches/${id}/rejection`, {
-          quantity_rejected: data.quantity_rejected,
-          quality_status: data.quality_status,
-          notes: data.notes,
-        });
-      } else {
-        // Otherwise use the metadata endpoint
-        return await apiRequest("PATCH", `/api/batches/${id}`, data);
-      }
+      // Always use metadata endpoint which handles all fields including quantity_produced
+      // The rejection endpoint is now only used internally when only rejection changes
+      return await apiRequest("PATCH", `/api/batches/${id}`, data);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/batches"] });
@@ -135,6 +127,27 @@ export default function Batches() {
     },
   });
 
+  // Delete mutation
+  const deleteMutation = useMutation({
+    mutationFn: async (id: number) => {
+      return await apiRequest("DELETE", `/api/batches/${id}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/batches"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/batches/opening-balance"] });
+      toast({ title: "Batch deleted successfully" });
+      setIsEditDialogOpen(false);
+      setEditingBatch(null);
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Error deleting batch",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
   const handleEdit = (batch: any) => {
     setEditingBatch(batch);
     setIsEditDialogOpen(true);
@@ -143,6 +156,12 @@ export default function Batches() {
   const handleUpdateBatch = (data: any) => {
     if (editingBatch) {
       updateMutation.mutate({ id: editingBatch.id, data });
+    }
+  };
+
+  const handleDeleteBatch = () => {
+    if (editingBatch) {
+      deleteMutation.mutate(editingBatch.id);
     }
   };
 
@@ -388,7 +407,9 @@ export default function Batches() {
         }}
         batch={editingBatch}
         onSave={handleUpdateBatch}
+        onDelete={handleDeleteBatch}
         isPending={updateMutation.isPending}
+        isDeleting={deleteMutation.isPending}
       />
     </div>
   );

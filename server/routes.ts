@@ -3,7 +3,10 @@ import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { verifyPassword } from "./auth";
 import { requireAuth } from "./middleware";
-import { insertItemSchema, insertCustomerSchema, insertOrderSchema, insertOrderItemSchema, insertIndentSchema, insertShipmentSchema, insertBatchSchema } from "@shared/schema";
+import { insertItemSchema, insertCustomerSchema, insertOrderSchema, insertOrderItemSchema, insertIndentSchema, insertShipmentSchema, insertBatchSchema, updateBatchSchema } from "@shared/schema";
+import { db } from "./db";
+import { batches } from "@shared/schema";
+import { eq } from "drizzle-orm";
 
 export async function registerRoutes(app: Express): Promise<Server> {
   
@@ -138,8 +141,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Get opening balance from batches (must come before general /api/batches route)
   app.get("/api/batches/opening-balance", async (req, res) => {
     try {
-      const openingBalance = await storage.getOpeningBalanceByItem();
+      // Support optional includeAcceptable query parameter (default true)
+      const includeAcceptable = req.query.includeAcceptable !== 'false';
+      const openingBalance = await storage.getOpeningBalanceByItemWithQuality(includeAcceptable);
       res.json(openingBalance);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.get("/api/orders/pending-by-item", async (req, res) => {
+    try {
+      const pendingOrders = await storage.getPendingOrdersByItem();
+      res.json(pendingOrders);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.get("/api/batches/rejected-by-item", async (req, res) => {
+    try {
+      const rejectedQuantities = await storage.getRejectedQuantitiesByItem();
+      res.json(rejectedQuantities);
     } catch (error: any) {
       res.status(500).json({ message: error.message });
     }
@@ -148,7 +171,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/batches", async (req, res) => {
     try {
       const batches = await storage.getAllBatches();
-      res.json(batches);
+      // Add calculated quantity_shipped field to each batch
+      const enrichedBatches = batches.map(batch => ({
+        ...batch,
+        quantity_shipped: batch.quantity_produced - batch.quantity_remaining - batch.quantity_rejected
+      }));
+      res.json(enrichedBatches);
     } catch (error: any) {
       res.status(500).json({ message: error.message });
     }
@@ -251,29 +279,34 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const id = parseInt(req.params.id);
       
-      // Only allow metadata updates (not quantities)
-      const allowedFields = ['batch_number', 'received_date', 'quality_status', 'notes'];
-      const updates: any = {};
-      for (const key of allowedFields) {
-        if (req.body[key] !== undefined) {
-          updates[key] = req.body[key];
-        }
+      // Validate payload with Zod schema
+      const validationResult = updateBatchSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          message: "Invalid batch update data", 
+          errors: validationResult.error.errors 
+        });
       }
+      
+      // Use unified storage.updateBatch method
+      const updatedBatch = await storage.updateBatch(id, validationResult.data);
+      return res.json(updatedBatch);
+    } catch (error: any) {
+      if (error.code === 'BATCH_NOT_FOUND') {
+        return res.status(404).json({ message: error.message });
+      }
+      if (error.code === 'INVARIANT_VIOLATION' || error.code === 'INVALID_REJECTED_QUANTITY') {
+        return res.status(422).json({ message: error.message });
+      }
+      res.status(500).json({ message: error.message });
+    }
+  });
 
-      if (Object.keys(updates).length === 0) {
-        return res.status(400).json({ message: "No valid fields to update" });
-      }
-
-      // Validate quality status if provided
-      if (updates.quality_status && !['Good', 'Acceptable', 'Rejected'].includes(updates.quality_status)) {
-        return res.status(400).json({ message: "Quality status must be Good, Acceptable, or Rejected" });
-      }
-
-      const batch = await storage.updateBatchMetadata(id, updates);
-      if (!batch) {
-        return res.status(404).json({ message: "Batch not found" });
-      }
-      res.json(batch);
+  app.delete("/api/batches/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      await storage.deleteBatch(id);
+      res.status(204).send();
     } catch (error: any) {
       res.status(500).json({ message: error.message });
     }

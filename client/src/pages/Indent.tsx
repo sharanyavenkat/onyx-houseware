@@ -2,6 +2,8 @@ import DataTable from '../components/DataTable';
 import MonthPicker from '../components/MonthPicker';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
+import { Switch } from '@/components/ui/switch';
+import { Label } from '@/components/ui/label';
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { queryClient, apiRequest } from '@/lib/queryClient';
@@ -13,10 +15,11 @@ export default function IndentPage() {
   const currentDate = new Date();
   const currentMonth = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}`;
   const [selectedMonth, setSelectedMonth] = useState(currentMonth);
+  const [includeAcceptable, setIncludeAcceptable] = useState(true);
   const [editingCells, setEditingCells] = useState<Record<string, string>>({});
   const [dirtyItems, setDirtyItems] = useState<Set<number>>(new Set());
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const { toast } = useToast();
+  const { toast} = useToast();
 
   // Fetch all items (only active items)
   const { data: allItems = [] } = useQuery<Item[]>({
@@ -43,26 +46,23 @@ export default function IndentPage() {
 
   // Fetch opening balance from batches (read-only, calculated from batch quantities)
   const { data: batchOpeningBalance = {} } = useQuery<Record<number, number>>({
-    queryKey: ['/api/batches/opening-balance'],
+    queryKey: ['/api/batches/opening-balance', includeAcceptable],
+    queryFn: async () => {
+      const response = await fetch(`/api/batches/opening-balance?includeAcceptable=${includeAcceptable}`);
+      if (!response.ok) throw new Error('Failed to fetch opening balance');
+      return response.json();
+    },
   });
 
-  // Calculate pending orders per item
-  const pendingOrdersByItem = useMemo(() => {
-    const pending: Record<number, number> = {};
-    
-    // Filter orders by draft or confirmed status
-    const activeOrders = orders.filter(o => o.status === 'draft' || o.status === 'confirmed');
-    const activeOrderIds = new Set(activeOrders.map(o => o.id));
-    
-    // Sum quantities for each item from active orders
-    allOrderItems.forEach(oi => {
-      if (activeOrderIds.has(oi.order_id)) {
-        pending[oi.item_id] = (pending[oi.item_id] || 0) + oi.quantity;
-      }
-    });
-    
-    return pending;
-  }, [orders, allOrderItems]);
+  // Fetch pending orders (ordered - shipped) from server
+  const { data: pendingOrdersByItem = {} } = useQuery<Record<number, number>>({
+    queryKey: ['/api/orders/pending-by-item'],
+  });
+
+  // Fetch rejected quantities per item
+  const { data: rejectedByItem = {} } = useQuery<Record<number, number>>({
+    queryKey: ['/api/batches/rejected-by-item'],
+  });
 
   // Sort items: active first, then by name alphabetically
   const sortedItems = useMemo(() => {
@@ -104,6 +104,7 @@ export default function IndentPage() {
         desired_safety_stock: item.desired_safety_stock,
         current_safety_stock: currentSafetyStock,
         pending_order_qty: pendingQty,
+        total_rejected: rejectedByItem[item.id] || 0,
         working_stock: metrics.workingStock,
         usable_stock: metrics.usableStock,
         post_pending_stock: metrics.postPendingStock,
@@ -115,7 +116,7 @@ export default function IndentPage() {
         is_safety_buffer_breached: metrics.isSafetyBufferBreached,
       };
     });
-  }, [sortedItems, indents, pendingOrdersByItem, editingCells, batchOpeningBalance]);
+  }, [sortedItems, indents, pendingOrdersByItem, editingCells, batchOpeningBalance, rejectedByItem]);
 
   // Save mutation for indent data
   const saveIndentMutation = useMutation({
@@ -220,13 +221,20 @@ export default function IndentPage() {
     { 
       key: 'opening_balance', 
       label: 'Opening Balance', 
-      render: (value: number) => (
-        <div 
-          className="font-mono text-sm px-2 py-1"
-          data-testid={`text-opening-balance`}
-          title="Read-only: Calculated from batch quantities"
-        >
-          {value.toLocaleString()}
+      render: (value: number, row: any) => (
+        <div className="space-y-1">
+          <div 
+            className="font-mono text-sm px-2 py-1"
+            data-testid={`text-opening-balance-${row.id}`}
+            title="Read-only: Calculated from batch quantities"
+          >
+            {value.toLocaleString()}
+          </div>
+          {row.total_rejected > 0 && (
+            <div className="text-xs text-destructive font-mono px-2" data-testid={`text-rejected-${row.id}`}>
+              Rejected: {row.total_rejected.toLocaleString()}
+            </div>
+          )}
         </div>
       )
     },
@@ -341,6 +349,17 @@ export default function IndentPage() {
           <p className="text-muted-foreground">Manage monthly inventory requirements (auto-saves as you edit)</p>
         </div>
         <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2 bg-muted px-3 py-2 rounded-md">
+            <Switch
+              id="include-acceptable"
+              checked={includeAcceptable}
+              onCheckedChange={setIncludeAcceptable}
+              data-testid="switch-include-acceptable"
+            />
+            <Label htmlFor="include-acceptable" className="text-sm cursor-pointer">
+              Include Acceptable Quality
+            </Label>
+          </div>
           <MonthPicker value={selectedMonth} onChange={setSelectedMonth} />
         </div>
       </div>

@@ -63,13 +63,19 @@ export interface IStorage {
   deleteShipment(id: number): Promise<void>;
 
   getAllBatches(): Promise<Batch[]>;
+  getBatchById(id: number): Promise<Batch | undefined>;
   getBatchesByItemId(itemId: number): Promise<Batch[]>;
   getBatchByNumber(batchNumber: string): Promise<Batch | undefined>;
   getActiveBatchesByItemId(itemId: number): Promise<Batch[]>;
   createBatch(batch: InsertBatch): Promise<Batch>;
-  updateBatchMetadata(id: number, updates: { batch_number?: string, received_date?: string, quality_status?: string, notes?: string }): Promise<Batch | undefined>;
+  updateBatch(id: number, updates: { batch_number?: string, received_date?: string, quantity_produced?: number, quantity_rejected?: number, quality_status?: string, notes?: string }): Promise<Batch>;
+  updateBatchMetadata(id: number, updates: { batch_number?: string, received_date?: string, quantity_produced?: number, quality_status?: string, notes?: string }): Promise<Batch | undefined>;
+  deleteBatch(id: number): Promise<void>;
   updateBatchRejection(id: number, newRejected: number, quality_status?: string, notes?: string): Promise<Batch>;
   adjustBatchQuantities(batchNumber: string, adjustments: { shipped?: number, rejected?: number }): Promise<Batch>;
+  getPendingOrdersByItem(): Promise<Record<number, number>>;
+  getOpeningBalanceByItemWithQuality(includeAcceptable: boolean): Promise<Record<number, number>>;
+  getRejectedQuantitiesByItem(): Promise<Record<number, number>>;
 }
 
 export class DbStorage implements IStorage {
@@ -254,6 +260,11 @@ export class DbStorage implements IStorage {
     return await db.select().from(batches).orderBy(desc(batches.received_date));
   }
 
+  async getBatchById(id: number): Promise<Batch | undefined> {
+    const [batch] = await db.select().from(batches).where(eq(batches.id, id));
+    return batch;
+  }
+
   async getBatchesByItemId(itemId: number): Promise<Batch[]> {
     return await db.select().from(batches)
       .where(eq(batches.item_id, itemId))
@@ -281,10 +292,117 @@ export class DbStorage implements IStorage {
     return batch;
   }
 
-  async updateBatchMetadata(id: number, updates: { batch_number?: string, received_date?: string, quality_status?: string, notes?: string }): Promise<Batch | undefined> {
-    // Only allow updating metadata fields, not quantities
-    const [batch] = await db.update(batches).set(updates).where(eq(batches.id, id)).returning();
-    return batch;
+  async updateBatch(id: number, updates: { batch_number?: string, received_date?: string, quantity_produced?: number, quantity_rejected?: number, quality_status?: string, notes?: string }): Promise<Batch> {
+    return await db.transaction(async (tx) => {
+      // Get current batch
+      const [currentBatch] = await tx.select().from(batches).where(eq(batches.id, id));
+      
+      if (!currentBatch) {
+        const error: any = new Error(`Batch with id ${id} not found`);
+        error.code = 'BATCH_NOT_FOUND';
+        throw error;
+      }
+
+      // Build merged batch state with updates applied
+      const newBatchNumber = updates.batch_number ?? currentBatch.batch_number;
+      const newReceivedDate = updates.received_date ?? currentBatch.received_date;
+      const newQualityStatus = updates.quality_status ?? currentBatch.quality_status;
+      const newNotes = updates.notes !== undefined ? updates.notes : currentBatch.notes;
+      const newProduced = updates.quantity_produced ?? currentBatch.quantity_produced;
+      const newRejected = updates.quantity_rejected ?? currentBatch.quantity_rejected;
+      
+      // Calculate shipped from invariant: shipped = produced - remaining - rejected
+      const currentShipped = currentBatch.quantity_produced - currentBatch.quantity_remaining - currentBatch.quantity_rejected;
+      
+      // Calculate new remaining: remaining = produced - shipped - rejected
+      const newRemaining = newProduced - currentShipped - newRejected;
+      
+      // Validate invariant: produced >= shipped + rejected
+      if (newRemaining < 0) {
+        const error: any = new Error(
+          `Cannot update batch: new produced (${newProduced}) < shipped (${currentShipped}) + rejected (${newRejected})`
+        );
+        error.code = 'INVARIANT_VIOLATION';
+        throw error;
+      }
+
+      // Validate rejected quantity doesn't exceed available quantity
+      if (newRejected > newProduced - currentShipped) {
+        const error: any = new Error(
+          `Rejected quantity (${newRejected}) exceeds available quantity (${newProduced - currentShipped})`
+        );
+        error.code = 'INVALID_REJECTED_QUANTITY';
+        throw error;
+      }
+      
+      // Calculate is_depleted flag
+      const isDepleted = newRemaining === 0;
+
+      // Update batch with all computed values
+      const [updatedBatch] = await tx.update(batches)
+        .set({
+          batch_number: newBatchNumber,
+          received_date: newReceivedDate,
+          quantity_produced: newProduced,
+          quantity_rejected: newRejected,
+          quantity_remaining: newRemaining,
+          quality_status: newQualityStatus,
+          notes: newNotes,
+          is_depleted: isDepleted,
+        })
+        .where(eq(batches.id, id))
+        .returning();
+
+      return updatedBatch;
+    });
+  }
+
+  async updateBatchMetadata(id: number, updates: { batch_number?: string, received_date?: string, quantity_produced?: number, quality_status?: string, notes?: string }): Promise<Batch | undefined> {
+    return await db.transaction(async (tx) => {
+      // Get current batch
+      const [batch] = await tx.select().from(batches).where(eq(batches.id, id));
+      
+      if (!batch) {
+        return undefined;
+      }
+
+      // If quantity_produced is being updated, recalculate quantity_remaining
+      if (updates.quantity_produced !== undefined) {
+        const newProduced = updates.quantity_produced;
+        // Calculate shipped from invariant: shipped = produced - remaining - rejected
+        const currentShipped = batch.quantity_produced - batch.quantity_remaining - batch.quantity_rejected;
+        const newRemaining = newProduced - currentShipped - batch.quantity_rejected;
+        
+        // Validate that new remaining is non-negative
+        if (newRemaining < 0) {
+          const error: any = new Error(
+            `Cannot update batch: new produced quantity (${newProduced}) is less than shipped (${currentShipped}) + rejected (${batch.quantity_rejected})`
+          );
+          error.code = 'INVARIANT_VIOLATION';
+          throw error;
+        }
+
+        // Update with recalculated remaining
+        const [updatedBatch] = await tx.update(batches)
+          .set({
+            ...updates,
+            quantity_remaining: newRemaining,
+            is_depleted: newRemaining === 0,
+          })
+          .where(eq(batches.id, id))
+          .returning();
+        
+        return updatedBatch;
+      } else {
+        // No quantity_produced update, just update metadata
+        const [updatedBatch] = await tx.update(batches).set(updates).where(eq(batches.id, id)).returning();
+        return updatedBatch;
+      }
+    });
+  }
+
+  async deleteBatch(id: number): Promise<void> {
+    await db.delete(batches).where(eq(batches.id, id));
   }
 
   async updateBatchRejection(id: number, newRejected: number, quality_status?: string, notes?: string): Promise<Batch> {
@@ -511,6 +629,81 @@ export class DbStorage implements IStorage {
     });
     
     return openingBalance;
+  }
+
+  async getPendingOrdersByItem(): Promise<Record<number, number>> {
+    // Get all orders with draft or confirmed status
+    const activeOrders = await db.select().from(orders).where(
+      sql`${orders.status} IN ('draft', 'confirmed')`
+    );
+    const activeOrderIds = new Set(activeOrders.map(o => o.id));
+    
+    if (activeOrderIds.size === 0) {
+      return {};
+    }
+    
+    // Get all order items for active orders
+    const allOrderItems = await db.select().from(orderItems);
+    
+    // Get all shipments
+    const allShipments = await db.select().from(shipments);
+    
+    // Calculate shipped quantities per order item
+    const shippedByOrderItem: Record<number, number> = {};
+    allShipments.forEach(shipment => {
+      shippedByOrderItem[shipment.order_item_id] = 
+        (shippedByOrderItem[shipment.order_item_id] || 0) + shipment.quantity_shipped;
+    });
+    
+    // Calculate pending (ordered - shipped) per item
+    const pending: Record<number, number> = {};
+    allOrderItems.forEach(oi => {
+      if (activeOrderIds.has(oi.order_id)) {
+        const shipped = shippedByOrderItem[oi.id] || 0;
+        const pendingQty = oi.quantity - shipped;
+        if (pendingQty > 0) {
+          pending[oi.item_id] = (pending[oi.item_id] || 0) + pendingQty;
+        }
+      }
+    });
+    
+    return pending;
+  }
+
+  async getOpeningBalanceByItemWithQuality(includeAcceptable: boolean): Promise<Record<number, number>> {
+    // Calculate opening balance with quality filter
+    const allBatches = await db.select().from(batches);
+    
+    const openingBalance: Record<number, number> = {};
+    
+    allBatches.forEach((batch) => {
+      if (!batch.is_depleted && batch.quantity_remaining > 0) {
+        // Include based on quality filter
+        const shouldInclude = batch.quality_status === 'Good' || 
+                             (includeAcceptable && batch.quality_status === 'Acceptable');
+        
+        if (shouldInclude) {
+          openingBalance[batch.item_id] = (openingBalance[batch.item_id] || 0) + batch.quantity_remaining;
+        }
+      }
+    });
+    
+    return openingBalance;
+  }
+
+  async getRejectedQuantitiesByItem(): Promise<Record<number, number>> {
+    // Sum all rejected quantities per item from all batches
+    const allBatches = await db.select().from(batches);
+    
+    const rejectedByItem: Record<number, number> = {};
+    
+    allBatches.forEach((batch) => {
+      if (batch.quantity_rejected > 0) {
+        rejectedByItem[batch.item_id] = (rejectedByItem[batch.item_id] || 0) + batch.quantity_rejected;
+      }
+    });
+    
+    return rejectedByItem;
   }
 }
 

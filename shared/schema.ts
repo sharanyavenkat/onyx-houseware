@@ -128,7 +128,29 @@ export const insertBatchSchema = createInsertSchema(batches).omit({
   id: true,
 });
 
+export const updateBatchSchema = z.object({
+  batch_number: z.string().min(1).optional(),
+  received_date: z.string().min(1).optional(),
+  quantity_produced: z.preprocess(
+    (val) => val === undefined || val === "" ? undefined : typeof val === "string" ? parseInt(val, 10) : val,
+    z.number().int().min(1).optional()
+  ),
+  quantity_rejected: z.preprocess(
+    (val) => val === undefined || val === "" ? undefined : typeof val === "string" ? parseInt(val, 10) : val,
+    z.number().int().min(0).optional()
+  ),
+  quality_status: z.enum(["Good", "Acceptable", "Rejected"]).optional(),
+  notes: z.string().optional(),
+}).refine(data => {
+  // Count fields that are actually provided (not undefined)
+  const providedFields = Object.values(data).filter(val => val !== undefined).length;
+  return providedFields > 0;
+}, {
+  message: "At least one field must be provided for update"
+});
+
 export type InsertBatch = z.infer<typeof insertBatchSchema>;
+export type UpdateBatch = z.infer<typeof updateBatchSchema>;
 export type Batch = typeof batches.$inferSelect;
 
 export const shipments = sqliteTable("shipments", {
