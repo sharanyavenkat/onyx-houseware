@@ -257,7 +257,7 @@ export default function IndentPage() {
     },
     { 
       key: 'desired_safety_stock', 
-      label: 'Target Safety Stock',
+      label: 'Desired Safety Stock',
       render: (value: number, row: any) => (
         <span className="text-muted-foreground font-mono" data-testid={`text-desired-safety-${row.id}`}>
           {value}
@@ -385,9 +385,9 @@ export default function IndentPage() {
         <div>
           <h3 className="font-medium mb-2">Safety Stock Management:</h3>
           <div className="text-sm text-muted-foreground space-y-1">
-            <p><strong>Target Safety Stock</strong>: Long-term desired safety stock level (set in Items page)</p>
+            <p><strong>Desired Safety Stock</strong>: Long-term desired safety stock level (set in Items page)</p>
             <p><strong>Current Safety Stock</strong>: Month-specific safety stock you can actually maintain based on production capacity, caster bottlenecks, and demand</p>
-            <p className="text-xs pt-1 italic">Current safety stock defaults to target but can be adjusted monthly. All changes auto-save.</p>
+            <p className="text-xs pt-1 italic">Current safety stock defaults to desired but can be adjusted monthly. All changes auto-save.</p>
           </div>
         </div>
         <div>

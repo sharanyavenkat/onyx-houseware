@@ -206,7 +206,7 @@ export default function Batches() {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All Status</SelectItem>
-              <SelectItem value="active">Active</SelectItem>
+              <SelectItem value="active">Available</SelectItem>
               <SelectItem value="depleted">Depleted</SelectItem>
             </SelectContent>
           </Select>
@@ -351,7 +351,7 @@ export default function Batches() {
                                   <Badge
                                     variant={batch.is_depleted ? "secondary" : "default"}
                                   >
-                                    {batch.is_depleted ? "Depleted" : "Active"}
+                                    {batch.is_depleted ? "Depleted" : "Available"}
                                   </Badge>
                                 </td>
                                 <td className="py-3 px-4 text-center">

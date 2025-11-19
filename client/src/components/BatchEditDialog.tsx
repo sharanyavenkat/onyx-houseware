@@ -2,6 +2,7 @@ import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -99,9 +100,12 @@ export default function BatchEditDialog({
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-6xl h-[90vh] overflow-y-auto">
+      <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Edit Batch</DialogTitle>
+          <DialogDescription>
+            Update batch information and quality status
+          </DialogDescription>
         </DialogHeader>
         
         <div className="grid grid-cols-2 gap-6">
@@ -190,7 +194,8 @@ export default function BatchEditDialog({
                           value={field.value || ""}
                           onChange={(e) => {
                             const value = e.target.value;
-                            field.onChange(value === "" ? undefined : parseInt(value));
+                            const newValue = value === "" ? undefined : parseInt(value);
+                            field.onChange(newValue);
                           }}
                           data-testid="input-edit-quantity-produced"
                         />
@@ -235,7 +240,8 @@ export default function BatchEditDialog({
                           value={field.value ?? ""}
                           onChange={(e) => {
                             const value = e.target.value;
-                            field.onChange(value === "" ? undefined : parseInt(value));
+                            const newValue = value === "" ? undefined : parseInt(value);
+                            field.onChange(newValue);
                           }}
                           data-testid="input-edit-quantity-rejected"
                         />
