@@ -648,19 +648,28 @@ export class DbStorage implements IStorage {
     // Get all shipments
     const allShipments = await db.select().from(shipments);
     
-    // Calculate shipped quantities per order item
+    // Calculate shipped quantities and rejected quantities per order item
     const shippedByOrderItem: Record<number, number> = {};
+    const rejectedByOrderItem: Record<number, number> = {};
     allShipments.forEach(shipment => {
       shippedByOrderItem[shipment.order_item_id] = 
         (shippedByOrderItem[shipment.order_item_id] || 0) + shipment.quantity_shipped;
+      
+      const totalRejected = (shipment.rejections_blowholes || 0) + 
+                           (shipment.rejections_handles || 0) + 
+                           (shipment.rejections_other || 0);
+      rejectedByOrderItem[shipment.order_item_id] = 
+        (rejectedByOrderItem[shipment.order_item_id] || 0) + totalRejected;
     });
     
-    // Calculate pending (ordered - shipped) per item
+    // Calculate pending (ordered - shipped + rejected) per item
+    // Rejected pieces need to be replaced, so they add to pending quantity
     const pending: Record<number, number> = {};
     allOrderItems.forEach(oi => {
       if (activeOrderIds.has(oi.order_id)) {
         const shipped = shippedByOrderItem[oi.id] || 0;
-        const pendingQty = oi.quantity - shipped;
+        const rejected = rejectedByOrderItem[oi.id] || 0;
+        const pendingQty = oi.quantity - shipped + rejected;
         if (pendingQty > 0) {
           pending[oi.item_id] = (pending[oi.item_id] || 0) + pendingQty;
         }

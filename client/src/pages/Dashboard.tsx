@@ -55,6 +55,11 @@ export default function Dashboard() {
     queryKey: ['/api/indents', currentMonth],
   });
 
+  // Fetch pending orders from backend (accounts for shipped and rejected quantities)
+  const { data: pendingByItem = {} } = useQuery<Record<number, number>>({
+    queryKey: ['/api/orders/pending-by-item'],
+  });
+
   // Extract unique months from orders based on fulfillment_date
   const availableMonths = useMemo(() => {
     const months = new Set<string>();
@@ -87,36 +92,25 @@ export default function Dashboard() {
     totalCustomers: customers.length
   };
 
-  // Calculate top items by pending quantity using REAL indent data
+  // Calculate top items by pending quantity using REAL indent data and backend pending calculation
   const topItemsByPendingQty = useMemo(() => {
-    const itemPendingQtyMap = new Map<number, { name: string; pendingQty: number; desiredSafetyStock: number }>();
-    
-    // Aggregate pending quantities from ALL orders (not filtered by month - we want all pending orders)
-    orders
-      .filter(order => order.status === 'draft' || order.status === 'confirmed')
-      .forEach(order => {
-        const lineItems = order.line_items ?? [];
-        lineItems.forEach(lineItem => {
-          const itemId = lineItem.item_id;
-          const item = items.find(i => i.id === itemId);
-          
-          if (item) {
-            const existing = itemPendingQtyMap.get(itemId);
-            if (existing) {
-              existing.pendingQty += lineItem.quantity;
-            } else {
-              itemPendingQtyMap.set(itemId, {
-                name: item.name,
-                pendingQty: lineItem.quantity,
-                desiredSafetyStock: item.desired_safety_stock || 0
-              });
-            }
-          }
-        });
-      });
+    // Use backend-calculated pending orders (accounts for shipped and rejected)
+    const itemDataArray = Object.entries(pendingByItem)
+      .map(([itemId, pendingQty]) => {
+        const item = items.find(i => i.id === parseInt(itemId));
+        if (!item) return null;
+        
+        return {
+          itemId: parseInt(itemId),
+          name: item.name,
+          pendingQty,
+          desiredSafetyStock: item.desired_safety_stock || 0
+        };
+      })
+      .filter(item => item !== null);
     
     // Convert to array, calculate using REAL indent data
-    return Array.from(itemPendingQtyMap.values())
+    return itemDataArray
       .map(itemData => {
         const item = items.find(i => i.name === itemData.name);
         if (!item) return null;
@@ -149,7 +143,7 @@ export default function Dashboard() {
       .filter(item => item !== null)
       .sort((a, b) => b.shortfall - a.shortfall)
       .slice(0, 5);
-  }, [orders, items, indents]);
+  }, [pendingByItem, items, indents]);
 
   return (
     <div className="space-y-6" data-testid="page-dashboard">
