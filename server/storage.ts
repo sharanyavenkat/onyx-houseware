@@ -244,21 +244,36 @@ export class DbStorage implements IStorage {
 
   async createShipment(insertShipment: InsertShipment): Promise<Shipment> {
     const [shipment] = await db.insert(shipments).values(insertShipment).returning();
+    console.log('[createShipment] Created shipment:', JSON.stringify(shipment, null, 2));
     
     // Update batch with new rejection totals (only if batch_number is provided)
     if (shipment.batch_number) {
+      console.log('[createShipment] Updating batch:', shipment.batch_number);
+      
       const allShipmentsForBatch = await db.select().from(shipments)
         .where(eq(shipments.batch_number, shipment.batch_number));
+      console.log('[createShipment] All shipments for batch:', allShipmentsForBatch.length);
       
       const totalRejected = allShipmentsForBatch.reduce((sum, s) => {
         return sum + (s.rejections_blowholes || 0) + (s.rejections_handles || 0) + (s.rejections_other || 0);
       }, 0);
+      console.log('[createShipment] Total rejected:', totalRejected);
       
       const totalShipped = allShipmentsForBatch.reduce((sum, s) => sum + s.quantity_shipped, 0);
+      console.log('[createShipment] Total shipped:', totalShipped);
       
       const [batch] = await db.select().from(batches).where(eq(batches.batch_number, shipment.batch_number));
+      console.log('[createShipment] Found batch:', batch ? JSON.stringify(batch, null, 2) : 'NOT FOUND');
+      
       if (batch) {
         const newRemaining = batch.quantity_produced - totalShipped - totalRejected;
+        console.log('[createShipment] Updating batch quantities:', {
+          produced: batch.quantity_produced,
+          shipped: totalShipped,
+          rejected: totalRejected,
+          newRemaining
+        });
+        
         await db.update(batches)
           .set({
             quantity_rejected: totalRejected,
@@ -266,7 +281,13 @@ export class DbStorage implements IStorage {
             is_depleted: newRemaining <= 0
           })
           .where(eq(batches.batch_number, shipment.batch_number));
+        
+        console.log('[createShipment] Batch updated successfully');
+      } else {
+        console.log('[createShipment] WARNING: Batch not found for batch_number:', shipment.batch_number);
       }
+    } else {
+      console.log('[createShipment] No batch_number provided, skipping batch update');
     }
     
     return shipment;
