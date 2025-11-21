@@ -240,9 +240,10 @@ export async function bootstrapDatabase() {
       }
     }
 
-    // Create UNBATCHED batches for existing items with current inventory levels
-    // Derives initial quantity from most recent indent's opening_balance for each item
-    // Marks zero-quantity batches as depleted to prevent them from appearing usable
+    // DISABLED: Create UNBATCHED batches for existing items with current inventory levels
+    // This was a one-time legacy migration feature - now disabled to allow fresh starts
+    // Commenting out to prevent auto-creation of UNBATCHED batches on server restart
+    /*
     try {
       const result = await db.run(sql`
         INSERT OR IGNORE INTO batches (
@@ -302,6 +303,7 @@ export async function bootstrapDatabase() {
     } catch (error: any) {
       console.log("ℹ️ UNBATCHED batch creation skipped (likely already completed)");
     }
+    */
 
     console.log("✅ SQLite database tables initialized successfully");
   } catch (error) {
