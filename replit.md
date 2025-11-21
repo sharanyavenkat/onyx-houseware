@@ -90,6 +90,21 @@ Preferred communication style: Simple, everyday language.
 - Usable Stock = Working Stock + Current Safety Stock
 - Tracks pending orders, shortfalls, and procurement requirements
 
+**Indent Planning (Opening Balance vs On-Hand Stock):**
+- Opening Balance: Editable month-start snapshot stored in indents table
+  - Auto-initialized from current on-hand stock when viewing a new month
+  - Can be manually edited if physical count differs from system
+  - Persists as historical record for that month
+- On-Hand Stock: Read-only real-time calculation from batches
+  - Calculated as sum of batch.quantity_remaining (Good + optionally Acceptable)
+  - Updates automatically as shipments are created/modified
+  - Provides live inventory visibility during planning
+- Auto-initialization guards prevent duplicate records:
+  - Waits for both indents and onHandStock queries to fetch
+  - Uses per-month ref guard to prevent concurrent initializations
+  - Awaits query refetch completion before clearing guard
+  - Server uses upsert for database-level idempotency
+
 ## External Dependencies
 
 **Build & Development Tools:**
