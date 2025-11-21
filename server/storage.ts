@@ -243,97 +243,91 @@ export class DbStorage implements IStorage {
   }
 
   async createShipment(insertShipment: InsertShipment): Promise<Shipment> {
-    return await db.transaction(async (tx) => {
-      const [shipment] = await tx.insert(shipments).values(insertShipment).returning();
-      
-      // Update batch with new rejection totals
-      const allShipmentsForBatch = await tx.select().from(shipments)
-        .where(eq(shipments.batch_number, shipment.batch_number));
-      
-      const totalRejected = allShipmentsForBatch.reduce((sum, s) => {
-        return sum + (s.rejections_blowholes || 0) + (s.rejections_handles || 0) + (s.rejections_other || 0);
-      }, 0);
-      
-      const totalShipped = allShipmentsForBatch.reduce((sum, s) => sum + s.quantity_shipped, 0);
-      
-      const [batch] = await tx.select().from(batches).where(eq(batches.batch_number, shipment.batch_number));
-      if (batch) {
-        const newRemaining = batch.quantity_produced - totalShipped - totalRejected;
-        await tx.update(batches)
-          .set({
-            quantity_rejected: totalRejected,
-            quantity_remaining: Math.max(0, newRemaining),
-            is_depleted: newRemaining <= 0
-          })
-          .where(eq(batches.batch_number, shipment.batch_number));
-      }
-      
-      return shipment;
-    });
+    const [shipment] = await db.insert(shipments).values(insertShipment).returning();
+    
+    // Update batch with new rejection totals
+    const allShipmentsForBatch = await db.select().from(shipments)
+      .where(eq(shipments.batch_number, shipment.batch_number));
+    
+    const totalRejected = allShipmentsForBatch.reduce((sum, s) => {
+      return sum + (s.rejections_blowholes || 0) + (s.rejections_handles || 0) + (s.rejections_other || 0);
+    }, 0);
+    
+    const totalShipped = allShipmentsForBatch.reduce((sum, s) => sum + s.quantity_shipped, 0);
+    
+    const [batch] = await db.select().from(batches).where(eq(batches.batch_number, shipment.batch_number));
+    if (batch) {
+      const newRemaining = batch.quantity_produced - totalShipped - totalRejected;
+      await db.update(batches)
+        .set({
+          quantity_rejected: totalRejected,
+          quantity_remaining: Math.max(0, newRemaining),
+          is_depleted: newRemaining <= 0
+        })
+        .where(eq(batches.batch_number, shipment.batch_number));
+    }
+    
+    return shipment;
   }
 
   async updateShipment(id: number, updateData: Partial<InsertShipment>): Promise<Shipment | undefined> {
-    return await db.transaction(async (tx) => {
-      const [shipment] = await tx.update(shipments).set(updateData).where(eq(shipments.id, id)).returning();
-      if (!shipment) return undefined;
-      
-      // Update batch with new rejection totals
-      const allShipmentsForBatch = await tx.select().from(shipments)
-        .where(eq(shipments.batch_number, shipment.batch_number));
-      
-      const totalRejected = allShipmentsForBatch.reduce((sum, s) => {
-        return sum + (s.rejections_blowholes || 0) + (s.rejections_handles || 0) + (s.rejections_other || 0);
-      }, 0);
-      
-      const totalShipped = allShipmentsForBatch.reduce((sum, s) => sum + s.quantity_shipped, 0);
-      
-      const [batch] = await tx.select().from(batches).where(eq(batches.batch_number, shipment.batch_number));
-      if (batch) {
-        const newRemaining = batch.quantity_produced - totalShipped - totalRejected;
-        await tx.update(batches)
-          .set({
-            quantity_rejected: totalRejected,
-            quantity_remaining: Math.max(0, newRemaining),
-            is_depleted: newRemaining <= 0
-          })
-          .where(eq(batches.batch_number, shipment.batch_number));
-      }
-      
-      return shipment;
-    });
+    const [shipment] = await db.update(shipments).set(updateData).where(eq(shipments.id, id)).returning();
+    if (!shipment) return undefined;
+    
+    // Update batch with new rejection totals
+    const allShipmentsForBatch = await db.select().from(shipments)
+      .where(eq(shipments.batch_number, shipment.batch_number));
+    
+    const totalRejected = allShipmentsForBatch.reduce((sum, s) => {
+      return sum + (s.rejections_blowholes || 0) + (s.rejections_handles || 0) + (s.rejections_other || 0);
+    }, 0);
+    
+    const totalShipped = allShipmentsForBatch.reduce((sum, s) => sum + s.quantity_shipped, 0);
+    
+    const [batch] = await db.select().from(batches).where(eq(batches.batch_number, shipment.batch_number));
+    if (batch) {
+      const newRemaining = batch.quantity_produced - totalShipped - totalRejected;
+      await db.update(batches)
+        .set({
+          quantity_rejected: totalRejected,
+          quantity_remaining: Math.max(0, newRemaining),
+          is_depleted: newRemaining <= 0
+        })
+        .where(eq(batches.batch_number, shipment.batch_number));
+    }
+    
+    return shipment;
   }
 
   async deleteShipment(id: number): Promise<void> {
-    await db.transaction(async (tx) => {
-      // Get shipment before deleting to know which batch to update
-      const [shipmentToDelete] = await tx.select().from(shipments).where(eq(shipments.id, id));
-      if (!shipmentToDelete) return;
-      
-      // Delete the shipment
-      await tx.delete(shipments).where(eq(shipments.id, id));
-      
-      // Update batch with new rejection totals
-      const allShipmentsForBatch = await tx.select().from(shipments)
-        .where(eq(shipments.batch_number, shipmentToDelete.batch_number));
-      
-      const totalRejected = allShipmentsForBatch.reduce((sum, s) => {
-        return sum + (s.rejections_blowholes || 0) + (s.rejections_handles || 0) + (s.rejections_other || 0);
-      }, 0);
-      
-      const totalShipped = allShipmentsForBatch.reduce((sum, s) => sum + s.quantity_shipped, 0);
-      
-      const [batch] = await tx.select().from(batches).where(eq(batches.batch_number, shipmentToDelete.batch_number));
-      if (batch) {
-        const newRemaining = batch.quantity_produced - totalShipped - totalRejected;
-        await tx.update(batches)
-          .set({
-            quantity_rejected: totalRejected,
-            quantity_remaining: Math.max(0, newRemaining),
-            is_depleted: newRemaining <= 0
-          })
-          .where(eq(batches.batch_number, shipmentToDelete.batch_number));
-      }
-    });
+    // Get shipment before deleting to know which batch to update
+    const [shipmentToDelete] = await db.select().from(shipments).where(eq(shipments.id, id));
+    if (!shipmentToDelete) return;
+    
+    // Delete the shipment
+    await db.delete(shipments).where(eq(shipments.id, id));
+    
+    // Update batch with new rejection totals
+    const allShipmentsForBatch = await db.select().from(shipments)
+      .where(eq(shipments.batch_number, shipmentToDelete.batch_number));
+    
+    const totalRejected = allShipmentsForBatch.reduce((sum, s) => {
+      return sum + (s.rejections_blowholes || 0) + (s.rejections_handles || 0) + (s.rejections_other || 0);
+    }, 0);
+    
+    const totalShipped = allShipmentsForBatch.reduce((sum, s) => sum + s.quantity_shipped, 0);
+    
+    const [batch] = await db.select().from(batches).where(eq(batches.batch_number, shipmentToDelete.batch_number));
+    if (batch) {
+      const newRemaining = batch.quantity_produced - totalShipped - totalRejected;
+      await db.update(batches)
+        .set({
+          quantity_rejected: totalRejected,
+          quantity_remaining: Math.max(0, newRemaining),
+          is_depleted: newRemaining <= 0
+        })
+        .where(eq(batches.batch_number, shipmentToDelete.batch_number));
+    }
   }
 
   async getAllBatches(): Promise<Batch[]> {

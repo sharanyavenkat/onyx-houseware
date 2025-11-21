@@ -300,8 +300,8 @@ export default function Batches() {
                           <tr>
                             <th className="text-left py-2 px-4 font-medium">Batch Number</th>
                             <th className="text-left py-2 px-4 font-medium">Received</th>
-                            <th className="text-right py-2 px-4 font-medium">Remaining</th>
                             <th className="text-right py-2 px-4 font-medium">Produced</th>
+                            <th className="text-right py-2 px-4 font-medium">Remaining</th>
                             <th className="text-right py-2 px-4 font-medium">Rejected</th>
                             <th className="text-center py-2 px-4 font-medium">Quality</th>
                             <th className="text-center py-2 px-4 font-medium">Status</th>
@@ -328,11 +328,11 @@ export default function Batches() {
                                 <td className="py-3 px-4">
                                   {formatDate(batch.received_date)}
                                 </td>
-                                <td className="py-3 px-4 text-right font-mono font-semibold">
-                                  {batch.quantity_remaining.toLocaleString()}
-                                </td>
                                 <td className="py-3 px-4 text-right font-mono">
                                   {batch.quantity_produced.toLocaleString()}
+                                </td>
+                                <td className="py-3 px-4 text-right font-mono font-semibold">
+                                  {batch.quantity_remaining.toLocaleString()}
                                 </td>
                                 <td className={`py-3 px-4 text-right font-mono ${batch.quantity_rejected > 0 ? 'text-destructive font-medium' : ''}`}>
                                   {batch.quantity_rejected.toLocaleString()}
