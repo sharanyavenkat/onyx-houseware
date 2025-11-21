@@ -19,6 +19,7 @@ export default function IndentPage() {
   const [editingCells, setEditingCells] = useState<Record<string, string>>({});
   const [dirtyItems, setDirtyItems] = useState<Set<number>>(new Set());
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const initializingMonthRef = useRef<string | null>(null);
   const { toast} = useToast();
 
   // Fetch all items (only active items)
@@ -30,7 +31,7 @@ export default function IndentPage() {
   const items = useMemo(() => allItems.filter(item => item.is_active), [allItems]);
 
   // Fetch indents for selected month
-  const { data: indents = [] } = useQuery<Indent[]>({
+  const { data: indents = [], isFetched: indentsFetched } = useQuery<Indent[]>({
     queryKey: ['/api/indents', selectedMonth],
   });
 
@@ -44,12 +45,12 @@ export default function IndentPage() {
     queryKey: ['/api/order-items'],
   });
 
-  // Fetch opening balance from batches (read-only, calculated from batch quantities)
-  const { data: batchOpeningBalance = {} } = useQuery<Record<number, number>>({
+  // Fetch on-hand stock from batches (read-only, real-time from batch quantities)
+  const { data: onHandStock = {}, isFetched: onHandStockFetched } = useQuery<Record<number, number>>({
     queryKey: ['/api/batches/opening-balance', includeAcceptable],
     queryFn: async () => {
       const response = await fetch(`/api/batches/opening-balance?includeAcceptable=${includeAcceptable}`);
-      if (!response.ok) throw new Error('Failed to fetch opening balance');
+      if (!response.ok) throw new Error('Failed to fetch on-hand stock');
       return response.json();
     },
   });
@@ -64,6 +65,18 @@ export default function IndentPage() {
     queryKey: ['/api/batches/rejected-by-item'],
   });
 
+  // Auto-initialize indent records for new months
+  const initializeMonthMutation = useMutation({
+    mutationFn: async (data: { item_id: number; month: string; opening_balance: number; expected_receipts: number; current_safety_stock: number }[]) => {
+      await Promise.all(
+        data.map(indent => apiRequest('POST', '/api/indents', indent))
+      );
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/indents', selectedMonth] });
+    },
+  });
+
   // Sort items: active first, then by name alphabetically
   const sortedItems = useMemo(() => {
     return [...items].sort((a, b) => {
@@ -76,12 +89,58 @@ export default function IndentPage() {
     });
   }, [items]);
 
+  // Auto-initialize month when viewing a month with missing indent records
+  useEffect(() => {
+    // Wait for all required data to be fetched before initializing
+    if (!sortedItems.length || !onHandStockFetched || !indentsFetched) return;
+    
+    // Prevent duplicate initialization while mutation is in progress
+    if (initializingMonthRef.current === selectedMonth) return;
+    
+    // Find items that don't have indent records for this month
+    const missingItems = sortedItems.filter(item => {
+      return !indents.some(indent => indent.item_id === item.id);
+    });
+
+    if (missingItems.length > 0 && !initializeMonthMutation.isPending) {
+      // Mark this month as being initialized
+      initializingMonthRef.current = selectedMonth;
+      
+      // Auto-create indent records with opening balance = current on-hand stock (0 if no batches)
+      const newIndents = missingItems.map(item => ({
+        item_id: item.id,
+        month: selectedMonth,
+        opening_balance: onHandStock[item.id] || 0,
+        expected_receipts: 0,
+        current_safety_stock: 0,
+      }));
+
+      initializeMonthMutation.mutate(newIndents, {
+        onSuccess: async () => {
+          // Wait for the indents query to refetch and load the new data
+          await queryClient.refetchQueries({ queryKey: ['/api/indents', selectedMonth] });
+          // Only clear the flag after the refetch completes
+          initializingMonthRef.current = null;
+        },
+        onError: () => {
+          // Clear the flag on error to allow retry
+          initializingMonthRef.current = null;
+        }
+      });
+    }
+  }, [sortedItems, indents, indentsFetched, selectedMonth, onHandStock, onHandStockFetched, initializeMonthMutation]);
+
   // Merge data
   const indentData = useMemo(() => {
     return sortedItems.map(item => {
       const indent = indents.find(i => i.item_id === item.id);
-      // Opening balance is now read-only, calculated from batches
-      const openingBalance = batchOpeningBalance[item.id] || 0;
+      const currentOnHandStock = onHandStock[item.id] || 0;
+      
+      // Opening Balance: editable field, auto-initialized from on-hand stock if no indent exists
+      const openingBalance = editingCells[`${item.id}-opening_balance`] !== undefined 
+        ? parseInt(editingCells[`${item.id}-opening_balance`]) || 0 
+        : indent?.opening_balance ?? currentOnHandStock;
+      
       const expectedReceipts = editingCells[`${item.id}-expected_receipts`] !== undefined ? parseInt(editingCells[`${item.id}-expected_receipts`]) || 0 : indent?.expected_receipts ?? 0;
       // Current safety stock: Use indent value if exists, otherwise default to 0
       const currentSafetyStock = editingCells[`${item.id}-current_safety_stock`] !== undefined ? parseInt(editingCells[`${item.id}-current_safety_stock`]) || 0 : indent?.current_safety_stock ?? 0;
@@ -100,6 +159,7 @@ export default function IndentPage() {
         id: item.id,
         item_name: item.name,
         opening_balance: openingBalance,
+        on_hand_stock: currentOnHandStock,
         expected_receipts: expectedReceipts,
         desired_safety_stock: item.desired_safety_stock,
         current_safety_stock: currentSafetyStock,
@@ -116,7 +176,7 @@ export default function IndentPage() {
         is_safety_buffer_breached: metrics.isSafetyBufferBreached,
       };
     });
-  }, [sortedItems, indents, pendingOrdersByItem, editingCells, batchOpeningBalance, rejectedByItem]);
+  }, [sortedItems, indents, pendingOrdersByItem, editingCells, onHandStock, rejectedByItem]);
 
   // Save mutation for indent data
   const saveIndentMutation = useMutation({
@@ -130,10 +190,11 @@ export default function IndentPage() {
       await queryClient.refetchQueries({ queryKey: ['/api/indents', selectedMonth] });
       
       // Clear editing cells only for successfully saved items (indent fields)
-      // Note: opening_balance is not editable anymore, but keeping deletion for cleanup
+      // Clear editing state for saved items
       setEditingCells(prev => {
         const updated = { ...prev };
         variables.forEach(item => {
+          delete updated[`${item.item_id}-opening_balance`];
           delete updated[`${item.item_id}-expected_receipts`];
           delete updated[`${item.item_id}-current_safety_stock`];
         });
@@ -210,8 +271,8 @@ export default function IndentPage() {
     // Store the raw string value to avoid lag during typing
     setEditingCells(prev => ({ ...prev, [key]: value }));
     
-    // Mark this item as dirty if it's an indent field (opening_balance is now read-only from batches)
-    if (field === 'expected_receipts' || field === 'current_safety_stock') {
+    // Mark this item as dirty if it's an indent field
+    if (field === 'opening_balance' || field === 'expected_receipts' || field === 'current_safety_stock') {
       setDirtyItems(prev => new Set(prev).add(itemId));
     }
   };
@@ -221,12 +282,30 @@ export default function IndentPage() {
     { 
       key: 'opening_balance', 
       label: 'Opening Balance', 
+      render: (value: number, row: any) => {
+        const key = `${row.id}-opening_balance`;
+        const displayValue = editingCells[key] !== undefined ? editingCells[key] : String(value);
+        return (
+          <Input
+            type="number"
+            value={displayValue}
+            onChange={(e) => handleCellEdit(row.id, 'opening_balance', e.target.value)}
+            className="w-28 font-mono"
+            data-testid={`input-opening-balance-${row.id}`}
+            title="Month-start stock snapshot (editable)"
+          />
+        );
+      }
+    },
+    { 
+      key: 'on_hand_stock', 
+      label: 'On-Hand Stock', 
       render: (value: number, row: any) => (
         <div className="space-y-1">
           <div 
-            className="font-mono text-sm px-2 py-1"
-            data-testid={`text-opening-balance-${row.id}`}
-            title="Read-only: Calculated from batch quantities"
+            className="font-mono text-sm px-2 py-1 bg-muted/30 rounded"
+            data-testid={`text-on-hand-stock-${row.id}`}
+            title="Real-time stock from batches (read-only)"
           >
             {value.toLocaleString()}
           </div>
@@ -366,6 +445,14 @@ export default function IndentPage() {
 
       {/* Formula Explanation */}
       <div className="bg-muted/50 p-4 rounded-lg border space-y-3">
+        <div>
+          <h3 className="font-medium mb-2">Stock Tracking:</h3>
+          <div className="text-sm text-muted-foreground space-y-1">
+            <p><strong>Opening Balance</strong>: Month-start stock snapshot (editable, auto-initialized from on-hand stock for new months)</p>
+            <p><strong>On-Hand Stock</strong>: Real-time available stock from batches (read-only, updated as shipments go out)</p>
+            <p className="text-xs pt-1 italic">💡 When starting a new month, Opening Balance defaults to current On-Hand Stock. You can edit it if your physical count differs.</p>
+          </div>
+        </div>
         <div>
           <h3 className="font-medium mb-2">Two-Tier Inventory Model:</h3>
           <div className="text-sm text-muted-foreground space-y-1">
