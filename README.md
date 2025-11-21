@@ -97,11 +97,11 @@ Preferred communication style: Simple, everyday language.
 ## Business Logic
 
 **Inventory Planning (Indent):**
-- Two-tier inventory model: Working Stock (opening + expected) and Safety Stock (buffer)
-- Calculation logic in `shared/inventory.ts` determines order requirements
+- Two-tier model: Working Stock (from batches) + Safety Stock (buffer) = Total Usable Stock
+- Working Stock = Quantity Produced - Shipped - Rejected  
+- Pending Orders = Ordered - Shipped + Rejected (rejected items need replacement)
 - Formula: `required_to_order = max(0, (pending_orders + safety_stock) - (opening_balance + expected_receipts))`
-- Pending orders fetched from backend API `/api/orders/pending-by-item` for consistency
-- Auto-save functionality with debouncing for indent updates
+- Auto-save with debouncing for indent updates
 
 **Order Management:**
 - Status workflow enforcement: draft → confirmed → fulfilled or cancelled

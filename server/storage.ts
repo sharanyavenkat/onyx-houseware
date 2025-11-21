@@ -245,55 +245,92 @@ export class DbStorage implements IStorage {
   async createShipment(insertShipment: InsertShipment): Promise<Shipment> {
     const [shipment] = await db.insert(shipments).values(insertShipment).returning();
     
-    // Update batch with new rejection totals
-    const allShipmentsForBatch = await db.select().from(shipments)
-      .where(eq(shipments.batch_number, shipment.batch_number));
-    
-    const totalRejected = allShipmentsForBatch.reduce((sum, s) => {
-      return sum + (s.rejections_blowholes || 0) + (s.rejections_handles || 0) + (s.rejections_other || 0);
-    }, 0);
-    
-    const totalShipped = allShipmentsForBatch.reduce((sum, s) => sum + s.quantity_shipped, 0);
-    
-    const [batch] = await db.select().from(batches).where(eq(batches.batch_number, shipment.batch_number));
-    if (batch) {
-      const newRemaining = batch.quantity_produced - totalShipped - totalRejected;
-      await db.update(batches)
-        .set({
-          quantity_rejected: totalRejected,
-          quantity_remaining: Math.max(0, newRemaining),
-          is_depleted: newRemaining <= 0
-        })
-        .where(eq(batches.batch_number, shipment.batch_number));
+    // Update batch with new rejection totals (only if batch_number is provided)
+    if (shipment.batch_number) {
+      const allShipmentsForBatch = await db.select().from(shipments)
+        .where(eq(shipments.batch_number, shipment.batch_number));
+      
+      const totalRejected = allShipmentsForBatch.reduce((sum, s) => {
+        return sum + (s.rejections_blowholes || 0) + (s.rejections_handles || 0) + (s.rejections_other || 0);
+      }, 0);
+      
+      const totalShipped = allShipmentsForBatch.reduce((sum, s) => sum + s.quantity_shipped, 0);
+      
+      const [batch] = await db.select().from(batches).where(eq(batches.batch_number, shipment.batch_number));
+      if (batch) {
+        const newRemaining = batch.quantity_produced - totalShipped - totalRejected;
+        await db.update(batches)
+          .set({
+            quantity_rejected: totalRejected,
+            quantity_remaining: Math.max(0, newRemaining),
+            is_depleted: newRemaining <= 0
+          })
+          .where(eq(batches.batch_number, shipment.batch_number));
+      }
     }
     
     return shipment;
   }
 
   async updateShipment(id: number, updateData: Partial<InsertShipment>): Promise<Shipment | undefined> {
+    // Get the OLD shipment before updating to know which batch to recalculate
+    const [oldShipment] = await db.select().from(shipments).where(eq(shipments.id, id));
+    if (!oldShipment) return undefined;
+    
+    // Update the shipment
     const [shipment] = await db.update(shipments).set(updateData).where(eq(shipments.id, id)).returning();
     if (!shipment) return undefined;
     
-    // Update batch with new rejection totals
-    const allShipmentsForBatch = await db.select().from(shipments)
-      .where(eq(shipments.batch_number, shipment.batch_number));
+    // Recalculate BOTH batches if batch_number was changed
+    const oldBatchNumber = oldShipment.batch_number;
+    const newBatchNumber = shipment.batch_number;
     
-    const totalRejected = allShipmentsForBatch.reduce((sum, s) => {
-      return sum + (s.rejections_blowholes || 0) + (s.rejections_handles || 0) + (s.rejections_other || 0);
-    }, 0);
+    // Update the OLD batch (if it existed and is different from new batch)
+    if (oldBatchNumber && oldBatchNumber !== newBatchNumber) {
+      const oldBatchShipments = await db.select().from(shipments)
+        .where(eq(shipments.batch_number, oldBatchNumber));
+      
+      const oldTotalRejected = oldBatchShipments.reduce((sum, s) => {
+        return sum + (s.rejections_blowholes || 0) + (s.rejections_handles || 0) + (s.rejections_other || 0);
+      }, 0);
+      
+      const oldTotalShipped = oldBatchShipments.reduce((sum, s) => sum + s.quantity_shipped, 0);
+      
+      const [oldBatch] = await db.select().from(batches).where(eq(batches.batch_number, oldBatchNumber));
+      if (oldBatch) {
+        const oldNewRemaining = oldBatch.quantity_produced - oldTotalShipped - oldTotalRejected;
+        await db.update(batches)
+          .set({
+            quantity_rejected: oldTotalRejected,
+            quantity_remaining: Math.max(0, oldNewRemaining),
+            is_depleted: oldNewRemaining <= 0
+          })
+          .where(eq(batches.batch_number, oldBatchNumber));
+      }
+    }
     
-    const totalShipped = allShipmentsForBatch.reduce((sum, s) => sum + s.quantity_shipped, 0);
-    
-    const [batch] = await db.select().from(batches).where(eq(batches.batch_number, shipment.batch_number));
-    if (batch) {
-      const newRemaining = batch.quantity_produced - totalShipped - totalRejected;
-      await db.update(batches)
-        .set({
-          quantity_rejected: totalRejected,
-          quantity_remaining: Math.max(0, newRemaining),
-          is_depleted: newRemaining <= 0
-        })
-        .where(eq(batches.batch_number, shipment.batch_number));
+    // Update the NEW batch (if it exists)
+    if (newBatchNumber) {
+      const newBatchShipments = await db.select().from(shipments)
+        .where(eq(shipments.batch_number, newBatchNumber));
+      
+      const newTotalRejected = newBatchShipments.reduce((sum, s) => {
+        return sum + (s.rejections_blowholes || 0) + (s.rejections_handles || 0) + (s.rejections_other || 0);
+      }, 0);
+      
+      const newTotalShipped = newBatchShipments.reduce((sum, s) => sum + s.quantity_shipped, 0);
+      
+      const [newBatch] = await db.select().from(batches).where(eq(batches.batch_number, newBatchNumber));
+      if (newBatch) {
+        const newNewRemaining = newBatch.quantity_produced - newTotalShipped - newTotalRejected;
+        await db.update(batches)
+          .set({
+            quantity_rejected: newTotalRejected,
+            quantity_remaining: Math.max(0, newNewRemaining),
+            is_depleted: newNewRemaining <= 0
+          })
+          .where(eq(batches.batch_number, newBatchNumber));
+      }
     }
     
     return shipment;
@@ -304,29 +341,33 @@ export class DbStorage implements IStorage {
     const [shipmentToDelete] = await db.select().from(shipments).where(eq(shipments.id, id));
     if (!shipmentToDelete) return;
     
+    const batchNumber = shipmentToDelete.batch_number;
+    
     // Delete the shipment
     await db.delete(shipments).where(eq(shipments.id, id));
     
-    // Update batch with new rejection totals
-    const allShipmentsForBatch = await db.select().from(shipments)
-      .where(eq(shipments.batch_number, shipmentToDelete.batch_number));
-    
-    const totalRejected = allShipmentsForBatch.reduce((sum, s) => {
-      return sum + (s.rejections_blowholes || 0) + (s.rejections_handles || 0) + (s.rejections_other || 0);
-    }, 0);
-    
-    const totalShipped = allShipmentsForBatch.reduce((sum, s) => sum + s.quantity_shipped, 0);
-    
-    const [batch] = await db.select().from(batches).where(eq(batches.batch_number, shipmentToDelete.batch_number));
-    if (batch) {
-      const newRemaining = batch.quantity_produced - totalShipped - totalRejected;
-      await db.update(batches)
-        .set({
-          quantity_rejected: totalRejected,
-          quantity_remaining: Math.max(0, newRemaining),
-          is_depleted: newRemaining <= 0
-        })
-        .where(eq(batches.batch_number, shipmentToDelete.batch_number));
+    // Update batch with new rejection totals (only if batch_number exists)
+    if (batchNumber) {
+      const allShipmentsForBatch = await db.select().from(shipments)
+        .where(eq(shipments.batch_number, batchNumber));
+      
+      const totalRejected = allShipmentsForBatch.reduce((sum, s) => {
+        return sum + (s.rejections_blowholes || 0) + (s.rejections_handles || 0) + (s.rejections_other || 0);
+      }, 0);
+      
+      const totalShipped = allShipmentsForBatch.reduce((sum, s) => sum + s.quantity_shipped, 0);
+      
+      const [batch] = await db.select().from(batches).where(eq(batches.batch_number, batchNumber));
+      if (batch) {
+        const newRemaining = batch.quantity_produced - totalShipped - totalRejected;
+        await db.update(batches)
+          .set({
+            quantity_rejected: totalRejected,
+            quantity_remaining: Math.max(0, newRemaining),
+            is_depleted: newRemaining <= 0
+          })
+          .where(eq(batches.batch_number, batchNumber));
+      }
     }
   }
 
@@ -367,112 +408,108 @@ export class DbStorage implements IStorage {
   }
 
   async updateBatch(id: number, updates: { batch_number?: string, received_date?: string, quantity_produced?: number, quantity_rejected?: number, quality_status?: string, notes?: string }): Promise<Batch> {
-    return await db.transaction(async (tx) => {
-      // Get current batch
-      const [currentBatch] = await tx.select().from(batches).where(eq(batches.id, id));
-      
-      if (!currentBatch) {
-        const error: any = new Error(`Batch with id ${id} not found`);
-        error.code = 'BATCH_NOT_FOUND';
-        throw error;
-      }
+    // Get current batch
+    const [currentBatch] = await db.select().from(batches).where(eq(batches.id, id));
+    
+    if (!currentBatch) {
+      const error: any = new Error(`Batch with id ${id} not found`);
+      error.code = 'BATCH_NOT_FOUND';
+      throw error;
+    }
 
-      // Build merged batch state with updates applied
-      const newBatchNumber = updates.batch_number ?? currentBatch.batch_number;
-      const newReceivedDate = updates.received_date ?? currentBatch.received_date;
-      const newQualityStatus = updates.quality_status ?? currentBatch.quality_status;
-      const newNotes = updates.notes !== undefined ? updates.notes : currentBatch.notes;
-      const newProduced = updates.quantity_produced ?? currentBatch.quantity_produced;
-      const newRejected = updates.quantity_rejected ?? currentBatch.quantity_rejected;
-      
+    // Build merged batch state with updates applied
+    const newBatchNumber = updates.batch_number ?? currentBatch.batch_number;
+    const newReceivedDate = updates.received_date ?? currentBatch.received_date;
+    const newQualityStatus = updates.quality_status ?? currentBatch.quality_status;
+    const newNotes = updates.notes !== undefined ? updates.notes : currentBatch.notes;
+    const newProduced = updates.quantity_produced ?? currentBatch.quantity_produced;
+    const newRejected = updates.quantity_rejected ?? currentBatch.quantity_rejected;
+    
+    // Calculate shipped from invariant: shipped = produced - remaining - rejected
+    const currentShipped = currentBatch.quantity_produced - currentBatch.quantity_remaining - currentBatch.quantity_rejected;
+    
+    // Calculate new remaining: remaining = produced - shipped - rejected
+    const newRemaining = newProduced - currentShipped - newRejected;
+    
+    // Validate invariant: produced >= shipped + rejected
+    if (newRemaining < 0) {
+      const error: any = new Error(
+        `Cannot update batch: new produced (${newProduced}) < shipped (${currentShipped}) + rejected (${newRejected})`
+      );
+      error.code = 'INVARIANT_VIOLATION';
+      throw error;
+    }
+
+    // Validate rejected quantity doesn't exceed available quantity
+    if (newRejected > newProduced - currentShipped) {
+      const error: any = new Error(
+        `Rejected quantity (${newRejected}) exceeds available quantity (${newProduced - currentShipped})`
+      );
+      error.code = 'INVALID_REJECTED_QUANTITY';
+      throw error;
+    }
+    
+    // Calculate is_depleted flag
+    const isDepleted = newRemaining === 0;
+
+    // Update batch with all computed values
+    const [updatedBatch] = await db.update(batches)
+      .set({
+        batch_number: newBatchNumber,
+        received_date: newReceivedDate,
+        quantity_produced: newProduced,
+        quantity_rejected: newRejected,
+        quantity_remaining: newRemaining,
+        quality_status: newQualityStatus,
+        notes: newNotes,
+        is_depleted: isDepleted,
+      })
+      .where(eq(batches.id, id))
+      .returning();
+
+    return updatedBatch;
+  }
+
+  async updateBatchMetadata(id: number, updates: { batch_number?: string, received_date?: string, quantity_produced?: number, quality_status?: string, notes?: string }): Promise<Batch | undefined> {
+    // Get current batch
+    const [batch] = await db.select().from(batches).where(eq(batches.id, id));
+    
+    if (!batch) {
+      return undefined;
+    }
+
+    // If quantity_produced is being updated, recalculate quantity_remaining
+    if (updates.quantity_produced !== undefined) {
+      const newProduced = updates.quantity_produced;
       // Calculate shipped from invariant: shipped = produced - remaining - rejected
-      const currentShipped = currentBatch.quantity_produced - currentBatch.quantity_remaining - currentBatch.quantity_rejected;
+      const currentShipped = batch.quantity_produced - batch.quantity_remaining - batch.quantity_rejected;
+      const newRemaining = newProduced - currentShipped - batch.quantity_rejected;
       
-      // Calculate new remaining: remaining = produced - shipped - rejected
-      const newRemaining = newProduced - currentShipped - newRejected;
-      
-      // Validate invariant: produced >= shipped + rejected
+      // Validate that new remaining is non-negative
       if (newRemaining < 0) {
         const error: any = new Error(
-          `Cannot update batch: new produced (${newProduced}) < shipped (${currentShipped}) + rejected (${newRejected})`
+          `Cannot update batch: new produced quantity (${newProduced}) is less than shipped (${currentShipped}) + rejected (${batch.quantity_rejected})`
         );
         error.code = 'INVARIANT_VIOLATION';
         throw error;
       }
 
-      // Validate rejected quantity doesn't exceed available quantity
-      if (newRejected > newProduced - currentShipped) {
-        const error: any = new Error(
-          `Rejected quantity (${newRejected}) exceeds available quantity (${newProduced - currentShipped})`
-        );
-        error.code = 'INVALID_REJECTED_QUANTITY';
-        throw error;
-      }
-      
-      // Calculate is_depleted flag
-      const isDepleted = newRemaining === 0;
-
-      // Update batch with all computed values
-      const [updatedBatch] = await tx.update(batches)
+      // Update with recalculated remaining
+      const [updatedBatch] = await db.update(batches)
         .set({
-          batch_number: newBatchNumber,
-          received_date: newReceivedDate,
-          quantity_produced: newProduced,
-          quantity_rejected: newRejected,
+          ...updates,
           quantity_remaining: newRemaining,
-          quality_status: newQualityStatus,
-          notes: newNotes,
-          is_depleted: isDepleted,
+          is_depleted: newRemaining === 0,
         })
         .where(eq(batches.id, id))
         .returning();
-
-      return updatedBatch;
-    });
-  }
-
-  async updateBatchMetadata(id: number, updates: { batch_number?: string, received_date?: string, quantity_produced?: number, quality_status?: string, notes?: string }): Promise<Batch | undefined> {
-    return await db.transaction(async (tx) => {
-      // Get current batch
-      const [batch] = await tx.select().from(batches).where(eq(batches.id, id));
       
-      if (!batch) {
-        return undefined;
-      }
-
-      // If quantity_produced is being updated, recalculate quantity_remaining
-      if (updates.quantity_produced !== undefined) {
-        const newProduced = updates.quantity_produced;
-        // Calculate shipped from invariant: shipped = produced - remaining - rejected
-        const currentShipped = batch.quantity_produced - batch.quantity_remaining - batch.quantity_rejected;
-        const newRemaining = newProduced - currentShipped - batch.quantity_rejected;
-        
-        // Validate that new remaining is non-negative
-        if (newRemaining < 0) {
-          const error: any = new Error(
-            `Cannot update batch: new produced quantity (${newProduced}) is less than shipped (${currentShipped}) + rejected (${batch.quantity_rejected})`
-          );
-          error.code = 'INVARIANT_VIOLATION';
-          throw error;
-        }
-
-        // Update with recalculated remaining
-        const [updatedBatch] = await tx.update(batches)
-          .set({
-            ...updates,
-            quantity_remaining: newRemaining,
-            is_depleted: newRemaining === 0,
-          })
-          .where(eq(batches.id, id))
-          .returning();
-        
-        return updatedBatch;
-      } else {
-        // No quantity_produced update, just update metadata
-        const [updatedBatch] = await tx.update(batches).set(updates).where(eq(batches.id, id)).returning();
-        return updatedBatch;
-      }
-    });
+      return updatedBatch;
+    } else {
+      // No quantity_produced update, just update metadata
+      const [updatedBatch] = await db.update(batches).set(updates).where(eq(batches.id, id)).returning();
+      return updatedBatch;
+    }
   }
 
   async deleteBatch(id: number): Promise<void> {
@@ -487,85 +524,83 @@ export class DbStorage implements IStorage {
       throw error;
     }
 
-    return await db.transaction(async (tx) => {
-      // Lock the row and get current state
-      const [batch] = await tx.select().from(batches).where(eq(batches.id, id));
+    // Get current state
+    const [batch] = await db.select().from(batches).where(eq(batches.id, id));
 
-      if (!batch) {
-        const error: any = new Error(`Batch ID ${id} not found`);
-        error.code = 'BATCH_NOT_FOUND';
-        throw error;
-      }
+    if (!batch) {
+      const error: any = new Error(`Batch ID ${id} not found`);
+      error.code = 'BATCH_NOT_FOUND';
+      throw error;
+    }
 
-      // Calculate current shipped quantity: produced - remaining - rejected
-      const currentShipped = batch.quantity_produced - batch.quantity_remaining - batch.quantity_rejected;
+    // Calculate current shipped quantity: produced - remaining - rejected
+    const currentShipped = batch.quantity_produced - batch.quantity_remaining - batch.quantity_rejected;
 
-      // Validate that existing data doesn't violate invariants
-      if (currentShipped < 0) {
-        const error: any = new Error(
-          `Batch ${batch.batch_number} has invalid historical data (shipped cannot be negative). ` +
-          `Produced: ${batch.quantity_produced}, ` +
-          `Remaining: ${batch.quantity_remaining}, ` +
-          `Rejected: ${batch.quantity_rejected}, ` +
-          `Derived shipped: ${currentShipped}`
-        );
-        error.code = 'INVARIANT_VIOLATION';
-        throw error;
-      }
+    // Validate that existing data doesn't violate invariants
+    if (currentShipped < 0) {
+      const error: any = new Error(
+        `Batch ${batch.batch_number} has invalid historical data (shipped cannot be negative). ` +
+        `Produced: ${batch.quantity_produced}, ` +
+        `Remaining: ${batch.quantity_remaining}, ` +
+        `Rejected: ${batch.quantity_rejected}, ` +
+        `Derived shipped: ${currentShipped}`
+      );
+      error.code = 'INVARIANT_VIOLATION';
+      throw error;
+    }
 
-      // Validate that new rejected quantity doesn't exceed available quantity
-      if (newRejected + currentShipped > batch.quantity_produced) {
-        const error: any = new Error(
-          `Rejected quantity exceeds available quantity in batch ${batch.batch_number}. ` +
-          `Produced: ${batch.quantity_produced}, ` +
-          `Shipped: ${currentShipped}, ` +
-          `New rejected: ${newRejected}, ` +
-          `Exceeds by: ${(newRejected + currentShipped) - batch.quantity_produced}`
-        );
-        error.code = 'INSUFFICIENT_QUANTITY';
-        throw error;
-      }
+    // Validate that new rejected quantity doesn't exceed available quantity
+    if (newRejected + currentShipped > batch.quantity_produced) {
+      const error: any = new Error(
+        `Rejected quantity exceeds available quantity in batch ${batch.batch_number}. ` +
+        `Produced: ${batch.quantity_produced}, ` +
+        `Shipped: ${currentShipped}, ` +
+        `New rejected: ${newRejected}, ` +
+        `Exceeds by: ${(newRejected + currentShipped) - batch.quantity_produced}`
+      );
+      error.code = 'INSUFFICIENT_QUANTITY';
+      throw error;
+    }
 
-      // Recompute remaining using canonical invariant: remaining = produced - shipped - rejected
-      const newRemaining = batch.quantity_produced - currentShipped - newRejected;
+    // Recompute remaining using canonical invariant: remaining = produced - shipped - rejected
+    const newRemaining = batch.quantity_produced - currentShipped - newRejected;
 
-      // Enforce non-negative invariant (should always pass if previous check passed)
-      if (newRemaining < 0) {
-        const error: any = new Error(
-          `Batch ${batch.batch_number} update violated invariant (remaining cannot be negative). ` +
-          `Produced: ${batch.quantity_produced}, ` +
-          `Shipped: ${currentShipped}, ` +
-          `New rejected: ${newRejected}, ` +
-          `Calculated remaining: ${newRemaining}`
-        );
-        error.code = 'INVARIANT_VIOLATION';
-        throw error;
-      }
+    // Enforce non-negative invariant (should always pass if previous check passed)
+    if (newRemaining < 0) {
+      const error: any = new Error(
+        `Batch ${batch.batch_number} update violated invariant (remaining cannot be negative). ` +
+        `Produced: ${batch.quantity_produced}, ` +
+        `Shipped: ${currentShipped}, ` +
+        `New rejected: ${newRejected}, ` +
+        `Calculated remaining: ${newRemaining}`
+      );
+      error.code = 'INVARIANT_VIOLATION';
+      throw error;
+    }
 
-      // Update batch with new rejected quantity and recalculated remaining
-      const updates: any = {
-        quantity_rejected: newRejected,
-        quantity_remaining: newRemaining,
-        is_depleted: newRemaining === 0,
-      };
+    // Update batch with new rejected quantity and recalculated remaining
+    const updates: any = {
+      quantity_rejected: newRejected,
+      quantity_remaining: newRemaining,
+      is_depleted: newRemaining === 0,
+    };
 
-      // Optionally update quality_status if provided
-      if (quality_status !== undefined) {
-        updates.quality_status = quality_status;
-      }
+    // Optionally update quality_status if provided
+    if (quality_status !== undefined) {
+      updates.quality_status = quality_status;
+    }
 
-      // Optionally update notes if provided
-      if (notes !== undefined) {
-        updates.notes = notes;
-      }
+    // Optionally update notes if provided
+    if (notes !== undefined) {
+      updates.notes = notes;
+    }
 
-      const [updatedBatch] = await tx.update(batches)
-        .set(updates)
-        .where(eq(batches.id, id))
-        .returning();
+    const [updatedBatch] = await db.update(batches)
+      .set(updates)
+      .where(eq(batches.id, id))
+      .returning();
 
-      return updatedBatch;
-    });
+    return updatedBatch;
   }
 
   async adjustBatchQuantities(
