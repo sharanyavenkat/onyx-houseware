@@ -160,6 +160,7 @@ export default function Orders() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/orders"] });
       queryClient.invalidateQueries({ queryKey: ["/api/order-items"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/orders/pending-by-item"] });
       toast({ title: "Order created successfully" });
       setIsModalOpen(false);
     },
@@ -179,6 +180,7 @@ export default function Orders() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/orders"] });
       queryClient.invalidateQueries({ queryKey: ["/api/order-items"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/orders/pending-by-item"] });
       toast({ title: "Order updated successfully" });
       setIsModalOpen(false);
       setEditingOrder(null);
@@ -199,6 +201,7 @@ export default function Orders() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/orders"] });
       queryClient.invalidateQueries({ queryKey: ["/api/order-items"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/orders/pending-by-item"] });
       toast({ title: "Order deleted successfully" });
     },
     onError: (error: Error) => {

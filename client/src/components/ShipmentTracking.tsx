@@ -84,6 +84,9 @@ export default function ShipmentTracking({
       queryClient.invalidateQueries({
         queryKey: ["/api/batches/opening-balance"],
       });
+      queryClient.invalidateQueries({
+        queryKey: ["/api/orders/pending-by-item"],
+      });
       toast({ title: "Shipment recorded successfully" });
       resetForm();
       setIsFormOpen(false);
@@ -116,6 +119,9 @@ export default function ShipmentTracking({
       });
       queryClient.invalidateQueries({
         queryKey: ["/api/batches/opening-balance"],
+      });
+      queryClient.invalidateQueries({
+        queryKey: ["/api/orders/pending-by-item"],
       });
       toast({ title: "Shipment updated successfully" });
       resetForm();
@@ -150,6 +156,9 @@ export default function ShipmentTracking({
       });
       queryClient.invalidateQueries({
         queryKey: ["/api/batches/opening-balance"],
+      });
+      queryClient.invalidateQueries({
+        queryKey: ["/api/orders/pending-by-item"],
       });
       toast({ title: "Shipment deleted successfully" });
     },

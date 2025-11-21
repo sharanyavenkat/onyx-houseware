@@ -1,13 +1,8 @@
 # Overview
 
-This is an Onyx Houseware order management system - a mini CRM web application designed for a cookware manufacturing company. The system manages orders, items, customers, and inventory indenting with a focus on production planning and fulfillment tracking.
+Onyx Houseware Order Management System is a mini-CRM web application designed for a cookware manufacturing company. The system manages the complete order lifecycle from customer inquiries to fulfillment, including product catalog management, customer relationships, order tracking with purchase orders, monthly inventory planning (indent), and shipment tracking with rejection monitoring.
 
-The application provides functionality for:
-- Managing product catalog (items) with SKUs, pricing, and safety stock levels
-- Customer relationship management with company details
-- Order management with purchase order tracking and status workflow
-- Monthly inventory planning (indent) with automatic order quantity calculations
-- Shipment tracking for order fulfillment with rejection tracking
+The application serves as a lightweight alternative to enterprise systems like Zoho Inventory, optimized for a small manufacturing operation with a single shared admin user account.
 
 # User Preferences
 
@@ -17,202 +12,188 @@ Preferred communication style: Simple, everyday language.
 
 ## Frontend Architecture
 
-**Framework and Build Tools:**
-- React with TypeScript
-- Vite as the build tool and development server
-- Wouter for lightweight client-side routing
+**Framework:** React with TypeScript, using Vite as the build tool for fast development and optimized production builds.
 
-**UI and Styling:**
-- Shadcn/ui component library built on Radix UI primitives
-- TailwindCSS with custom design system
-- Material Design principles adapted for enterprise applications
-- Custom dark/light mode theming via CSS variables
+**Routing:** Wouter library for lightweight client-side routing. This was chosen over React Router for its minimal bundle size and simpler API, suitable for the application's straightforward navigation needs.
+
+**State Management:** TanStack Query (React Query) handles all server state with automatic caching, background refetching, and optimistic updates. No global client state management is used—form state is managed locally with React hooks. This eliminates complexity while providing excellent data synchronization.
+
+**UI Components:** Shadcn/ui component library built on Radix UI primitives, providing accessible, unstyled components that are customized with TailwindCSS. The "New York" style variant is used (configured in components.json).
+
+**Styling System:**
+- TailwindCSS with custom design tokens defined in CSS variables
+- Dark/light mode support through CSS class-based theming
+- Material Design principles adapted for enterprise data-heavy interfaces
+- Consistent spacing scale (2, 4, 6, 8, 12 Tailwind units)
+- Status-based color system: green (fulfilled), amber (draft/pending), red (cancelled/destructive), cyan (info)
 - Inter font family from Google Fonts
-- Utility-focused design approach prioritizing clarity over aesthetics
+- Monospace fonts for numerical data in tables
 
-**State Management:**
-- TanStack Query (React Query) for all server state management
-- No global client state - form state managed locally with React hooks
-- Optimistic updates and automatic cache invalidation
-
-**Design Philosophy:**
-- Enterprise-focused with data density prioritized
-- Consistent spacing using Tailwind units (2, 4, 6, 8, 12)
-- Status colors: green (fulfilled), amber (draft/pending), red (cancelled), cyan (info)
-- 12-column responsive grid system
-- Monospace font for numerical data in tables
+**Design Philosophy:** Utility-focused with data density prioritized over aesthetics. The interface emphasizes clarity, learnability, and efficiency for daily administrative tasks. 12-column responsive grid system for flexible layouts.
 
 ## Backend Architecture
 
-**Runtime and Framework:**
-- Node.js with Express.js server
-- TypeScript with ES modules
-- Single monorepo structure with shared types between client and server
+**Runtime:** Node.js with Express.js framework running in ES module mode.
 
-**API Design:**
-- RESTful endpoints under `/api/*` prefix
-- Zod validation for all POST/PUT/PATCH payloads (returns 422 on validation failure)
-- Session-based authentication required for all API routes
-- Consistent error handling with descriptive messages
+**Language:** TypeScript with shared type definitions between client and server (located in `/shared` directory), ensuring type safety across the full stack.
 
-**Database Layer:**
-- SQLite as the database engine (migrated from PostgreSQL)
-- Drizzle ORM with better-sqlite3 driver for synchronous operations
-- Schema definitions centralized in `shared/schema.ts`
-- WAL (Write-Ahead Logging) mode enabled for performance
-- 5-second busy timeout and foreign keys enabled
-- Environment-aware database path:
-  - Development: `server/data/onyx.db`
-  - Production: `/var/app/data/onyx.db` or path from `DATABASE_URL` env var
+**Monorepo Structure:** Single repository with three main directories:
+- `client/` - React frontend application
+- `server/` - Express backend API
+- `shared/` - Shared TypeScript types and schemas
 
-**Data Models:**
-- Users: UUID-based IDs with bcrypt-hashed passwords
-- Items: Auto-increment IDs, SKU uniqueness, active/inactive flag
-- Customers: Auto-increment IDs, only company_name required
-- Orders: Header/line-item pattern, unique PO numbers, status workflow
-- Order Items: Links orders to items with quantities
-- Indents: Monthly inventory planning per item
-- Batches: Production batch tracking with batch_number (SKU+YYMMDD format), quantity management (produced, remaining, rejected), quality status (Good/Acceptable/Rejected), received_date, is_depleted flag. Canonical invariant: quantity_remaining = quantity_produced - quantity_shipped - quantity_rejected
-- Shipments: Tracks partial fulfillments with batch_number (renamed from lot_number) and rejection counts
+**API Design:** RESTful API with all endpoints prefixed with `/api/*`. All API routes require authentication except login/logout endpoints.
 
-## Authentication System
-
-**Single Admin Model:**
-- One shared admin account for the entire system
-- Credentials stored in environment variables (`ADMIN_USERNAME`, `ADMIN_PASSWORD`)
-- Password hashing via bcrypt with 12 salt rounds
-- Admin user auto-created on first startup if not exists
+**Authentication & Authorization:**
+- Session-based authentication using `express-session` with httpOnly cookies
+- Single shared admin account (no user registration)
+- Admin credentials stored in environment variables and hashed with bcryptjs (12 salt rounds)
+- On application startup, admin user is auto-created if not present
+- Multiple concurrent sessions are allowed for the shared account
+- Trust proxy enabled in production for reverse proxy compatibility (Nginx)
 
 **Session Management:**
-- Express-session with in-memory store (MemoryStore)
-- HTTP-only cookies for security
-- 24-hour session expiration
-- Multiple concurrent sessions allowed (same user can login from multiple devices)
-- Secure cookies enabled in production mode
+- 24-hour session duration
+- Secure cookies in production (HTTPS only)
+- Session storage handled by express-session default (MemoryStore for development)
 
-**Authentication Flow:**
-- Login-only flow (no signup endpoint)
-- `/api/auth/login` and `/api/auth/logout` are public routes
-- All other `/api/*` routes require authentication via `requireAuth` middleware
-- Returns 401 for unauthenticated requests
-- Frontend redirects to login page when auth fails
+**Validation:** Zod schemas for all API request/response validation, returning 422 status codes on validation failures. Schemas are defined in `shared/schema.ts` and shared between client and server.
 
-## Database Schema
+## Database Layer
 
-**Core Tables:**
-- `users`: Single admin user with UUID ID
-- `items`: Product catalog with SKU, type, size, price, safety stock, active status
-- `customers`: Company information (company_name required, other fields optional)
-- `orders`: Order headers with PO number, customer reference, dates, status
-- `order_items`: Line items linking orders to items with quantities
-- `indents`: Monthly inventory planning with opening balance and expected receipts
-- `shipments`: Fulfillment tracking with lot numbers, quantities, rejection counts
+**Database:** SQLite with better-sqlite3 driver for synchronous operations.
 
-**Type Conversions (PostgreSQL → SQLite):**
-- `serial` → `integer` with `autoIncrement`
-- `uuid` → `text` using `crypto.randomUUID()`
-- `numeric` → `real`
-- `date` → `text` (ISO 8601 format: YYYY-MM-DD)
-- `boolean` → `integer` with `{ mode: 'boolean' }`
+**ORM:** Drizzle ORM with type-safe query builder and automatic type inference.
 
 **Schema Management:**
-- Drizzle-kit for migrations (requires manual `drizzle.config.ts` updates)
-- Bootstrap script creates tables on first run if missing
-- Foreign key constraints enabled via PRAGMA
+- Schema definitions in `shared/schema.ts` using Drizzle's SQLite table builders
+- Bootstrap process in `server/db/bootstrap.ts` creates tables on startup if missing
+- Schema migrations via `npm run db:push` using drizzle-kit
+
+**Database Configuration:**
+- Development: `server/data/onyx.db`
+- Production: Configurable via `DATABASE_URL` environment variable (defaults to `/var/app/data/onyx.db` on AWS LightSail)
+- WAL (Write-Ahead Logging) mode enabled for better concurrency
+- 5-second busy timeout for handling concurrent access
+- Foreign keys enforcement enabled
+
+**Data Model:**
+- Users: UUID-based IDs, bcrypt password hashing
+- Items: Auto-increment integer IDs, SKU-based product catalog with safety stock levels, active/inactive status
+- Customers: Company-based customer records with contact information
+- Orders: PO number tracking, status workflow (draft → confirmed → fulfilled/cancelled), date tracking
+- Order Items: Line items with quantity and item references
+- Indents: Monthly inventory planning with opening balance and expected receipts
+- Batches: Production batch tracking with batch_number (SKU+YYMMDD format), quantity management (produced, remaining, rejected), quality status (Good/Acceptable/Rejected), received_date, is_depleted flag. Canonical invariant: quantity_remaining = quantity_produced - quantity_shipped - quantity_rejected
+- Shipments: Batch-based shipment tracking (renamed from lot_number to batch_number) with rejection counts (blowhole, handles, other)
+
+**Type Conversions from PostgreSQL:**
+- `serial` → `integer` with autoIncrement
+- `uuid` → `text` using crypto.randomUUID()
+- `numeric` → `real` for decimal values
+- `date` → `text` in ISO 8601 format
+- `boolean` → `integer` with mode: 'boolean'
 
 ## Business Logic
 
-**Order Status Workflow:**
-- `draft` → `confirmed` → `fulfilled` → `cancelled`
-- Cancelled can occur from any state
-- Status transitions handled via API updates
+**Inventory Planning (Indent):**
+- Two-tier inventory model: Working Stock (opening + expected) and Safety Stock (buffer)
+- Calculation logic in `shared/inventory.ts` determines order requirements
+- Formula: `required_to_order = max(0, (pending_orders + safety_stock) - (opening_balance + expected_receipts))`
+- Pending orders fetched from backend API `/api/orders/pending-by-item` for consistency
+- Auto-save functionality with debouncing for indent updates
 
-**Inventory Calculations (Two-Tier Model):**
-- **Working Stock** = Opening Balance + Expected Receipts
-- **Usable Stock** = Working Stock + Safety Stock
-- **Post-Pending Stock** = Usable Stock - Pending Orders
-- **Shortfall to Fulfill** = max(0, Pending Orders - Usable Stock)
-- **Shortfall to Restore Safety** = max(0, Safety Stock - Post-Pending Stock)
-- **Total Required to Order** = Shortfall to Fulfill + Shortfall to Restore Safety
-- Pending orders count only draft/confirmed orders within selected month
-- Safety stock status: critical (≤0 post-pending), low (<50% safety), good (≥50%)
+**Order Management:**
+- Status workflow enforcement: draft → confirmed → fulfilled or cancelled
+- Line items support with item quantity tracking
+- Purchase order number (PO) uniqueness validation
+- Date tracking for order date and fulfillment date
 
-**Shipment Tracking:**
-- Supports partial shipments per order line item
-- Tracks lot numbers, shipment dates, and quantities
-- Records rejections in three categories: blowhole, handles, other
-- Calculates total shipped and remaining quantities
+**Pending Orders Calculation (November 2025 Architecture):**
+- **Formula:** `pending = ordered - shipped + rejected`
+- **Rationale:** Rejected pieces need replacement, so they count against fulfillment
+- **Single Source of Truth:** Backend method `getPendingOrdersByItem()` used across all pages (Dashboard, Indent, Order Details)
+- **Implementation:** Aggregates rejection totals (blowholes + handles + other) per order item from shipments table
+- **Consistency:** All UI components fetch from `/api/orders/pending-by-item` endpoint instead of local calculations
 
-## Build and Deployment
+**Shipment & Rejection Tracking (November 2025 Architecture):**
+- **Single Source of Truth:** Shipments table captures all rejection data at inspection time
+- **Batch-based shipments:** Each shipment links to order item with batch_number (required field, renamed from lot_number)
+- **Rejection Categories:** blowholes, handles, other defects tracked per shipment
+- **Read-only Aggregation:** `batch.quantity_rejected` is calculated sum of rejections, not directly editable
+- **Batch Updates:** Automated triggers update `batch.quantity_remaining` and `quantity_rejected` when shipments change
+- **Canonical Invariant:** `quantity_remaining = quantity_produced - quantity_shipped - quantity_rejected`
+- **UI Terminology:** "Batch number" (not "Lot number"), "Available" batches (not "Active"), "Desired Safety Stock" (not "Target")
+- **CRUD Operations:** Shipments can be added/edited/deleted per order item with rejection tracking
 
-**Development Mode:**
-- `npm run dev` starts server on port 5001 with hot reload
-- Vite dev server proxies `/api/*` requests to Express backend
-- Client accessible at `http://localhost:5001`
+## Build & Deployment
+
+**Development:**
+- `npm run dev` - Runs server on port 5001 with Vite dev server proxying API requests
+- Hot module replacement (HMR) for frontend
+- TypeScript type checking with `npm run check`
 
 **Production Build:**
-- `npm run build` compiles both client (Vite) and server (esbuild)
-- Client assets built to `dist/public`
-- Server bundle built to `dist/index.js` as ES module
-- `npm start` runs production server serving static files and API
+- `npm run build` - Builds frontend with Vite and bundles backend with esbuild
+- Frontend output: `dist/public/`
+- Backend output: `dist/index.js`
+- `npm start` - Runs production server with NODE_ENV=production
 
-**Deployment Target:**
-- AWS LightSail with Nginx reverse proxy
-- Database path configurable via `DATABASE_URL` environment variable
-- Trust proxy setting enabled in production for proper IP handling
-- Session cookies set to secure in production mode
+**Static File Serving:** In production, Express serves the built frontend from `dist/public`. In development, Vite middleware handles all frontend requests.
+
+**Deployment Target:** AWS LightSail with Nginx reverse proxy. Application expects to run behind a trusted proxy in production.
 
 # External Dependencies
 
-## Third-Party Libraries
+## Core Framework Dependencies
+- **Express.js** - Web server framework
+- **React** - Frontend UI library
+- **Vite** - Frontend build tool and dev server
+- **TypeScript** - Type system for both client and server
 
-**Frontend:**
-- @tanstack/react-query: Server state management and caching
-- wouter: Lightweight client-side routing
-- @radix-ui/*: Unstyled UI primitives (dialogs, dropdowns, tooltips, etc.)
-- react-hook-form: Form state management
-- @hookform/resolvers: Zod integration for form validation
-- date-fns: Date formatting and manipulation
-- lucide-react: Icon library
-- tailwindcss: Utility-first CSS framework
-- class-variance-authority: Variant styling utility
-- clsx + tailwind-merge: Class name utilities
+## Database & ORM
+- **better-sqlite3** - SQLite database driver (synchronous)
+- **Drizzle ORM** - Type-safe SQL query builder and schema management
+- **drizzle-kit** - Schema migration tooling
 
-**Backend:**
-- express: Web server framework
-- express-session: Session management middleware
-- bcryptjs: Password hashing
-- better-sqlite3: SQLite database driver
-- drizzle-orm: SQL query builder and ORM
-- drizzle-kit: Database migration tool
-- zod: Schema validation
-- dotenv: Environment variable management
-- cors: CORS middleware
+## Authentication & Security
+- **express-session** - Session middleware for authentication
+- **bcryptjs** - Password hashing (12 rounds)
+- **cors** - CORS middleware (if needed for API)
 
-**Build Tools:**
-- vite: Frontend build tool and dev server
-- esbuild: Server-side bundler
-- typescript: Type checking
-- tsx: TypeScript execution for development
+## Frontend State & Data
+- **TanStack Query (React Query)** - Server state management with caching
+- **Wouter** - Lightweight client-side routing
+- **zod** - Runtime type validation and schema validation
+- **drizzle-zod** - Zod schema generation from Drizzle schemas
 
-## Environment Variables
+## UI Component Libraries
+- **Radix UI** - Headless accessible component primitives (20+ components including dialog, dropdown, select, toast, etc.)
+- **Shadcn/ui** - Pre-styled component collection built on Radix UI
+- **TailwindCSS** - Utility-first CSS framework
+- **class-variance-authority** - Variant-based styling utilities
+- **tailwind-merge** - Tailwind class merging utility
+- **clsx** - Conditional className utility
 
-Required variables in `.env`:
-- `ADMIN_USERNAME`: Admin login username
-- `ADMIN_PASSWORD`: Admin login password (hashed with bcrypt on startup)
-- `SESSION_SECRET`: Secret key for session signing
-- `DATABASE_URL`: Path to SQLite database file (optional, defaults to `server/data/onyx.db`)
-- `NODE_ENV`: Environment mode (`development` or `production`)
+## Form & Validation
+- **React Hook Form** - Form state management
+- **@hookform/resolvers** - Validation resolver for Zod schemas
 
-## Database
+## Utilities
+- **date-fns** - Date manipulation and formatting
+- **nanoid** - Unique ID generation
+- **dotenv** - Environment variable loading
+- **lucide-react** - Icon library
 
-**SQLite Configuration:**
-- No external database service required
-- Local file-based storage
-- Configured with WAL mode for concurrent reads/writes
-- 5-second busy timeout for write conflicts
-- Foreign key constraints enforced
+## Development Tools
+- **tsx** - TypeScript execution for development
+- **esbuild** - Fast JavaScript bundler for backend
+- **autoprefixer** - PostCSS plugin for vendor prefixes
 
-## External Services
+## Fonts
+- **Google Fonts (Inter)** - Primary typeface loaded via CDN
 
-**None currently integrated.** The system is designed to run completely standalone without external API dependencies or cloud services beyond basic hosting infrastructure (AWS LightSail).
+## Build Output
+- Frontend builds to `dist/public/` directory
+- Backend bundles to `dist/index.js` with external package dependencies
+- Production server serves static files and API from single Express instance
