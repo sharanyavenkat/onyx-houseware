@@ -31,7 +31,7 @@ export default function IndentPage() {
   const items = useMemo(() => allItems.filter(item => item.is_active), [allItems]);
 
   // Fetch indents for selected month
-  const { data: indents = [], isFetched: indentsFetched } = useQuery<Indent[]>({
+  const { data: indents = [], isFetched: indentsFetched, isLoading: indentsLoading } = useQuery<Indent[]>({
     queryKey: ['/api/indents', selectedMonth],
   });
 
@@ -46,7 +46,7 @@ export default function IndentPage() {
   });
 
   // Fetch on-hand stock from batches (read-only, real-time from batch quantities)
-  const { data: onHandStock = {}, isFetched: onHandStockFetched } = useQuery<Record<number, number>>({
+  const { data: onHandStock = {}, isFetched: onHandStockFetched, isLoading: onHandStockLoading } = useQuery<Record<number, number>>({
     queryKey: ['/api/batches/opening-balance', includeAcceptable],
     queryFn: async () => {
       const response = await fetch(`/api/batches/opening-balance?includeAcceptable=${includeAcceptable}`);
@@ -91,8 +91,8 @@ export default function IndentPage() {
 
   // Auto-initialize month when viewing a month with missing indent records
   useEffect(() => {
-    // Wait for all required data to be fetched before initializing
-    if (!sortedItems.length || !onHandStockFetched || !indentsFetched) return;
+    // Wait for all required data to be fetched AND not currently loading before initializing
+    if (!sortedItems.length || !onHandStockFetched || !indentsFetched || indentsLoading || onHandStockLoading) return;
     
     // Prevent duplicate initialization while mutation is in progress
     if (initializingMonthRef.current === selectedMonth) return;
@@ -128,7 +128,7 @@ export default function IndentPage() {
         }
       });
     }
-  }, [sortedItems, indents, indentsFetched, selectedMonth, onHandStock, onHandStockFetched, initializeMonthMutation]);
+  }, [sortedItems, indents, indentsFetched, indentsLoading, selectedMonth, onHandStock, onHandStockFetched, onHandStockLoading, initializeMonthMutation]);
 
   // Merge data
   const indentData = useMemo(() => {
