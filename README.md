@@ -126,6 +126,21 @@ Preferred communication style: Simple, everyday language.
 - **UI Terminology:** "Batch number" (not "Lot number"), "Available" batches (not "Active"), "Desired Safety Stock" (not "Target")
 - **CRUD Operations:** Shipments can be added/edited/deleted per order item with rejection tracking
 
+**Cache Invalidation Strategy (November 2025):**
+- **Shipment Mutations** (create/update/delete) invalidate:
+  - `/api/shipments/order-item` - Refresh shipment list for specific order item
+  - `/api/orders` - Refresh order details
+  - `/api/shipments` - Refresh all shipments
+  - `/api/batches` - Refresh batch list (quantity_remaining, quantity_rejected updates)
+  - `/api/batches/opening-balance` - Refresh opening balance calculations
+  - `/api/orders/pending-by-item` - Refresh pending orders on Dashboard and Indent
+  - `/api/batches/rejected-by-item` - Refresh rejection totals on Indent page
+- **Order Mutations** (create/update/delete) invalidate:
+  - `/api/orders` - Refresh order list
+  - `/api/order-items` - Refresh order line items
+  - `/api/orders/pending-by-item` - Refresh pending orders across all pages
+- **Rationale:** Ensures Dashboard, Indent, and Batches pages stay in sync when shipments/orders change. Rejections added to shipments immediately update all dependent views.
+
 ## Build & Deployment
 
 **Development:**
