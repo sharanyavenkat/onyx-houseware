@@ -9,6 +9,13 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   Table,
   TableBody,
   TableCell,
@@ -19,7 +26,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { formatDate, toInputDate } from "@/lib/dateUtils";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import type { Shipment } from "@shared/schema";
+import type { Batch, Shipment } from "@shared/schema";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { AlertTriangle, Edit, Package, Plus } from "lucide-react";
 import { useMemo, useState } from "react";
@@ -30,6 +37,7 @@ interface ShipmentTrackingProps {
   onClose: () => void;
   orderItemId: number;
   orderId: number;
+  itemId: number;
   itemName: string;
   orderedQuantity: number;
 }
@@ -39,6 +47,7 @@ export default function ShipmentTracking({
   onClose,
   orderItemId,
   orderId,
+  itemId,
   itemName,
   orderedQuantity,
 }: ShipmentTrackingProps) {
@@ -59,6 +68,17 @@ export default function ShipmentTracking({
     queryFn: async () => {
       const response = await fetch(`/api/shipments/order-item/${orderItemId}`);
       if (!response.ok) throw new Error("Failed to fetch shipments");
+      return response.json();
+    },
+    enabled: isOpen,
+  });
+
+  // Fetch active batches for this item
+  const { data: availableBatches = [] } = useQuery<Batch[]>({
+    queryKey: ["/api/batches/active/by-item", itemId],
+    queryFn: async () => {
+      const response = await fetch(`/api/batches/active/by-item/${itemId}`);
+      if (!response.ok) throw new Error("Failed to fetch batches");
       return response.json();
     },
     enabled: isOpen,
@@ -192,9 +212,9 @@ export default function ShipmentTracking({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!quantityShipped || !shipmentDate) {
+    if (!batchNumber || !quantityShipped || !shipmentDate) {
       toast({
-        title: "Please fill all required fields",
+        title: "Please fill all required fields (Batch Number, Quantity, Date)",
         variant: "destructive",
       });
       return;
@@ -203,7 +223,7 @@ export default function ShipmentTracking({
     const data = {
       order_id: orderId,
       order_item_id: orderItemId,
-      batch_number: batchNumber || null,
+      batch_number: batchNumber,
       quantity_shipped: parseInt(quantityShipped),
       rejections_blowholes: parseInt(rejectionsBlowhole) || 0,
       rejections_handles: parseInt(rejectionsHandles) || 0,
@@ -370,16 +390,26 @@ export default function ShipmentTracking({
                     <div className="grid grid-cols-3 gap-4">
                       <div>
                         <Label htmlFor="batch_number">
-                          Batch Number
+                          Batch Number <span className="text-destructive">*</span>
                         </Label>
-                        <Input
-                          id="batch_number"
-                          value={batchNumber}
-                          onChange={(e) => setBatchNumber(e.target.value)}
-                          placeholder="e.g., PAN10-250120"
-                          data-testid="input-batch-number"
-                          required
-                        />
+                        <Select value={batchNumber} onValueChange={setBatchNumber}>
+                          <SelectTrigger data-testid="select-batch-number">
+                            <SelectValue placeholder="Select batch..." />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {availableBatches.length === 0 ? (
+                              <SelectItem value="no-batches" disabled>
+                                No active batches available
+                              </SelectItem>
+                            ) : (
+                              availableBatches.map((batch) => (
+                                <SelectItem key={batch.id} value={batch.batch_number}>
+                                  {batch.batch_number} ({batch.quantity_remaining.toLocaleString()} remaining)
+                                </SelectItem>
+                              ))
+                            )}
+                          </SelectContent>
+                        </Select>
                       </div>
 
                       <div>

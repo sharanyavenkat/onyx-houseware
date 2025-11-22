@@ -219,6 +219,7 @@ export default function OrderDetails() {
           }}
           orderItemId={trackingShipment.order_item_id}
           orderId={order.id}
+          itemId={trackingShipment.item_id}
           itemName={trackingShipment.item_name}
           orderedQuantity={trackingShipment.quantity}
         />
