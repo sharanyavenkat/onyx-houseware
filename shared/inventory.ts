@@ -1,20 +1,17 @@
 /**
  * Shared inventory calculation utilities for two-tier inventory model
  * 
- * SIMPLIFIED MODEL (Option A - Batch-Driven):
+ * SIMPLIFIED MODEL (Batch-Driven):
  * - Current Stock = Real-time inventory from batches (single source of truth)
  * - Working Stock = Current Stock + Expected Receipts (normal operational inventory)
  * - Current Safety Stock = Buffer inventory currently available
  * - Desired Safety Stock = Target buffer inventory level we want to maintain
  * - Usable Stock = Working Stock + Current Safety Stock (total available to fulfill orders)
- * 
- * Note: The first parameter is called "openingBalance" for backward compatibility,
- * but it now represents the current on-hand stock from batches.
  */
 
 export interface InventoryMetrics {
   // Input values
-  openingBalance: number;            // Now represents current stock from batches (kept for compatibility)
+  currentStock: number;              // Real-time on-hand stock from batches
   expectedReceipts: number;
   pendingQty: number;
   currentSafetyStock: number;
@@ -38,21 +35,21 @@ export interface InventoryMetrics {
 /**
  * Calculate inventory metrics for an item with two-tier safety stock model
  * 
- * @param openingBalance - Current stock from batches (parameter name kept for backward compatibility)
+ * @param currentStock - Real-time on-hand stock from batches
  * @param expectedReceipts - Batches expected to arrive this month
  * @param pendingQty - Quantity in pending orders
  * @param currentSafetyStock - Current available safety stock buffer
  * @param desiredSafetyStock - Target safety stock level
  */
 export function calculateInventoryMetrics(
-  openingBalance: number,            // Actually current stock from batches
+  currentStock: number,
   expectedReceipts: number,
   pendingQty: number,
   currentSafetyStock: number,
   desiredSafetyStock: number
 ): InventoryMetrics {
   // Core calculations - Working Stock = Current Stock + Expected Receipts
-  const workingStock = openingBalance + expectedReceipts;
+  const workingStock = currentStock + expectedReceipts;
   const usableStock = workingStock + currentSafetyStock;
   const postPendingStock = usableStock - pendingQty;
   
@@ -79,7 +76,7 @@ export function calculateInventoryMetrics(
   }
   
   return {
-    openingBalance,
+    currentStock,
     expectedReceipts,
     pendingQty,
     currentSafetyStock,
