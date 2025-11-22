@@ -94,7 +94,7 @@ export default function BatchEditDialog({
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+      <DialogContent>
         <DialogHeader>
           <DialogTitle>Edit Batch</DialogTitle>
           <DialogDescription>
@@ -102,7 +102,7 @@ export default function BatchEditDialog({
           </DialogDescription>
         </DialogHeader>
         
-        <div className="grid grid-cols-2 gap-6">
+        <div className="grid grid-cols-2 gap-6 flex-1 overflow-y-auto pr-2">
           {/* Left column - Current values */}
           <div className="space-y-3">
             <h3 className="font-medium text-sm text-muted-foreground">Current Values</h3>
