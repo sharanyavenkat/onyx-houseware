@@ -4,7 +4,7 @@ import { storage } from "./storage";
 import { verifyPassword } from "./auth";
 import { requireAuth } from "./middleware";
 import { insertItemSchema, insertCustomerSchema, insertOrderSchema, insertOrderItemSchema, insertIndentSchema, insertShipmentSchema, insertBatchSchema, updateBatchSchema } from "@shared/schema";
-import { db } from "./db";
+import { db } from "./db/client";
 import { batches } from "@shared/schema";
 import { eq } from "drizzle-orm";
 

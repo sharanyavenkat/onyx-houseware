@@ -57,7 +57,12 @@ export default function Dashboard() {
 
   // Fetch actual on-hand stock from batches (real-time, includes acceptable quality)
   const { data: onHandStock = {} } = useQuery<Record<number, number>>({
-    queryKey: ['/api/batches/on-hand-stock?includeAcceptable=true'],
+    queryKey: ['/api/batches/on-hand-stock', true],
+    queryFn: async () => {
+      const response = await fetch('/api/batches/on-hand-stock?includeAcceptable=true');
+      if (!response.ok) throw new Error('Failed to fetch on-hand stock');
+      return response.json();
+    },
   });
 
   // Fetch pending orders from backend (accounts for shipped and rejected quantities)
