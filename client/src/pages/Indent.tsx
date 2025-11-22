@@ -65,7 +65,17 @@ export default function IndentPage() {
     queryKey: ['/api/batches/rejected-by-item'],
   });
 
-  // Removed auto-initialization - users now manually carry forward via button
+  // Auto-initialize indent records for new months with current on-hand stock
+  const initializeMonthMutation = useMutation({
+    mutationFn: async (data: { item_id: number; month: string; opening_balance: number; expected_receipts: number; current_safety_stock: number }[]) => {
+      await Promise.all(
+        data.map(indent => apiRequest('POST', '/api/indents', indent))
+      );
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/indents', selectedMonth] });
+    },
+  });
 
   // Sort items: active first, then by name alphabetically
   const sortedItems = useMemo(() => {
