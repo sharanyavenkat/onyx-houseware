@@ -118,7 +118,6 @@ export async function bootstrapDatabase() {
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         item_id INTEGER NOT NULL REFERENCES items(id),
         month TEXT NOT NULL,
-        opening_balance INTEGER NOT NULL DEFAULT 0,
         expected_receipts INTEGER NOT NULL DEFAULT 0,
         current_safety_stock INTEGER NOT NULL DEFAULT 0
       )

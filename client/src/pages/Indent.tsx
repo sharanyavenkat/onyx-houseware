@@ -82,11 +82,6 @@ export default function IndentPage() {
       const indent = indents.find(i => i.item_id === item.id);
       const currentOnHandStock = onHandStock[item.id] || 0;
       
-      // Opening Balance: editable field, auto-initialized from on-hand stock if no indent exists
-      const openingBalance = editingCells[`${item.id}-opening_balance`] !== undefined 
-        ? parseInt(editingCells[`${item.id}-opening_balance`]) || 0 
-        : indent?.opening_balance ?? currentOnHandStock;
-      
       const expectedReceipts = editingCells[`${item.id}-expected_receipts`] !== undefined ? parseInt(editingCells[`${item.id}-expected_receipts`]) || 0 : indent?.expected_receipts ?? 0;
       // Current safety stock: Use indent value if exists, otherwise default to 0
       const currentSafetyStock = editingCells[`${item.id}-current_safety_stock`] !== undefined ? parseInt(editingCells[`${item.id}-current_safety_stock`]) || 0 : indent?.current_safety_stock ?? 0;
@@ -105,7 +100,6 @@ export default function IndentPage() {
       return {
         id: item.id,
         item_name: item.name,
-        opening_balance: openingBalance,
         on_hand_stock: currentOnHandStock,
         expected_receipts: expectedReceipts,
         desired_safety_stock: item.desired_safety_stock,
@@ -127,7 +121,7 @@ export default function IndentPage() {
 
   // Save mutation for indent data
   const saveIndentMutation = useMutation({
-    mutationFn: async (data: { item_id: number; month: string; opening_balance: number; expected_receipts: number; current_safety_stock: number }[]) => {
+    mutationFn: async (data: { item_id: number; month: string; expected_receipts: number; current_safety_stock: number }[]) => {
       await Promise.all(
         data.map(indent => apiRequest('POST', '/api/indents', indent))
       );
@@ -141,7 +135,6 @@ export default function IndentPage() {
       setEditingCells(prev => {
         const updated = { ...prev };
         variables.forEach(item => {
-          delete updated[`${item.item_id}-opening_balance`];
           delete updated[`${item.item_id}-expected_receipts`];
           delete updated[`${item.item_id}-current_safety_stock`];
         });
@@ -194,7 +187,6 @@ export default function IndentPage() {
         .map(row => ({
           item_id: row.id,
           month: selectedMonth,
-          opening_balance: row.opening_balance,
           expected_receipts: row.expected_receipts,
           current_safety_stock: row.current_safety_stock,
         }));

@@ -97,7 +97,6 @@ export const indents = sqliteTable("indents", {
     .notNull()
     .references(() => items.id),
   month: text("month").notNull(),
-  opening_balance: integer("opening_balance").notNull().default(0),
   expected_receipts: integer("expected_receipts").notNull().default(0),
   current_safety_stock: integer("current_safety_stock").notNull().default(0),
 });
