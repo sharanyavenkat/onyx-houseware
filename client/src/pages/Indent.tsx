@@ -46,9 +46,9 @@ export default function IndentPage() {
 
   // Fetch on-hand stock from batches (read-only, real-time from batch quantities)
   const { data: onHandStock = {}, isFetched: onHandStockFetched, isLoading: onHandStockLoading } = useQuery<Record<number, number>>({
-    queryKey: ['/api/batches/opening-balance', includeAcceptable],
+    queryKey: ['/api/batches/on-hand-stock', includeAcceptable],
     queryFn: async () => {
-      const response = await fetch(`/api/batches/opening-balance?includeAcceptable=${includeAcceptable}`);
+      const response = await fetch(`/api/batches/on-hand-stock?includeAcceptable=${includeAcceptable}`);
       if (!response.ok) throw new Error('Failed to fetch on-hand stock');
       return response.json();
     },

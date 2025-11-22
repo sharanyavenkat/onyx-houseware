@@ -102,7 +102,7 @@ export default function ShipmentTracking({
         queryKey: ["/api/batches"],
       });
       queryClient.invalidateQueries({
-        queryKey: ["/api/batches/opening-balance"],
+        queryKey: ["/api/batches/on-hand-stock"],
       });
       queryClient.invalidateQueries({
         queryKey: ["/api/orders/pending-by-item"],
@@ -141,7 +141,7 @@ export default function ShipmentTracking({
         queryKey: ["/api/batches"],
       });
       queryClient.invalidateQueries({
-        queryKey: ["/api/batches/opening-balance"],
+        queryKey: ["/api/batches/on-hand-stock"],
       });
       queryClient.invalidateQueries({
         queryKey: ["/api/orders/pending-by-item"],
@@ -181,7 +181,7 @@ export default function ShipmentTracking({
         queryKey: ["/api/batches"],
       });
       queryClient.invalidateQueries({
-        queryKey: ["/api/batches/opening-balance"],
+        queryKey: ["/api/batches/on-hand-stock"],
       });
       queryClient.invalidateQueries({
         queryKey: ["/api/orders/pending-by-item"],

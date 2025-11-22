@@ -138,13 +138,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Batch routes
-  // Get opening balance from batches (must come before general /api/batches route)
-  app.get("/api/batches/opening-balance", async (req, res) => {
+  // Get on-hand stock from batches (must come before general /api/batches route)
+  app.get("/api/batches/on-hand-stock", async (req, res) => {
     try {
       // Support optional includeAcceptable query parameter (default true)
       const includeAcceptable = req.query.includeAcceptable !== 'false';
-      const openingBalance = await storage.getOpeningBalanceByItemWithQuality(includeAcceptable);
-      res.json(openingBalance);
+      const onHandStock = await storage.getOnHandStockByItemWithQuality(includeAcceptable);
+      res.json(onHandStock);
     } catch (error: any) {
       res.status(500).json({ message: error.message });
     }

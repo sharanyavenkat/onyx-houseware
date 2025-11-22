@@ -74,7 +74,7 @@ export interface IStorage {
   updateBatchRejection(id: number, newRejected: number, quality_status?: string, notes?: string): Promise<Batch>;
   adjustBatchQuantities(batchNumber: string, adjustments: { shipped?: number, rejected?: number }): Promise<Batch>;
   getPendingOrdersByItem(): Promise<Record<number, number>>;
-  getOpeningBalanceByItemWithQuality(includeAcceptable: boolean): Promise<Record<number, number>>;
+  getOnHandStockByItemWithQuality(includeAcceptable: boolean): Promise<Record<number, number>>;
   getRejectedQuantitiesByItem(): Promise<Record<number, number>>;
 }
 
@@ -723,19 +723,19 @@ export class DbStorage implements IStorage {
       return updated;
     });
   }
-  async getOpeningBalanceByItem(): Promise<Record<number, number>> {
-    // Calculate opening balance as sum of quantity_remaining for all non-depleted batches per item
+  async getOnHandStockByItem(): Promise<Record<number, number>> {
+    // Calculate on-hand stock as sum of quantity_remaining for all non-depleted batches per item
     const allBatches = await db.select().from(batches);
     
-    const openingBalance: Record<number, number> = {};
+    const onHandStock: Record<number, number> = {};
     
     allBatches.forEach((batch) => {
       if (!batch.is_depleted && batch.quantity_remaining > 0) {
-        openingBalance[batch.item_id] = (openingBalance[batch.item_id] || 0) + batch.quantity_remaining;
+        onHandStock[batch.item_id] = (onHandStock[batch.item_id] || 0) + batch.quantity_remaining;
       }
     });
     
-    return openingBalance;
+    return onHandStock;
   }
 
   async getPendingOrdersByItem(): Promise<Record<number, number>> {
@@ -786,11 +786,11 @@ export class DbStorage implements IStorage {
     return pending;
   }
 
-  async getOpeningBalanceByItemWithQuality(includeAcceptable: boolean): Promise<Record<number, number>> {
-    // Calculate opening balance with quality filter
+  async getOnHandStockByItemWithQuality(includeAcceptable: boolean): Promise<Record<number, number>> {
+    // Calculate on-hand stock with quality filter
     const allBatches = await db.select().from(batches);
     
-    const openingBalance: Record<number, number> = {};
+    const onHandStock: Record<number, number> = {};
     
     allBatches.forEach((batch) => {
       if (!batch.is_depleted && batch.quantity_remaining > 0) {
@@ -799,12 +799,12 @@ export class DbStorage implements IStorage {
                              (includeAcceptable && batch.quality_status === 'Acceptable');
         
         if (shouldInclude) {
-          openingBalance[batch.item_id] = (openingBalance[batch.item_id] || 0) + batch.quantity_remaining;
+          onHandStock[batch.item_id] = (onHandStock[batch.item_id] || 0) + batch.quantity_remaining;
         }
       }
     });
     
-    return openingBalance;
+    return onHandStock;
   }
 
   async getRejectedQuantitiesByItem(): Promise<Record<number, number>> {

@@ -57,7 +57,7 @@ export default function Dashboard() {
 
   // Fetch actual on-hand stock from batches (real-time, includes acceptable quality)
   const { data: onHandStock = {} } = useQuery<Record<number, number>>({
-    queryKey: ['/api/batches/opening-balance?includeAcceptable=true'],
+    queryKey: ['/api/batches/on-hand-stock?includeAcceptable=true'],
   });
 
   // Fetch pending orders from backend (accounts for shipped and rejected quantities)
