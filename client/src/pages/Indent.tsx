@@ -91,16 +91,36 @@ export default function IndentPage() {
 
   // Auto-initialize month when viewing a month with missing indent records
   useEffect(() => {
+    console.log(`[Auto-Init] Effect triggered for ${selectedMonth}`);
+    console.log(`[Auto-Init] Guards:`, {
+      sortedItemsLength: sortedItems.length,
+      onHandStockFetched,
+      indentsFetched,
+      indentsLoading,
+      onHandStockLoading,
+      initializingMonth: initializingMonthRef.current,
+      mutationPending: initializeMonthMutation.isPending
+    });
+    
     // Wait for all required data to be fetched AND not currently loading before initializing
-    if (!sortedItems.length || !onHandStockFetched || !indentsFetched || indentsLoading || onHandStockLoading) return;
+    if (!sortedItems.length || !onHandStockFetched || !indentsFetched || indentsLoading || onHandStockLoading) {
+      console.log(`[Auto-Init] Blocked by guard conditions`);
+      return;
+    }
     
     // Prevent duplicate initialization while mutation is in progress
-    if (initializingMonthRef.current === selectedMonth || initializeMonthMutation.isPending) return;
+    if (initializingMonthRef.current === selectedMonth || initializeMonthMutation.isPending) {
+      console.log(`[Auto-Init] Already initializing or mutation pending`);
+      return;
+    }
     
     // Find items that don't have indent records for this month
     const missingItems = sortedItems.filter(item => {
       return !indents.some(indent => indent.item_id === item.id);
     });
+
+    console.log(`[Auto-Init] Found ${missingItems.length} missing items out of ${sortedItems.length} total`);
+    console.log(`[Auto-Init] Existing indents:`, indents.length);
 
     if (missingItems.length > 0) {
       // Mark this month as being initialized
