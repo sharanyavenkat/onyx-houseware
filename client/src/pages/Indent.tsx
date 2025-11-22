@@ -95,14 +95,14 @@ export default function IndentPage() {
     if (!sortedItems.length || !onHandStockFetched || !indentsFetched || indentsLoading || onHandStockLoading) return;
     
     // Prevent duplicate initialization while mutation is in progress
-    if (initializingMonthRef.current === selectedMonth) return;
+    if (initializingMonthRef.current === selectedMonth || initializeMonthMutation.isPending) return;
     
     // Find items that don't have indent records for this month
     const missingItems = sortedItems.filter(item => {
       return !indents.some(indent => indent.item_id === item.id);
     });
 
-    if (missingItems.length > 0 && !initializeMonthMutation.isPending) {
+    if (missingItems.length > 0) {
       // Mark this month as being initialized
       initializingMonthRef.current = selectedMonth;
       
@@ -115,14 +115,20 @@ export default function IndentPage() {
         current_safety_stock: 0,
       }));
 
+      // Debug logging to verify on-hand stock values
+      console.log(`[Auto-Init] Initializing ${selectedMonth} with on-hand stock:`, onHandStock);
+      console.log(`[Auto-Init] Creating ${newIndents.length} indent records`);
+      
       initializeMonthMutation.mutate(newIndents, {
         onSuccess: async () => {
+          console.log(`[Auto-Init] Successfully initialized ${selectedMonth}`);
           // Wait for the indents query to refetch and load the new data
           await queryClient.refetchQueries({ queryKey: ['/api/indents', selectedMonth] });
           // Only clear the flag after the refetch completes
           initializingMonthRef.current = null;
         },
-        onError: () => {
+        onError: (error) => {
+          console.error(`[Auto-Init] Error initializing ${selectedMonth}:`, error);
           // Clear the flag on error to allow retry
           initializingMonthRef.current = null;
         }
