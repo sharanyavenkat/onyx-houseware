@@ -19,7 +19,6 @@ export default function IndentPage() {
   const [editingCells, setEditingCells] = useState<Record<string, string>>({});
   const [dirtyItems, setDirtyItems] = useState<Set<number>>(new Set());
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const initializingMonthRef = useRef<string | null>(null);
   const { toast} = useToast();
 
   // Fetch all items (only active items)
@@ -65,18 +64,6 @@ export default function IndentPage() {
     queryKey: ['/api/batches/rejected-by-item'],
   });
 
-  // Auto-initialize indent records for new months with current on-hand stock
-  const initializeMonthMutation = useMutation({
-    mutationFn: async (data: { item_id: number; month: string; opening_balance: number; expected_receipts: number; current_safety_stock: number }[]) => {
-      await Promise.all(
-        data.map(indent => apiRequest('POST', '/api/indents', indent))
-      );
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/indents', selectedMonth] });
-    },
-  });
-
   // Sort items: active first, then by name alphabetically
   const sortedItems = useMemo(() => {
     return [...items].sort((a, b) => {
@@ -88,73 +75,6 @@ export default function IndentPage() {
       return a.name.localeCompare(b.name);
     });
   }, [items]);
-
-  // Auto-initialize month when viewing a month with missing indent records
-  useEffect(() => {
-    console.log(`[Auto-Init] Effect triggered for ${selectedMonth}`);
-    console.log(`[Auto-Init] Guards:`, {
-      sortedItemsLength: sortedItems.length,
-      onHandStockFetched,
-      indentsFetched,
-      indentsLoading,
-      onHandStockLoading,
-      initializingMonth: initializingMonthRef.current,
-      mutationPending: initializeMonthMutation.isPending
-    });
-    
-    // Wait for all required data to be fetched AND not currently loading before initializing
-    if (!sortedItems.length || !onHandStockFetched || !indentsFetched || indentsLoading || onHandStockLoading) {
-      console.log(`[Auto-Init] Blocked by guard conditions`);
-      return;
-    }
-    
-    // Prevent duplicate initialization while mutation is in progress
-    if (initializingMonthRef.current === selectedMonth || initializeMonthMutation.isPending) {
-      console.log(`[Auto-Init] Already initializing or mutation pending`);
-      return;
-    }
-    
-    // Find items that don't have indent records for this month
-    const missingItems = sortedItems.filter(item => {
-      return !indents.some(indent => indent.item_id === item.id);
-    });
-
-    console.log(`[Auto-Init] Found ${missingItems.length} missing items out of ${sortedItems.length} total`);
-    console.log(`[Auto-Init] Existing indents:`, indents.length);
-
-    if (missingItems.length > 0) {
-      // Mark this month as being initialized
-      initializingMonthRef.current = selectedMonth;
-      
-      // Auto-create indent records with opening balance = current on-hand stock (0 if no batches)
-      const newIndents = missingItems.map(item => ({
-        item_id: item.id,
-        month: selectedMonth,
-        opening_balance: onHandStock[item.id] || 0,
-        expected_receipts: 0,
-        current_safety_stock: 0,
-      }));
-
-      // Debug logging to verify on-hand stock values
-      console.log(`[Auto-Init] Initializing ${selectedMonth} with on-hand stock:`, onHandStock);
-      console.log(`[Auto-Init] Creating ${newIndents.length} indent records`);
-      
-      initializeMonthMutation.mutate(newIndents, {
-        onSuccess: async () => {
-          console.log(`[Auto-Init] Successfully initialized ${selectedMonth}`);
-          // Wait for the indents query to refetch and load the new data
-          await queryClient.refetchQueries({ queryKey: ['/api/indents', selectedMonth] });
-          // Only clear the flag after the refetch completes
-          initializingMonthRef.current = null;
-        },
-        onError: (error) => {
-          console.error(`[Auto-Init] Error initializing ${selectedMonth}:`, error);
-          // Clear the flag on error to allow retry
-          initializingMonthRef.current = null;
-        }
-      });
-    }
-  }, [sortedItems, indents, indentsFetched, indentsLoading, selectedMonth, onHandStock, onHandStockFetched, onHandStockLoading, initializeMonthMutation]);
 
   // Merge data
   const indentData = useMemo(() => {
@@ -172,9 +92,10 @@ export default function IndentPage() {
       const currentSafetyStock = editingCells[`${item.id}-current_safety_stock`] !== undefined ? parseInt(editingCells[`${item.id}-current_safety_stock`]) || 0 : indent?.current_safety_stock ?? 0;
       const pendingQty = pendingOrdersByItem[item.id] || 0;
       
-      // Use shared inventory calculation with both current and desired safety stock
+      // SIMPLIFIED: Use On-Hand Stock (from batches) as single source of truth
+      // Working Stock = On-Hand Stock + Expected Receipts
       const metrics = calculateInventoryMetrics(
-        openingBalance,
+        currentOnHandStock,  // Use actual batch inventory instead of opening balance
         expectedReceipts,
         pendingQty,
         currentSafetyStock,
@@ -298,7 +219,7 @@ export default function IndentPage() {
     setEditingCells(prev => ({ ...prev, [key]: value }));
     
     // Mark this item as dirty if it's an indent field
-    if (field === 'opening_balance' || field === 'expected_receipts' || field === 'current_safety_stock') {
+    if (field === 'expected_receipts' || field === 'current_safety_stock') {
       setDirtyItems(prev => new Set(prev).add(itemId));
     }
   };
@@ -306,26 +227,8 @@ export default function IndentPage() {
   const indentColumns = [
     { key: 'item_name', label: 'Item Name' },
     { 
-      key: 'opening_balance', 
-      label: 'Opening Balance', 
-      render: (value: number, row: any) => {
-        const key = `${row.id}-opening_balance`;
-        const displayValue = editingCells[key] !== undefined ? editingCells[key] : String(value);
-        return (
-          <Input
-            type="number"
-            value={displayValue}
-            onChange={(e) => handleCellEdit(row.id, 'opening_balance', e.target.value)}
-            className="w-28 font-mono"
-            data-testid={`input-opening-balance-${row.id}`}
-            title="Month-start stock snapshot (editable)"
-          />
-        );
-      }
-    },
-    { 
       key: 'on_hand_stock', 
-      label: 'On-Hand Stock', 
+      label: 'Current Stock (from Batches)', 
       render: (value: number, row: any) => (
         <div className="space-y-1">
           <div 
@@ -472,17 +375,17 @@ export default function IndentPage() {
       {/* Formula Explanation */}
       <div className="bg-muted/50 p-4 rounded-lg border space-y-3">
         <div>
-          <h3 className="font-medium mb-2">Stock Tracking:</h3>
+          <h3 className="font-medium mb-2">📦 Simplified Stock Tracking:</h3>
           <div className="text-sm text-muted-foreground space-y-1">
-            <p><strong>Opening Balance</strong>: Month-start stock snapshot (editable, auto-initialized from on-hand stock for new months)</p>
-            <p><strong>On-Hand Stock</strong>: Real-time available stock from batches (read-only, updated as shipments go out)</p>
-            <p className="text-xs pt-1 italic">💡 When starting a new month, Opening Balance defaults to current On-Hand Stock. You can edit it if your physical count differs.</p>
+            <p><strong>Current Stock (from Batches)</strong>: Real-time inventory from your batches - this is your single source of truth!</p>
+            <p><strong>Expected Receipts</strong>: Batches you plan to receive this month (update this to 0 when batches arrive to avoid double counting)</p>
+            <p className="text-xs pt-1 italic">💡 Your batches drive everything. When batches arrive, reduce Expected Receipts to avoid counting them twice!</p>
           </div>
         </div>
         <div>
           <h3 className="font-medium mb-2">Two-Tier Inventory Model:</h3>
           <div className="text-sm text-muted-foreground space-y-1">
-            <p><strong>Working Stock</strong> = Opening Balance + Expected Receipts <span className="text-xs">(normal operational inventory)</span></p>
+            <p><strong>Working Stock</strong> = Current Stock + Expected Receipts <span className="text-xs">(normal operational inventory)</span></p>
             <p><strong>Total Usable Stock</strong> = Working Stock + Safety Stock <span className="text-xs">(safety stock can be used to fulfill orders)</span></p>
             <p><strong>Stock After Pending</strong> = Total Usable Stock - Pending Orders <span className="text-xs">(remaining after using all available stock)</span></p>
           </div>
