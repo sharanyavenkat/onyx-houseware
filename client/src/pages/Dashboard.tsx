@@ -50,9 +50,14 @@ export default function Dashboard() {
     queryKey: ['/api/customers'],
   });
 
-  // Fetch indent data for current month to get real stock levels
+  // Fetch indent data for current month to get expected receipts and safety stock
   const { data: indents = [] } = useQuery<Indent[]>({
     queryKey: ['/api/indents', currentMonth],
+  });
+
+  // Fetch actual on-hand stock from batches (real-time, includes acceptable quality)
+  const { data: onHandStock = {} } = useQuery<Record<number, number>>({
+    queryKey: ['/api/batches/opening-balance?includeAcceptable=true'],
   });
 
   // Fetch pending orders from backend (accounts for shipped and rejected quantities)
@@ -92,47 +97,35 @@ export default function Dashboard() {
     totalCustomers: customers.length
   };
 
-  // Calculate top items by pending quantity using REAL indent data and backend pending calculation
+  // Calculate top items by pending quantity using actual on-hand stock from batches
   const topItemsByPendingQty = useMemo(() => {
-    // Use backend-calculated pending orders (accounts for shipped and rejected)
-    const itemDataArray = Object.entries(pendingByItem)
-      .map(([itemId, pendingQty]) => {
-        const item = items.find(i => i.id === parseInt(itemId));
-        if (!item) return null;
+    // Calculate metrics for ALL active items (not just those with pending orders)
+    const itemMetrics = items
+      .filter(item => item.is_active)
+      .map(item => {
+        // Get actual on-hand stock from batches (real-time, includes acceptable quality)
+        const currentStock = onHandStock[item.id] ?? 0;
         
-        return {
-          itemId: parseInt(itemId),
-          name: item.name,
-          pendingQty,
-          desiredSafetyStock: item.desired_safety_stock || 0
-        };
-      })
-      .filter(item => item !== null);
-    
-    // Convert to array, calculate using REAL indent data
-    return itemDataArray
-      .map(itemData => {
-        const item = items.find(i => i.name === itemData.name);
-        if (!item) return null;
+        // Get pending orders for this item (defaults to 0 if no pending orders)
+        const pendingQty = pendingByItem[item.id] ?? 0;
         
-        // Get real indent data for this item (current month)
+        // Get indent data for expected receipts and safety stock (current month)
         const indent = indents.find(i => i.item_id === item.id);
-        const openingBalance = indent?.opening_balance ?? 0;
         const expectedReceipts = indent?.expected_receipts ?? 0;
         const currentSafetyStock = indent?.current_safety_stock ?? 0;
         
-        // Calculate using REAL numbers from indent with two-tier safety stock
+        // Calculate using actual on-hand stock from batches with two-tier safety stock
         const metrics = calculateInventoryMetrics(
-          openingBalance,
+          currentStock,
           expectedReceipts,
-          itemData.pendingQty,
+          pendingQty,
           currentSafetyStock,
-          itemData.desiredSafetyStock
+          item.desired_safety_stock || 0
         );
         
         return {
-          name: itemData.name,
-          pendingQty: itemData.pendingQty,
+          name: item.name,
+          pendingQty,
           workingStock: metrics.usableStock, // Total available (working stock + current safety stock)
           shortfall: metrics.shortfallToFulfill, // Only what's needed to fulfill orders
           status: metrics.safetyStockStatus === 'critical' ? 'Critical' 
@@ -140,10 +133,11 @@ export default function Dashboard() {
                 : 'Good'
         };
       })
-      .filter(item => item !== null)
       .sort((a, b) => b.shortfall - a.shortfall)
       .slice(0, 5);
-  }, [pendingByItem, items, indents]);
+    
+    return itemMetrics;
+  }, [items, pendingByItem, indents, onHandStock]);
 
   return (
     <div className="space-y-6" data-testid="page-dashboard">
