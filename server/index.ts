@@ -6,7 +6,6 @@ import { fileURLToPath } from "url";
 import { initializeAdmin } from "./auth";
 import { bootstrapDatabase } from "./db/bootstrap";
 import { registerRoutes } from "./routes";
-import { log, serveStatic, setupVite } from "./vite";
 
 // Load .env from project root (handles both dev and production)
 const __filename = fileURLToPath(import.meta.url);
@@ -43,6 +42,17 @@ app.use(
     },
   })
 );
+
+// Simple logging utility (extracted to avoid importing vite in production)
+function log(message: string, source = "express") {
+  const formattedTime = new Date().toLocaleTimeString("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: true,
+  });
+  console.log(`${formattedTime} [${source}] ${message}`);
+}
 
 app.use((req, res, next) => {
   const start = Date.now();
@@ -95,8 +105,10 @@ app.use((req, res, next) => {
   // setting up all the other routes so the catch-all route
   // doesn't interfere with the other routes
   if (app.get("env") === "development") {
+    const { setupVite } = await import("./vite.js");
     await setupVite(app, server);
   } else {
+    const { serveStatic } = await import("./static.js");
     serveStatic(app);
   }
 
