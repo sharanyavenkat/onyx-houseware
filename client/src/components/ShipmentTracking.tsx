@@ -102,6 +102,9 @@ export default function ShipmentTracking({
         queryKey: ["/api/batches"],
       });
       queryClient.invalidateQueries({
+        queryKey: ["/api/batches/active/by-item"],
+      });
+      queryClient.invalidateQueries({
         queryKey: ["/api/batches/on-hand-stock"],
       });
       queryClient.invalidateQueries({
@@ -139,6 +142,9 @@ export default function ShipmentTracking({
       });
       queryClient.invalidateQueries({
         queryKey: ["/api/batches"],
+      });
+      queryClient.invalidateQueries({
+        queryKey: ["/api/batches/active/by-item"],
       });
       queryClient.invalidateQueries({
         queryKey: ["/api/batches/on-hand-stock"],
@@ -179,6 +185,9 @@ export default function ShipmentTracking({
       });
       queryClient.invalidateQueries({
         queryKey: ["/api/batches"],
+      });
+      queryClient.invalidateQueries({
+        queryKey: ["/api/batches/active/by-item"],
       });
       queryClient.invalidateQueries({
         queryKey: ["/api/batches/on-hand-stock"],
