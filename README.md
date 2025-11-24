@@ -78,14 +78,26 @@ Preferred communication style: Simple, everyday language.
 - Foreign keys enforcement enabled
 
 **Data Model:**
-- Users: UUID-based IDs, bcrypt password hashing
-- Items: Auto-increment integer IDs, SKU-based product catalog with safety stock levels, active/inactive status
-- Customers: Company-based customer records with contact information
-- Orders: PO number tracking, status workflow (draft → confirmed → fulfilled/cancelled), date tracking
-- Order Items: Line items with quantity and item references
-- Indents: Monthly inventory planning with opening balance and expected receipts
-- Batches: Production batch tracking with batch_number (SKU+YYMMDD format), quantity management (produced, remaining, rejected), quality status (Good/Acceptable/Rejected), received_date, is_depleted flag. Canonical invariant: quantity_remaining = quantity_produced - quantity_shipped - quantity_rejected
-- Shipments: Batch-based shipment tracking (renamed from lot_number to batch_number) with rejection counts (blowhole, handles, other)
+- **Users:** UUID-based IDs, bcrypt password hashing
+- **Items:** Auto-increment integer IDs, SKU-based product catalog with safety stock levels, active/inactive status
+- **Customers:** Company-based customer records with contact information
+- **Orders:** PO number tracking, status workflow (draft → confirmed → fulfilled/cancelled), date tracking
+- **Order Items:** Line items with quantity and item references
+- **Indents:** Monthly inventory planning with expected receipts and current safety stock (no opening balance - calculated from batches)
+- **Batches (Lot Tracking):**
+  - Production batch/lot tracking with batch_number in SKU+YYMMDD format (e.g., TW280251122)
+  - Quantity fields: quantity (total produced), quantity_remaining (available), quantity_rejected (sum of rejections)
+  - Canonical invariant: `quantity_remaining = quantity - quantity_shipped - quantity_rejected`
+  - Quality status: Good, Acceptable, or Rejected
+  - Metadata: receipt_date, notes, is_depleted flag
+  - **Single Source of Truth** for all inventory calculations
+  - Automatic updates via database triggers when shipments are created/modified/deleted
+- **Shipments:** 
+  - Batch-based shipment tracking linking orders to specific batches
+  - Required fields: order_id, order_item_id, batch_number (links to batches table)
+  - Rejection tracking: quantity_rejected_blowholes, quantity_rejected_handles, quantity_rejected_other
+  - Shipment date tracking
+  - Updates batch quantities automatically via triggers
 
 **Type Conversions from PostgreSQL:**
 - `serial` → `integer` with autoIncrement
@@ -96,11 +108,20 @@ Preferred communication style: Simple, everyday language.
 
 ## Business Logic
 
+**Inventory Model (Batch-Driven):**
+- **Single Source of Truth:** Batches table tracks all inventory - no separate opening balance snapshots
+- **Real-time Stock:** On-hand stock calculated live from batches (sum of quantity_remaining)
+- **Two-tier Planning:** Current Stock (from batches) + Expected Receipts = Working Stock
+- **Safety Stock Buffer:** Two-level system (Current + Desired) for procurement planning
+- **Batch Number Format:** SKU+YYMMDD (e.g., TW280251122 for SKU "TW280" on 2025-11-22)
+- **Quality Tracking:** Each batch has quality status (Good, Acceptable, Rejected)
+- **Automatic Updates:** Batch quantities update automatically when shipments are created/modified
+
 **Inventory Planning (Indent):**
-- Two-tier model: Working Stock (from batches) + Safety Stock (buffer) = Total Usable Stock
-- Working Stock = Quantity Produced - Shipped - Rejected  
+- Monthly procurement planning with expected receipts tracking
+- Current Stock = Real-time calculation from batches (Good + optionally Acceptable quality)
 - Pending Orders = Ordered - Shipped + Rejected (rejected items need replacement)
-- Formula: `required_to_order = max(0, (pending_orders + safety_stock) - (opening_balance + expected_receipts))`
+- Formula: `required_to_order = max(0, (pending_orders + safety_stock) - (current_stock + expected_receipts))`
 - Auto-save with debouncing for indent updates
 
 **Order Management:**
@@ -132,14 +153,19 @@ Preferred communication style: Simple, everyday language.
   - `/api/orders` - Refresh order details
   - `/api/shipments` - Refresh all shipments
   - `/api/batches` - Refresh batch list (quantity_remaining, quantity_rejected updates)
-  - `/api/batches/opening-balance` - Refresh opening balance calculations
+  - `/api/batches/active/by-item` - Refresh batch dropdown in shipment form
+  - `/api/batches/on-hand-stock` - Refresh real-time stock calculations (replaces opening-balance)
   - `/api/orders/pending-by-item` - Refresh pending orders on Dashboard and Indent
   - `/api/batches/rejected-by-item` - Refresh rejection totals on Indent page
+- **Batch Mutations** (create/update/delete) invalidate:
+  - `/api/batches` - Refresh batch list
+  - `/api/batches/active/by-item` - Refresh available batches dropdown
+  - `/api/batches/on-hand-stock` - Refresh inventory calculations
 - **Order Mutations** (create/update/delete) invalidate:
   - `/api/orders` - Refresh order list
   - `/api/order-items` - Refresh order line items
   - `/api/orders/pending-by-item` - Refresh pending orders across all pages
-- **Rationale:** Ensures Dashboard, Indent, and Batches pages stay in sync when shipments/orders change. Rejections added to shipments immediately update all dependent views.
+- **Rationale:** Ensures Dashboard, Indent, Batches, and Order Details pages stay in sync when shipments/batches/orders change. Real-time batch quantities update automatically across all views without manual refresh.
 
 ## Build & Deployment
 

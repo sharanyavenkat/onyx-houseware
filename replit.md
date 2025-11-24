@@ -1,6 +1,6 @@
 # Overview
 
-Onyx Houseware Order Management System is a mini-CRM web application for a cookware manufacturing company. It manages the complete order lifecycle from customer inquiries to fulfillment, serving as a lightweight alternative to enterprise systems like Zoho Inventory. The application is optimized for a small manufacturing operation with a single shared admin user account.
+Onyx Houseware Order Management System is a mini-CRM web application designed for a cookware manufacturing company. It manages the complete order lifecycle from customer inquiries to fulfillment, serving as a lightweight alternative to enterprise systems like Zoho Inventory. The application is optimized for a small manufacturing operation with a single shared admin user account.
 
 # User Preferences
 
@@ -11,136 +11,135 @@ Preferred communication style: Simple, everyday language.
 ## Frontend Architecture
 
 **Framework & Build System:**
-- React with TypeScript using Vite for fast development and optimized production builds
+- React with TypeScript as the primary UI framework
+- Vite as the build tool for fast development and optimized production builds
 - ES module mode throughout the application
 
 **Routing:**
-- Wouter library for lightweight client-side routing
-- Chosen over React Router for minimal bundle size and simpler API
-- Routes: Dashboard (/), Orders (/orders, /orders/:id), Batches (/batches), Indent (/indent), Items (/items), Customers (/customers)
+- Wouter library for client-side routing
+- Chosen for minimal bundle size and simpler API compared to React Router
+- Suitable for the application's straightforward navigation needs
 
 **State Management:**
-- TanStack Query (React Query) handles all server state with automatic caching, background refetching, and optimistic updates
-- No global client state management - form state is managed locally with React Hook Form
-- Session-based authentication state managed through React Query's cache invalidation
+- TanStack Query (React Query) for all server state management
+- Automatic caching, background refetching, and optimistic updates
+- No global client state management - form state is handled locally with React Hook Form
+- Query keys follow RESTful patterns (e.g., `['/api/orders']`, `['/api/items']`)
 
 **UI Component System:**
-- Shadcn/ui component library built on Radix UI primitives ("New York" style variant)
+- Shadcn/ui component library built on Radix UI primitives
+- "New York" style variant configured in `components.json`
+- Accessible, unstyled components customized with TailwindCSS
+- Components include forms, dialogs, tables, badges, and data visualization elements
+
+**Styling Architecture:**
 - TailwindCSS with custom design tokens defined in CSS variables
 - Dark/light mode support through CSS class-based theming
 - Material Design principles adapted for enterprise data-heavy interfaces
-
-**Design System:**
-- Utility-focused design prioritizing data density over aesthetics
-- Consistent spacing scale (2, 4, 6, 8, 12 Tailwind units)
+- Consistent spacing scale: 2, 4, 6, 8, 12 Tailwind units
 - Status-based color system: green (fulfilled), amber (draft/pending), red (cancelled/destructive), cyan (info)
-- Inter font family for UI, monospace fonts for numerical data in tables
-- 12-column responsive grid layout
+- Inter font family from Google Fonts for general UI
+- Monospace fonts for numerical data in tables
+
+**Design Philosophy:**
+- Utility-focused with data density prioritized over aesthetics
+- Interface emphasizes clarity, learnability, and efficiency for daily administrative tasks
+- 12-column responsive grid system
+- Focus on productivity for data-heavy operations
 
 ## Backend Architecture
 
 **Runtime & Framework:**
-- Node.js with Express.js in ES module mode
-- TypeScript for type safety across the full stack
-- Shared type definitions between client and server in `/shared` directory
+- Node.js with Express.js framework
+- ES module mode enabled (not CommonJS)
+- TypeScript for type safety across the stack
 
 **Monorepo Structure:**
 - `client/` - React frontend application
 - `server/` - Express backend API
-- `shared/` - Shared TypeScript types and schemas (Zod + Drizzle)
+- `shared/` - Shared TypeScript types and schemas
+- Single repository approach for simplified development and deployment
 
 **API Design:**
 - RESTful API with all endpoints prefixed with `/api/*`
-- All routes require authentication except `/api/auth/login` and `/api/auth/logout`
+- All routes require authentication except login/logout endpoints
 - JSON request/response format
-- HTTP-only session cookies for authentication
+- Session-based authentication enforced via middleware
 
 **Authentication & Authorization:**
 - Session-based authentication using `express-session`
-- Single shared admin account (no user registration)
-- Admin credentials stored in environment variables (`ADMIN_USERNAME`, `ADMIN_PASSWORD`)
-- Passwords hashed with bcryptjs (12 salt rounds)
-- Sessions stored in memory (suitable for single-user deployment)
-- In production, trusts proxy headers when behind Nginx
+- httpOnly cookies for security
+- Single shared admin account (no user registration system)
+- Admin credentials stored in environment variables
+- Passwords hashed with bcryptjs using 12 salt rounds
+- Trust proxy enabled in production for deployment behind Nginx/reverse proxy
 
 **Database Layer:**
-- SQLite with better-sqlite3 driver
-- Drizzle ORM for type-safe database queries
-- Environment-aware database path via `DATABASE_URL`:
+- SQLite database using better-sqlite3 driver
+- Drizzle ORM for type-safe database operations
+- Environment-aware database path:
   - Development: `server/data/onyx.db`
-  - Production: `/var/app/data/onyx.db` (AWS LightSail)
-- WAL mode enabled for better concurrency
-- Foreign keys enabled
-- Bootstrap script (`server/db/bootstrap.ts`) creates tables on startup using "IF NOT EXISTS" pattern
+  - Production: `/var/app/data/onyx.db`
+- Database schema defined in `shared/schema.ts` using `sqliteTable`
+- WAL (Write-Ahead Logging) mode enabled for better concurrency
+- Foreign keys enforced at database level
 
 **Data Model:**
 - Users (admin authentication)
-- Items (products with SKU, price, safety stock levels)
-- Customers (company information and contacts)
-- Orders (PO numbers, status, dates)
-- Order Items (line items with quantities)
-- Batches (production batches with quality status)
-- Indents (monthly procurement planning with expected receipts)
-- Shipments (delivery tracking with rejection reasons)
+- Items (product catalog)
+- Customers (client information)
+- Orders (order headers with status tracking)
+- Order Items (line items within orders)
+- Batches (production batch tracking with quality status)
+- Shipments (delivery tracking with rejection metrics)
+- Indents (monthly inventory planning records)
 
-**Inventory System:**
-- Two-tier inventory model: Working Stock + Safety Stock
-- Shared calculation utilities in `/shared/inventory.ts`
-- Working Stock = Opening Balance + Expected Receipts
-- Usable Stock = Working Stock + Current Safety Stock
-- Tracks pending orders, shortfalls, and procurement requirements
+**Schema Design Decisions:**
+- UUIDs for user IDs (using `crypto.randomUUID()`)
+- Auto-incrementing integers for all other primary keys
+- Text fields for dates in ISO 8601 format
+- Real numbers for decimal values (prices, quantities)
+- Boolean flags stored as integers with `{ mode: 'boolean' }` for SQLite compatibility
 
-**Indent Planning (Opening Balance vs On-Hand Stock):**
-- Opening Balance: Editable month-start snapshot stored in indents table
-  - Auto-initialized from current on-hand stock when viewing a new month
-  - Can be manually edited if physical count differs from system
-  - Persists as historical record for that month
-- On-Hand Stock: Read-only real-time calculation from batches
-  - Calculated as sum of batch.quantity_remaining (Good + optionally Acceptable)
-  - Updates automatically as shipments are created/modified
-  - Provides live inventory visibility during planning
-- Auto-initialization guards prevent duplicate records:
-  - Waits for both indents and onHandStock queries to fetch
-  - Uses per-month ref guard to prevent concurrent initializations
-  - Awaits query refetch completion before clearing guard
-  - Server uses upsert for database-level idempotency
+**Inventory Management:**
+- Two-tier inventory model (working stock + safety stock)
+- Batch-driven current stock tracking (single source of truth)
+- Monthly indent system for production planning
+- Quality status tracking: Good, Acceptable, Rejected
+- Real-time on-hand stock calculations from batch quantities
 
 ## External Dependencies
 
-**Build & Development Tools:**
-- Vite - Frontend build tool and dev server
-- esbuild - Backend bundler for production
-- TypeScript - Type checking across full stack
-- TSX - TypeScript execution for development
+**Database:**
+- SQLite via better-sqlite3
+- No external database service required (embedded database)
+- Database file stored locally or on persistent storage in production
 
-**UI Libraries:**
-- Radix UI - Unstyled, accessible component primitives (accordion, dialog, dropdown, select, etc.)
-- TailwindCSS - Utility-first CSS framework
-- Lucide React - Icon library
-- class-variance-authority - Component variant management
-- clsx + tailwind-merge - Conditional CSS class utilities
+**Session Storage:**
+- In-memory session store via express-session (default)
+- Sessions persist for 24 hours
+- No external session store (Redis/Postgres) configured
 
-**Backend Dependencies:**
-- Express.js - Web server framework
-- express-session - Session management middleware
-- bcryptjs - Password hashing
-- better-sqlite3 - SQLite database driver
-- Drizzle ORM - Type-safe SQL query builder
-- drizzle-zod - Zod schema generation from Drizzle schemas
-- CORS - Cross-origin resource sharing (for development)
-- dotenv - Environment variable management
+**Third-Party UI Libraries:**
+- Radix UI primitives for accessible component foundations
+- Lucide React for icons
+- TailwindCSS for styling
+- React Hook Form with Zod for form validation
+- date-fns for date manipulation
 
-**Form & Validation:**
-- React Hook Form - Form state management
-- Zod - Schema validation
-- @hookform/resolvers - React Hook Form + Zod integration
-
-**Date Handling:**
-- date-fns - Date formatting and manipulation
-- Dates stored as ISO 8601 strings (YYYY-MM-DD) in SQLite
+**Development Tools:**
+- Vite for development server and build
+- tsx for TypeScript execution in development
+- esbuild for production server bundling
+- Drizzle Kit for database migrations
 
 **Deployment Target:**
-- AWS LightSail container service
-- Nginx reverse proxy in production
-- Persistent volume mounted at `/var/app/data` for SQLite database
-- Environment variables managed through LightSail console
+- AWS LightSail for production hosting
+- Nginx as reverse proxy
+- Environment configuration via `.env` file
+- Production build outputs to `dist/` directory
+- Static assets served from `dist/public/`
+
+**Font Loading:**
+- Google Fonts CDN for Inter font family
+- Preconnect optimization for font loading performance
