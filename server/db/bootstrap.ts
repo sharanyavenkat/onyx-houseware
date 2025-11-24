@@ -214,6 +214,22 @@ export async function bootstrapDatabase() {
       "current_safety_stock"
     );
 
+    // Migration: Remove opening_balance from indents (November 2025)
+    // Inventory is now calculated real-time from batches, not from snapshots
+    try {
+      await db.run(sql`ALTER TABLE indents DROP COLUMN opening_balance`);
+      console.log("✅ Removed opening_balance column from indents table");
+    } catch (error: any) {
+      const errorMessage = error?.message?.toLowerCase() || '';
+      if (errorMessage.includes("no such column") || 
+          errorMessage.includes("no column named")) {
+        // Column already removed or never existed, silently continue
+      } else {
+        // Log other errors but don't fail the bootstrap
+        console.log("ℹ️ opening_balance column removal skipped (likely already removed)");
+      }
+    }
+
     // Migration: Rename lot_number to batch_number in existing databases
     // For databases created before batch_number was added
     await addColumnIfNotExists(
