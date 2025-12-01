@@ -113,9 +113,15 @@ export class DbStorage implements IStorage {
       .from(batches)
       .where(eq(batches.item_id, id));
     
+    // Only count indents with non-zero values (zero values are effectively empty)
     const [indentsResult] = await db.select({ count: sql<number>`count(*)` })
       .from(indents)
-      .where(eq(indents.item_id, id));
+      .where(
+        and(
+          eq(indents.item_id, id),
+          sql`(expected_receipts > 0 OR current_safety_stock > 0)`
+        )
+      );
     
     return {
       orderItems: Number(orderItemsResult?.count ?? 0),
