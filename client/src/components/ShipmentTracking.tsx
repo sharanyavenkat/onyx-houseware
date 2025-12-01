@@ -23,6 +23,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
 import { formatDate, toInputDate } from "@/lib/dateUtils";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -52,6 +53,7 @@ export default function ShipmentTracking({
   orderedQuantity,
 }: ShipmentTrackingProps) {
   const { toast } = useToast();
+  const { canMutate } = useAuth();
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingShipment, setEditingShipment] = useState<Shipment | null>(null);
   const [isConfirmOpen, setIsConfirmOpen] = useState(false);
@@ -378,21 +380,23 @@ export default function ShipmentTracking({
           <div className="space-y-4">
             <div className="flex items-center justify-between">
               <h3 className="text-lg font-semibold">Shipments</h3>
-              <Button
-                onClick={() => {
-                  setEditingShipment(null);
-                  resetForm();
-                  setIsFormOpen(!isFormOpen);
-                }}
-                size="sm"
-                data-testid="button-add-shipment"
-              >
-                <Plus className="h-4 w-4 mr-1" />
-                {editingShipment ? "Cancel Edit" : "Add Shipment"}
-              </Button>
+              {canMutate && (
+                <Button
+                  onClick={() => {
+                    setEditingShipment(null);
+                    resetForm();
+                    setIsFormOpen(!isFormOpen);
+                  }}
+                  size="sm"
+                  data-testid="button-add-shipment"
+                >
+                  <Plus className="h-4 w-4 mr-1" />
+                  {editingShipment ? "Cancel Edit" : "Add Shipment"}
+                </Button>
+              )}
             </div>
 
-            {isFormOpen && (
+            {canMutate && isFormOpen && (
               <Card>
                 <CardContent className="pt-6">
                   <form onSubmit={handleSubmit} className="space-y-4">
@@ -552,7 +556,7 @@ export default function ShipmentTracking({
                         Total Rejections
                       </TableHead>
                       <TableHead className="text-right">Accepted</TableHead>
-                      <TableHead></TableHead>
+                      {canMutate && <TableHead></TableHead>}
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -592,26 +596,28 @@ export default function ShipmentTracking({
                           <TableCell className="text-right font-semibold">
                             {accepted}
                           </TableCell>
-                          <TableCell>
-                            <div className="flex gap-2">
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => handleEdit(shipment)}
-                                data-testid={`button-edit-shipment-${shipment.id}`}
-                              >
-                                <Edit className="h-4 w-4" />
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => handleDelete(shipment.id)}
-                                data-testid={`button-delete-shipment-${shipment.id}`}
-                              >
-                                Delete
-                              </Button>
-                            </div>
-                          </TableCell>
+                          {canMutate && (
+                            <TableCell>
+                              <div className="flex gap-2">
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => handleEdit(shipment)}
+                                  data-testid={`button-edit-shipment-${shipment.id}`}
+                                >
+                                  <Edit className="h-4 w-4" />
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => handleDelete(shipment.id)}
+                                  data-testid={`button-delete-shipment-${shipment.id}`}
+                                >
+                                  Delete
+                                </Button>
+                              </div>
+                            </TableCell>
+                          )}
                         </TableRow>
                       );
                     })}

@@ -6,7 +6,9 @@ import { Button } from '@/components/ui/button';
 import { ArrowLeft, Package } from 'lucide-react';
 import { useState, useMemo } from 'react';
 import ShipmentTracking from '../components/ShipmentTracking';
+import InvoiceSection from '../components/InvoiceSection';
 import { formatDate } from '@/lib/dateUtils';
+import type { Shipment } from '@shared/schema';
 
 export default function OrderDetails() {
   const { id } = useParams<{ id: string }>();
@@ -26,7 +28,7 @@ export default function OrderDetails() {
   });
 
   // Fetch all shipments for this order
-  const { data: shipments = [] } = useQuery<any[]>({
+  const { data: shipments = [] } = useQuery<Shipment[]>({
     queryKey: ['/api/shipments', 'order', orderId],
     enabled: !!orderId,
   });
@@ -209,6 +211,14 @@ export default function OrderDetails() {
           )}
         </CardContent>
       </Card>
+
+      {shipments.length > 0 && (
+        <InvoiceSection 
+          orderId={orderId} 
+          shipments={shipments} 
+          items={order.line_items || []}
+        />
+      )}
 
       {trackingShipment && (
         <ShipmentTracking

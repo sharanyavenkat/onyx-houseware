@@ -27,6 +27,7 @@ interface DataTableProps {
   searchable?: boolean;
   addButtonLabel?: string;
   title?: string;
+  canMutate?: boolean;
 }
 
 export default function DataTable({ 
@@ -37,8 +38,11 @@ export default function DataTable({
   onDelete, 
   searchable = true,
   addButtonLabel = "Add New",
-  title = "Data"
+  title = "Data",
+  canMutate = true
 }: DataTableProps) {
+  const showActions = canMutate && (onEdit || onDelete);
+  const showAddButton = canMutate && onAdd;
   const [searchTerm, setSearchTerm] = useState("");
 
   const filteredData = searchable 
@@ -68,7 +72,7 @@ export default function DataTable({
         <h2 className="text-2xl font-semibold" data-testid={`text-${title.toLowerCase()}-title`}>
           {title}
         </h2>
-        {onAdd && (
+        {showAddButton && (
           <Button onClick={handleAdd} data-testid="button-add-new">
             <Plus className="h-4 w-4 mr-2" />
             {addButtonLabel}
@@ -98,7 +102,7 @@ export default function DataTable({
               {columns.map((column) => (
                 <TableHead key={column.key}>{column.label}</TableHead>
               ))}
-              {(onEdit || onDelete) && (
+              {showActions && (
                 <TableHead className="text-right">Actions</TableHead>
               )}
             </TableRow>
@@ -107,7 +111,7 @@ export default function DataTable({
             {filteredData.length === 0 ? (
               <TableRow>
                 <TableCell 
-                  colSpan={columns.length + (onEdit || onDelete ? 1 : 0)} 
+                  colSpan={columns.length + (showActions ? 1 : 0)} 
                   className="text-center py-8 text-muted-foreground"
                   data-testid="text-no-data"
                 >
@@ -122,7 +126,7 @@ export default function DataTable({
                       {column.render ? column.render(item[column.key], item) : item[column.key]}
                     </TableCell>
                   ))}
-                  {(onEdit || onDelete) && (
+                  {showActions && (
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-2">
                         {onEdit && (

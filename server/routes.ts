@@ -2,8 +2,8 @@ import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { verifyPassword } from "./auth";
-import { requireAuth } from "./middleware";
-import { insertItemSchema, insertCustomerSchema, insertOrderSchema, insertOrderItemSchema, insertIndentSchema, insertShipmentSchema, insertBatchSchema, updateBatchSchema } from "@shared/schema";
+import { requireAuth, requireAdmin } from "./middleware";
+import { insertItemSchema, insertCustomerSchema, insertOrderSchema, insertOrderItemSchema, insertIndentSchema, insertShipmentSchema, insertBatchSchema, updateBatchSchema, insertInvoiceSchema } from "@shared/schema";
 import { db } from "./db/client";
 import { batches } from "@shared/schema";
 import { eq } from "drizzle-orm";
@@ -31,12 +31,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(401).json({ message: "Invalid username or password" });
       }
 
-      // Set session
+      // Set session with user role for access control
       req.session.userId = user.id;
+      req.session.userRole = user.role;
       
       res.json({
         id: user.id,
-        username: user.username
+        username: user.username,
+        role: user.role
       });
     } catch (error: any) {
       res.status(500).json({ message: error.message });
@@ -62,7 +64,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       res.json({
         id: user.id,
-        username: user.username
+        username: user.username,
+        role: user.role
       });
     } catch (error: any) {
       res.status(500).json({ message: error.message });
@@ -76,6 +79,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
       return next();
     }
     return requireAuth(req, res, next);
+  });
+
+  // Block mutations for viewer role (all POST, PATCH, DELETE except auth routes)
+  app.use("/api", (req, res, next) => {
+    // Skip for auth routes
+    if (req.path.startsWith("/auth")) {
+      return next();
+    }
+    // Skip for GET requests (read-only)
+    if (req.method === "GET") {
+      return next();
+    }
+    // Check admin role for mutations
+    return requireAdmin(req, res, next);
   });
 
   // Items routes
@@ -721,6 +738,103 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.delete("/api/shipments/:id", async (req, res) => {
     try {
       await storage.deleteShipment(parseInt(req.params.id));
+      res.status(204).send();
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Get next shipment number
+  app.get("/api/shipments/next-number", async (req, res) => {
+    try {
+      const nextNumber = await storage.getNextShipmentNumber();
+      res.json({ shipment_number: nextNumber });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Assign shipments to invoice
+  app.post("/api/shipments/assign-invoice", async (req, res) => {
+    try {
+      const { shipment_ids, invoice_id } = req.body;
+      if (!Array.isArray(shipment_ids)) {
+        return res.status(400).json({ message: "shipment_ids must be an array" });
+      }
+      await storage.assignShipmentsToInvoice(shipment_ids, invoice_id);
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Invoice routes
+  app.get("/api/invoices/order/:orderId", async (req, res) => {
+    try {
+      const invoices = await storage.getInvoicesByOrderId(parseInt(req.params.orderId));
+      res.json(invoices);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.get("/api/invoices/:id", async (req, res) => {
+    try {
+      const invoice = await storage.getInvoiceById(parseInt(req.params.id));
+      if (!invoice) {
+        return res.status(404).json({ message: "Invoice not found" });
+      }
+      res.json(invoice);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/invoices", async (req, res) => {
+    try {
+      const validatedData = insertInvoiceSchema.parse(req.body);
+      const invoice = await storage.createInvoice(validatedData);
+      
+      // If shipment_ids are provided, assign them to this invoice
+      if (req.body.shipment_ids && Array.isArray(req.body.shipment_ids)) {
+        await storage.assignShipmentsToInvoice(req.body.shipment_ids, invoice.id);
+      }
+      
+      res.status(201).json(invoice);
+    } catch (error: any) {
+      res.status(400).json({ message: error.message });
+    }
+  });
+
+  app.patch("/api/invoices/:id", async (req, res) => {
+    try {
+      const validatedData = insertInvoiceSchema.partial().parse(req.body);
+      const invoice = await storage.updateInvoice(parseInt(req.params.id), validatedData);
+      if (!invoice) {
+        return res.status(404).json({ message: "Invoice not found" });
+      }
+      
+      // If shipment_ids are provided, update the assignments
+      if (req.body.shipment_ids && Array.isArray(req.body.shipment_ids)) {
+        // First unassign all shipments from this invoice
+        const existingShipments = await storage.getShipmentsByOrderId(invoice.order_id);
+        const currentlyAssigned = existingShipments.filter(s => s.invoice_id === invoice.id);
+        if (currentlyAssigned.length > 0) {
+          await storage.assignShipmentsToInvoice(currentlyAssigned.map(s => s.id), null);
+        }
+        // Then assign the new shipments
+        await storage.assignShipmentsToInvoice(req.body.shipment_ids, invoice.id);
+      }
+      
+      res.json(invoice);
+    } catch (error: any) {
+      res.status(400).json({ message: error.message });
+    }
+  });
+
+  app.delete("/api/invoices/:id", async (req, res) => {
+    try {
+      await storage.deleteInvoice(parseInt(req.params.id));
       res.status(204).send();
     } catch (error: any) {
       res.status(500).json({ message: error.message });

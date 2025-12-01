@@ -8,6 +8,7 @@ export const users = sqliteTable("users", {
     .$defaultFn(() => crypto.randomUUID()),
   username: text("username").notNull().unique(),
   password: text("password").notNull(),
+  role: text("role").notNull().default("admin"),
 });
 
 export const insertUserSchema = createInsertSchema(users).pick({
@@ -148,6 +149,23 @@ export type InsertBatch = z.infer<typeof insertBatchSchema>;
 export type UpdateBatch = z.infer<typeof updateBatchSchema>;
 export type Batch = typeof batches.$inferSelect;
 
+export const invoices = sqliteTable("invoices", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  order_id: integer("order_id")
+    .notNull()
+    .references(() => orders.id, { onDelete: "cascade" }),
+  invoice_number: text("invoice_number").notNull(),
+  invoice_date: text("invoice_date"),
+  notes: text("notes"),
+});
+
+export const insertInvoiceSchema = createInsertSchema(invoices).omit({
+  id: true,
+});
+
+export type InsertInvoice = z.infer<typeof insertInvoiceSchema>;
+export type Invoice = typeof invoices.$inferSelect;
+
 export const shipments = sqliteTable("shipments", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   order_id: integer("order_id")
@@ -156,12 +174,14 @@ export const shipments = sqliteTable("shipments", {
   order_item_id: integer("order_item_id")
     .notNull()
     .references(() => orderItems.id, { onDelete: "cascade" }),
+  shipment_number: text("shipment_number"),
   batch_number: text("batch_number"),
   quantity_shipped: integer("quantity_shipped").notNull(),
   rejections_blowholes: integer("rejections_blowholes").notNull().default(0),
   rejections_handles: integer("rejections_handles").notNull().default(0),
   rejections_other: integer("rejections_other").notNull().default(0),
   shipment_date: text("shipment_date").notNull(),
+  invoice_id: integer("invoice_id").references(() => invoices.id, { onDelete: "set null" }),
 });
 
 export const insertShipmentSchema = createInsertSchema(shipments).omit({

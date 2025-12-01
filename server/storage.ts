@@ -17,6 +17,8 @@ import {
   type InsertShipment,
   type Batch,
   type InsertBatch,
+  type Invoice,
+  type InsertInvoice,
   users,
   items,
   customers,
@@ -24,13 +26,16 @@ import {
   orderItems,
   indents,
   shipments,
-  batches
+  batches,
+  invoices
 } from "@shared/schema";
 
 export interface IStorage {
   getUser(id: string): Promise<User | undefined>;
   getUserByUsername(username: string): Promise<User | undefined>;
   createUser(user: InsertUser): Promise<User>;
+  createUserWithRole(user: InsertUser, role: string): Promise<User>;
+  updateUserRole(username: string, role: string): Promise<User | undefined>;
 
   getAllItems(): Promise<Item[]>;
   getItemById(id: number): Promise<Item | undefined>;
@@ -63,6 +68,14 @@ export interface IStorage {
   createShipment(shipment: InsertShipment): Promise<Shipment>;
   updateShipment(id: number, shipment: Partial<InsertShipment>): Promise<Shipment | undefined>;
   deleteShipment(id: number): Promise<void>;
+  getNextShipmentNumber(): Promise<string>;
+  assignShipmentsToInvoice(shipmentIds: number[], invoiceId: number | null): Promise<void>;
+
+  getInvoicesByOrderId(orderId: number): Promise<Invoice[]>;
+  getInvoiceById(id: number): Promise<Invoice | undefined>;
+  createInvoice(invoice: InsertInvoice): Promise<Invoice>;
+  updateInvoice(id: number, invoice: Partial<InsertInvoice>): Promise<Invoice | undefined>;
+  deleteInvoice(id: number): Promise<void>;
 
   getAllBatches(): Promise<Batch[]>;
   getBatchById(id: number): Promise<Batch | undefined>;
@@ -93,6 +106,16 @@ export class DbStorage implements IStorage {
 
   async createUser(insertUser: InsertUser): Promise<User> {
     const [user] = await db.insert(users).values(insertUser).returning();
+    return user;
+  }
+
+  async createUserWithRole(insertUser: InsertUser, role: string): Promise<User> {
+    const [user] = await db.insert(users).values({ ...insertUser, role }).returning();
+    return user;
+  }
+
+  async updateUserRole(username: string, role: string): Promise<User | undefined> {
+    const [user] = await db.update(users).set({ role }).where(eq(users.username, username)).returning();
     return user;
   }
 
@@ -273,7 +296,12 @@ export class DbStorage implements IStorage {
   }
 
   async createShipment(insertShipment: InsertShipment): Promise<Shipment> {
-    const [shipment] = await db.insert(shipments).values(insertShipment).returning();
+    // Auto-generate shipment number if not provided
+    let shipmentData = { ...insertShipment };
+    if (!shipmentData.shipment_number) {
+      shipmentData.shipment_number = await this.getNextShipmentNumber();
+    }
+    const [shipment] = await db.insert(shipments).values(shipmentData).returning();
     
     // Update batch with new rejection totals (only if batch_number is provided)
     if (shipment.batch_number) {
@@ -399,6 +427,49 @@ export class DbStorage implements IStorage {
           .where(eq(batches.batch_number, batchNumber));
       }
     }
+  }
+
+  async getNextShipmentNumber(): Promise<string> {
+    // Get the highest shipment number to generate the next one
+    const result = await db.select({ max_id: sql<number>`MAX(id)` }).from(shipments);
+    const nextId = (result[0]?.max_id || 0) + 1;
+    return `SHP-${String(nextId).padStart(3, '0')}`;
+  }
+
+  async assignShipmentsToInvoice(shipmentIds: number[], invoiceId: number | null): Promise<void> {
+    for (const id of shipmentIds) {
+      await db.update(shipments)
+        .set({ invoice_id: invoiceId })
+        .where(eq(shipments.id, id));
+    }
+  }
+
+  async getInvoicesByOrderId(orderId: number): Promise<Invoice[]> {
+    return await db.select().from(invoices).where(eq(invoices.order_id, orderId));
+  }
+
+  async getInvoiceById(id: number): Promise<Invoice | undefined> {
+    const [invoice] = await db.select().from(invoices).where(eq(invoices.id, id));
+    return invoice;
+  }
+
+  async createInvoice(insertInvoice: InsertInvoice): Promise<Invoice> {
+    const [invoice] = await db.insert(invoices).values(insertInvoice).returning();
+    return invoice;
+  }
+
+  async updateInvoice(id: number, updateData: Partial<InsertInvoice>): Promise<Invoice | undefined> {
+    const [invoice] = await db.update(invoices).set(updateData).where(eq(invoices.id, id)).returning();
+    return invoice;
+  }
+
+  async deleteInvoice(id: number): Promise<void> {
+    // First unassign all shipments from this invoice
+    await db.update(shipments)
+      .set({ invoice_id: null })
+      .where(eq(shipments.invoice_id, id));
+    // Then delete the invoice
+    await db.delete(invoices).where(eq(invoices.id, id));
   }
 
   async getAllBatches(): Promise<Batch[]> {

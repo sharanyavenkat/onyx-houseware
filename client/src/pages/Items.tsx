@@ -1,4 +1,5 @@
 import { Badge } from "@/components/ui/badge";
+import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { Item } from "@shared/schema";
@@ -102,6 +103,7 @@ export default function Items() {
   const [isConfirmOpen, setIsConfirmOpen] = useState(false);
   const [itemToDelete, setItemToDelete] = useState<Item | null>(null);
   const { toast } = useToast();
+  const { canMutate } = useAuth();
 
   const { data: items = [], isLoading } = useQuery<Item[]>({
     queryKey: ["/api/items"],
@@ -223,6 +225,7 @@ export default function Items() {
         onAdd={handleAdd}
         onEdit={handleEdit}
         onDelete={handleDelete}
+        canMutate={canMutate}
       />
 
       <FormModal

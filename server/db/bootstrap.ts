@@ -139,18 +139,31 @@ export async function bootstrapDatabase() {
       )
     `);
 
+    // Create invoices table
+    await db.run(sql`
+      CREATE TABLE IF NOT EXISTS invoices (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        order_id INTEGER NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+        invoice_number TEXT NOT NULL,
+        invoice_date TEXT,
+        notes TEXT
+      )
+    `);
+
     // Create shipments table (using batch_number from the start)
     await db.run(sql`
       CREATE TABLE IF NOT EXISTS shipments (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         order_id INTEGER NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
         order_item_id INTEGER NOT NULL REFERENCES order_items(id) ON DELETE CASCADE,
+        shipment_number TEXT,
         batch_number TEXT,
         quantity_shipped INTEGER NOT NULL,
         rejections_blowholes INTEGER NOT NULL DEFAULT 0,
         rejections_handles INTEGER NOT NULL DEFAULT 0,
         rejections_other INTEGER NOT NULL DEFAULT 0,
-        shipment_date TEXT NOT NULL
+        shipment_date TEXT NOT NULL,
+        invoice_id INTEGER REFERENCES invoices(id) ON DELETE SET NULL
       )
     `);
 
@@ -253,6 +266,41 @@ export async function bootstrapDatabase() {
       if (!error.message.includes("no such column")) {
         console.log("ℹ️ Lot number migration skipped");
       }
+    }
+
+    // Add role column to users table (for read-only admin support)
+    await addColumnIfNotExists(
+      "users",
+      "role TEXT NOT NULL DEFAULT 'admin'",
+      "role"
+    );
+
+    // Add shipment_number column to shipments table (for invoice tracking)
+    await addColumnIfNotExists(
+      "shipments",
+      "shipment_number TEXT",
+      "shipment_number"
+    );
+
+    // Add invoice_id column to shipments table (for linking shipments to invoices)
+    await addColumnIfNotExists(
+      "shipments",
+      "invoice_id INTEGER REFERENCES invoices(id) ON DELETE SET NULL",
+      "invoice_id"
+    );
+
+    // Auto-generate shipment numbers for existing shipments without them
+    try {
+      const result = await db.run(sql`
+        UPDATE shipments 
+        SET shipment_number = 'SHP-' || printf('%03d', id)
+        WHERE shipment_number IS NULL
+      `);
+      if (result.changes && result.changes > 0) {
+        console.log(`✅ Generated shipment numbers for ${result.changes} existing shipments`);
+      }
+    } catch (error: any) {
+      console.log("ℹ️ Shipment number generation skipped");
     }
 
     // DISABLED: Create UNBATCHED batches for existing items with current inventory levels

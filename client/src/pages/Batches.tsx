@@ -13,6 +13,7 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from "@/components/ui/accordion";
+import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
 import { formatDate } from "@/lib/dateUtils";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -31,6 +32,7 @@ export default function Batches() {
   const [qualityFilter, setQualityFilter] = useState<string>("all");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const { toast } = useToast();
+  const { canMutate } = useAuth();
 
   // Fetch all batches
   const { data: batches = [] } = useQuery<Batch[]>({
@@ -211,12 +213,14 @@ export default function Batches() {
             </SelectContent>
           </Select>
 
-          <Button
-            onClick={() => setIsCreateModalOpen(true)}
-            data-testid="button-add-batch"
-          >
-            Add Batch
-          </Button>
+          {canMutate && (
+            <Button
+              onClick={() => setIsCreateModalOpen(true)}
+              data-testid="button-add-batch"
+            >
+              Add Batch
+            </Button>
+          )}
         </div>
       </div>
 
@@ -305,7 +309,9 @@ export default function Batches() {
                             <th className="text-right py-2 px-4 font-medium">Rejected</th>
                             <th className="text-center py-2 px-4 font-medium">Quality</th>
                             <th className="text-center py-2 px-4 font-medium">Status</th>
-                            <th className="text-center py-2 px-4 font-medium">Actions</th>
+                            {canMutate && (
+                              <th className="text-center py-2 px-4 font-medium">Actions</th>
+                            )}
                           </tr>
                         </thead>
                         <tbody>
@@ -354,16 +360,18 @@ export default function Batches() {
                                     {batch.is_depleted ? "Depleted" : "Available"}
                                   </Badge>
                                 </td>
-                                <td className="py-3 px-4 text-center">
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={() => handleEdit(batch)}
-                                    data-testid={`button-edit-batch-${batch.id}`}
-                                  >
-                                    <Edit className="w-4 h-4" />
-                                  </Button>
-                                </td>
+                                {canMutate && (
+                                  <td className="py-3 px-4 text-center">
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={() => handleEdit(batch)}
+                                      data-testid={`button-edit-batch-${batch.id}`}
+                                    >
+                                      <Edit className="w-4 h-4" />
+                                    </Button>
+                                  </td>
+                                )}
                               </tr>
                             );
                           })}

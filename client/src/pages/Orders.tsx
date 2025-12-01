@@ -7,6 +7,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
 import { formatDate } from "@/lib/dateUtils";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -70,6 +71,7 @@ export default function Orders() {
   const [isConfirmOpen, setIsConfirmOpen] = useState(false);
   const [orderToDelete, setOrderToDelete] = useState<any>(null);
   const { toast } = useToast();
+  const { canMutate } = useAuth();
 
   // Read URL query parameter for filter
   useEffect(() => {
@@ -320,6 +322,7 @@ export default function Orders() {
         onAdd={handleAdd}
         onEdit={handleEdit}
         onDelete={handleDelete}
+        canMutate={canMutate}
       />
 
       <OrderFormModal

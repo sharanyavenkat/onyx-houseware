@@ -4,6 +4,7 @@ import ConfirmDialog from '../components/ConfirmDialog';
 import { useState } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { queryClient, apiRequest } from '@/lib/queryClient';
+import { useAuth } from '@/hooks/use-auth';
 import { useToast } from '@/hooks/use-toast';
 import type { Customer } from '@shared/schema';
 
@@ -29,6 +30,7 @@ export default function Customers() {
   const [isConfirmOpen, setIsConfirmOpen] = useState(false);
   const [customerToDelete, setCustomerToDelete] = useState<Customer | null>(null);
   const { toast } = useToast();
+  const { canMutate } = useAuth();
 
   const { data: customers = [] } = useQuery<Customer[]>({
     queryKey: ['/api/customers'],
@@ -117,6 +119,7 @@ export default function Customers() {
         onAdd={handleAdd}
         onEdit={handleEdit}
         onDelete={handleDelete}
+        canMutate={canMutate}
       />
       
       <FormModal
