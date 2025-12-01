@@ -56,6 +56,7 @@ export interface IStorage {
 
   getIndentsByMonth(month: string): Promise<Indent[]>;
   upsertIndent(indent: InsertIndent): Promise<Indent>;
+  deleteIndentsByItemId(itemId: number): Promise<void>;
 
   getShipmentsByOrderId(orderId: number): Promise<Shipment[]>;
   getShipmentsByOrderItemId(orderItemId: number): Promise<Shipment[]>;
@@ -138,6 +139,10 @@ export class DbStorage implements IStorage {
   async updateItem(id: number, updateData: Partial<InsertItem>): Promise<Item | undefined> {
     const [item] = await db.update(items).set(updateData).where(eq(items.id, id)).returning();
     return item;
+  }
+
+  async deleteIndentsByItemId(itemId: number): Promise<void> {
+    await db.delete(indents).where(eq(indents.item_id, itemId));
   }
 
   async deleteItem(id: number): Promise<void> {

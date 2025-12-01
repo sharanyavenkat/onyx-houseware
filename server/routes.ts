@@ -129,17 +129,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Check what references this item before attempting deletion
       const references = await storage.getItemReferences(itemId);
       
-      if (references.orderItems > 0 || references.batches > 0 || references.indents > 0) {
+      // Only block deletion for orders and batches - indents will be auto-deleted
+      if (references.orderItems > 0 || references.batches > 0) {
         const parts = [];
         if (references.orderItems > 0) parts.push(`${references.orderItems} order line(s)`);
         if (references.batches > 0) parts.push(`${references.batches} batch(es)`);
-        if (references.indents > 0) parts.push(`${references.indents} indent(s)`);
         
         return res.status(400).json({ 
           message: `Cannot delete this item because it is referenced by: ${parts.join(", ")}. Please remove these references first.`
         });
       }
       
+      // Auto-delete any indent records for this item (they're just planning data)
+      await storage.deleteIndentsByItemId(itemId);
+      
+      // Now delete the item
       await storage.deleteItem(itemId);
       res.status(204).send();
     } catch (error: any) {
