@@ -24,8 +24,8 @@ function AuthenticatedApp() {
       data-testid="app-authenticated"
     >
       <Sidebar />
-      <main className="flex-1 overflow-auto">
-        <div className="p-6">
+      <main className="flex-1 overflow-auto pt-14 md:pt-0">
+        <div className="p-4 md:p-6">
           <Switch>
             <Route path="/" component={Dashboard} />
             <Route path="/orders" component={Orders} />

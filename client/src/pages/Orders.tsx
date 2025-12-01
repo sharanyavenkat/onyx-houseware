@@ -13,7 +13,6 @@ import { formatDate } from "@/lib/dateUtils";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { Customer, Item, Order } from "@shared/schema";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Eye } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useLocation } from "wouter";
 import ConfirmDialog from "../components/ConfirmDialog";
@@ -21,22 +20,25 @@ import DataTable from "../components/DataTable";
 import OrderFormModal from "../components/OrderFormModal";
 
 const orderColumns = [
-  { key: "po_number", label: "PO Number" },
+  { key: "po_number", label: "PO Number", isPrimary: true },
   { key: "customer_name", label: "Customer" },
   {
     key: "order_date",
     label: "Order Date",
     render: (value: string) => formatDate(value),
+    hideOnMobile: true,
   },
   {
     key: "fulfillment_date",
     label: "Fulfillment Date",
     render: (value: string) => (value ? formatDate(value) : "-"),
+    hideOnMobile: true,
   },
   {
     key: "items_count",
     label: "Items",
     render: (_: any, row: any) => row.line_items?.length || 0,
+    hideOnMobile: true,
   },
   {
     key: "total_pieces",
@@ -46,6 +48,7 @@ const orderColumns = [
         (sum: number, item: any) => sum + item.quantity,
         0
       ) || 0,
+    hideOnMobile: true,
   },
   {
     key: "status",
@@ -250,23 +253,6 @@ export default function Orders() {
     }
   };
 
-  const enhancedColumns = [
-    ...orderColumns,
-    {
-      key: "actions",
-      label: "Actions",
-      render: (_: any, row: any) => (
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={() => handleView(row)}
-          data-testid={`button-view-${row.id}`}
-        >
-          <Eye className="h-4 w-4" />
-        </Button>
-      ),
-    },
-  ];
 
   const formatMonthLabel = (monthKey: string) => {
     const [year, month] = monthKey.split("-");
@@ -276,52 +262,57 @@ export default function Orders() {
 
   return (
     <div className="space-y-6" data-testid="page-orders">
-      <div className="flex items-center gap-4 mb-4">
-        <label className="text-sm font-medium">Filter by Month:</label>
-        <Select value={selectedMonth} onValueChange={setSelectedMonth}>
-          <SelectTrigger
-            className="w-[200px]"
-            data-testid="select-month-filter"
-          >
-            <SelectValue placeholder="All Months" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Months</SelectItem>
-            {availableMonths.map((month) => (
-              <SelectItem key={month} value={month}>
-                {formatMonthLabel(month)}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+      <div className="flex flex-col sm:flex-row sm:items-center gap-4 mb-4">
+        <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+          <label className="text-sm font-medium">Filter by Month:</label>
+          <Select value={selectedMonth} onValueChange={setSelectedMonth}>
+            <SelectTrigger
+              className="w-full sm:w-[200px]"
+              data-testid="select-month-filter"
+            >
+              <SelectValue placeholder="All Months" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Months</SelectItem>
+              {availableMonths.map((month) => (
+                <SelectItem key={month} value={month}>
+                  {formatMonthLabel(month)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
 
-        <label className="text-sm font-medium">Filter by Status:</label>
-        <Select value={statusFilter} onValueChange={setStatusFilter}>
-          <SelectTrigger
-            className="w-[200px]"
-            data-testid="select-status-filter"
-          >
-            <SelectValue placeholder="All Status" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Status</SelectItem>
-            <SelectItem value="pending">Pending (Draft + Confirmed)</SelectItem>
-            <SelectItem value="draft">Draft</SelectItem>
-            <SelectItem value="confirmed">Confirmed</SelectItem>
-            <SelectItem value="fulfilled">Fulfilled</SelectItem>
-            <SelectItem value="cancelled">Cancelled</SelectItem>
-          </SelectContent>
-        </Select>
+        <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+          <label className="text-sm font-medium">Filter by Status:</label>
+          <Select value={statusFilter} onValueChange={setStatusFilter}>
+            <SelectTrigger
+              className="w-full sm:w-[200px]"
+              data-testid="select-status-filter"
+            >
+              <SelectValue placeholder="All Status" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Status</SelectItem>
+              <SelectItem value="pending">Pending (Draft + Confirmed)</SelectItem>
+              <SelectItem value="draft">Draft</SelectItem>
+              <SelectItem value="confirmed">Confirmed</SelectItem>
+              <SelectItem value="fulfilled">Fulfilled</SelectItem>
+              <SelectItem value="cancelled">Cancelled</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
       </div>
 
       <DataTable
-        columns={enhancedColumns}
+        columns={orderColumns}
         data={filteredOrders}
         title="Orders"
         addButtonLabel="Add Order"
         onAdd={handleAdd}
         onEdit={handleEdit}
         onDelete={handleDelete}
+        onView={handleView}
         canMutate={canMutate}
       />
 

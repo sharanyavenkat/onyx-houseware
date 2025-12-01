@@ -75,7 +75,7 @@ const itemFields = [
 ];
 
 const itemColumns = [
-  { key: "name", label: "Product Name" },
+  { key: "name", label: "Product Name", isPrimary: true },
   { key: "sku", label: "SKU" },
   { key: "product_type", label: "Type" },
   { key: "size_specification", label: "Size/Spec" },
@@ -85,7 +85,7 @@ const itemColumns = [
     render: (value: string) =>
       value ? `₹${parseFloat(value).toFixed(2)}` : "-",
   },
-  { key: "desired_safety_stock", label: "Desired Safety Stock" },
+  { key: "desired_safety_stock", label: "Desired Safety Stock", hideOnMobile: true },
   {
     key: "is_active",
     label: "Status",

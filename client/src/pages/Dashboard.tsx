@@ -18,9 +18,9 @@ type OrderWithLineItems = Order & {
 };
 
 const topItemsColumns = [
-  { key: 'name', label: 'Item Name' },
+  { key: 'name', label: 'Item Name', isPrimary: true },
   { key: 'pendingQty', label: 'Pending Orders' },
-  { key: 'workingStock', label: 'Total Available' },
+  { key: 'workingStock', label: 'Total Available', hideOnMobile: true },
   { key: 'shortfall', label: 'Still Need to Order' },
   { 
     key: 'status', 
@@ -147,15 +147,15 @@ export default function Dashboard() {
   return (
     <div className="space-y-6" data-testid="page-dashboard">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-semibold" data-testid="text-dashboard-title">Dashboard</h1>
-          <p className="text-muted-foreground">Overview of your order management system</p>
+          <h1 className="text-2xl sm:text-3xl font-semibold" data-testid="text-dashboard-title">Dashboard</h1>
+          <p className="text-sm text-muted-foreground">Overview of your order management system</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-col sm:flex-row sm:items-center gap-2">
           <span className="text-sm text-muted-foreground">Filter by Fulfillment Month:</span>
           <Select value={selectedMonth} onValueChange={setSelectedMonth}>
-            <SelectTrigger className="w-[200px]" data-testid="select-filter-month">
+            <SelectTrigger className="w-full sm:w-[200px]" data-testid="select-filter-month">
               <SelectValue placeholder="All Months" />
             </SelectTrigger>
             <SelectContent>

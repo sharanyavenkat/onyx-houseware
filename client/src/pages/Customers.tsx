@@ -18,9 +18,9 @@ const customerFields = [
 ];
 
 const customerColumns = [
-  { key: 'company_name', label: 'Company' },
+  { key: 'company_name', label: 'Company', isPrimary: true },
   { key: 'contact_person', label: 'Contact' },
-  { key: 'email', label: 'Email' },
+  { key: 'email', label: 'Email', hideOnMobile: true },
   { key: 'phone', label: 'Phone' },
 ];
 
