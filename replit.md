@@ -133,3 +133,24 @@ Preferred communication style: Simple, everyday language.
 - Two-tier inventory system with working stock and safety stock concepts
 - Batch-driven inventory tracking with quality status (Good, Acceptable, Rejected)
 - Shared inventory calculation utilities in `shared/inventory.ts`
+
+## Mobile Responsiveness
+
+**Sidebar Navigation**
+- Desktop: Fixed left sidebar with navigation items
+- Mobile: Hamburger menu in fixed header opens Sheet drawer
+- Breakpoint: Uses Tailwind's md (768px) for responsive switching
+- Header padding: `pt-14` added to main content on mobile for fixed header
+
+**DataTable Component**
+- Desktop: Traditional table layout with columns
+- Mobile: Card-based layout with primary field as card header
+- Column configuration: `isPrimary` (main display), `hideOnMobile` (hide less critical fields)
+- Actions: View/Edit/Delete buttons shown on mobile cards (respects canMutate for role-based access)
+- `onView` handler support for custom view actions (used for order detail navigation)
+
+**Role-Based Access**
+- Admin role: Full CRUD access on all pages
+- Viewer role: Read-only access, action buttons hidden except View
+- Middleware: `requireAdmin` blocks mutation endpoints for viewer role
+- Frontend: `canMutate` prop controls visibility of edit/delete actions
