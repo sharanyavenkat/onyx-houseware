@@ -34,6 +34,7 @@ export interface IStorage {
 
   getAllItems(): Promise<Item[]>;
   getItemById(id: number): Promise<Item | undefined>;
+  getItemReferences(id: number): Promise<{ orderItems: number; batches: number; indents: number }>;
   createItem(item: InsertItem): Promise<Item>;
   updateItem(id: number, item: Partial<InsertItem>): Promise<Item | undefined>;
   deleteItem(id: number): Promise<void>;
@@ -101,6 +102,26 @@ export class DbStorage implements IStorage {
   async getItemById(id: number): Promise<Item | undefined> {
     const [item] = await db.select().from(items).where(eq(items.id, id));
     return item;
+  }
+
+  async getItemReferences(id: number): Promise<{ orderItems: number; batches: number; indents: number }> {
+    const [orderItemsResult] = await db.select({ count: sql<number>`count(*)` })
+      .from(orderItems)
+      .where(eq(orderItems.item_id, id));
+    
+    const [batchesResult] = await db.select({ count: sql<number>`count(*)` })
+      .from(batches)
+      .where(eq(batches.item_id, id));
+    
+    const [indentsResult] = await db.select({ count: sql<number>`count(*)` })
+      .from(indents)
+      .where(eq(indents.item_id, id));
+    
+    return {
+      orderItems: Number(orderItemsResult?.count ?? 0),
+      batches: Number(batchesResult?.count ?? 0),
+      indents: Number(indentsResult?.count ?? 0),
+    };
   }
 
   async createItem(insertItem: InsertItem): Promise<Item> {

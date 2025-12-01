@@ -124,13 +124,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete("/api/items/:id", async (req, res) => {
     try {
-      await storage.deleteItem(parseInt(req.params.id));
+      const itemId = parseInt(req.params.id);
+      
+      // Check what references this item before attempting deletion
+      const references = await storage.getItemReferences(itemId);
+      
+      if (references.orderItems > 0 || references.batches > 0 || references.indents > 0) {
+        const parts = [];
+        if (references.orderItems > 0) parts.push(`${references.orderItems} order line(s)`);
+        if (references.batches > 0) parts.push(`${references.batches} batch(es)`);
+        if (references.indents > 0) parts.push(`${references.indents} indent(s)`);
+        
+        return res.status(400).json({ 
+          message: `Cannot delete this item because it is referenced by: ${parts.join(", ")}. Please remove these references first.`
+        });
+      }
+      
+      await storage.deleteItem(itemId);
       res.status(204).send();
     } catch (error: any) {
-      // Check if it's a foreign key constraint error (case-insensitive)
+      // Fallback for any other foreign key constraint errors
       if (error.message && error.message.toLowerCase().includes('foreign key constraint')) {
         return res.status(400).json({ 
-          message: "Cannot delete this item because it is referenced in existing orders. Please delete the related orders first." 
+          message: "Cannot delete this item because it is referenced by other data. Please remove related data first." 
         });
       }
       res.status(500).json({ message: error.message });
