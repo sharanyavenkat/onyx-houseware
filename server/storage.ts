@@ -59,8 +59,10 @@ export interface IStorage {
   createOrder(order: InsertOrder): Promise<Order>;
   createOrderItem(orderItem: InsertOrderItem): Promise<OrderItem>;
   updateOrder(id: number, order: Partial<InsertOrder>): Promise<Order | undefined>;
+  updateOrderItem(id: number, updates: Partial<InsertOrderItem>): Promise<OrderItem | undefined>;
   deleteOrder(id: number): Promise<void>;
   deleteOrderItems(orderId: number): Promise<void>;
+  deleteOrderItem(id: number): Promise<void>;
 
   getIndentsByMonth(month: string): Promise<Indent[]>;
   upsertIndent(indent: InsertIndent): Promise<Indent>;
@@ -238,6 +240,15 @@ export class DbStorage implements IStorage {
 
   async deleteOrderItems(orderId: number): Promise<void> {
     await db.delete(orderItems).where(eq(orderItems.order_id, orderId));
+  }
+
+  async updateOrderItem(id: number, updates: Partial<InsertOrderItem>): Promise<OrderItem | undefined> {
+    const [updated] = await db.update(orderItems).set(updates).where(eq(orderItems.id, id)).returning();
+    return updated;
+  }
+
+  async deleteOrderItem(id: number): Promise<void> {
+    await db.delete(orderItems).where(eq(orderItems.id, id));
   }
 
   async getIndentsByMonth(month: string): Promise<Indent[]> {

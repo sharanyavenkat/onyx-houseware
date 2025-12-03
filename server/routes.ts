@@ -588,14 +588,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       if (line_items) {
-        await storage.deleteOrderItems(order.id);
+        const existingItems = await storage.getOrderItemsByOrderId(order.id);
+        
+        const newItemIds = line_items.map((li: any) => li.item_id);
+        const existingItemIds = existingItems.map(ei => ei.item_id);
+        
+        for (const existingItem of existingItems) {
+          const newLineItem = line_items.find((li: any) => li.item_id === existingItem.item_id);
+          if (newLineItem) {
+            if (newLineItem.quantity !== existingItem.quantity) {
+              await storage.updateOrderItem(existingItem.id, { quantity: newLineItem.quantity });
+            }
+          } else {
+            await storage.deleteOrderItem(existingItem.id);
+          }
+        }
         
         for (const lineItem of line_items) {
-          await storage.createOrderItem({
-            order_id: order.id,
-            item_id: lineItem.item_id,
-            quantity: lineItem.quantity
-          });
+          if (!existingItemIds.includes(lineItem.item_id)) {
+            await storage.createOrderItem({
+              order_id: order.id,
+              item_id: lineItem.item_id,
+              quantity: lineItem.quantity
+            });
+          }
         }
       }
 

@@ -4,7 +4,7 @@ import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import type { Item, Order, Customer, Indent } from '@shared/schema';
+import type { Item, Order, Customer, Indent, Accessory } from '@shared/schema';
 import { calculateInventoryMetrics } from '@shared/inventory';
 
 // Extended Order type with line_items from API
@@ -68,6 +68,11 @@ export default function Dashboard() {
   // Fetch pending orders from backend (accounts for shipped and rejected quantities)
   const { data: pendingByItem = {} } = useQuery<Record<number, number>>({
     queryKey: ['/api/orders/pending-by-item'],
+  });
+
+  // Fetch accessories for low stock monitoring
+  const { data: accessories = [] } = useQuery<Accessory[]>({
+    queryKey: ['/api/accessories'],
   });
 
   // Extract unique months from orders based on fulfillment_date
@@ -144,6 +149,34 @@ export default function Dashboard() {
     return itemMetrics;
   }, [items, pendingByItem, indents, onHandStock]);
 
+  // Calculate accessories with low stock
+  const lowStockAccessories = useMemo(() => {
+    return accessories
+      .filter(acc => acc.status === 'active' && acc.stock_on_hand <= acc.safety_stock)
+      .map(acc => ({
+        name: acc.name,
+        stock_on_hand: acc.stock_on_hand,
+        safety_stock: acc.safety_stock,
+        shortage: Math.max(0, acc.safety_stock - acc.stock_on_hand),
+      }))
+      .sort((a, b) => b.shortage - a.shortage);
+  }, [accessories]);
+
+  const accessoriesColumns = [
+    { key: 'name', label: 'Accessory', isPrimary: true },
+    { key: 'stock_on_hand', label: 'Stock on Hand' },
+    { key: 'safety_stock', label: 'Safety Stock', hideOnMobile: true },
+    { 
+      key: 'shortage', 
+      label: 'Shortage', 
+      render: (value: number) => (
+        <Badge variant={value > 0 ? 'destructive' : 'secondary'}>
+          {value > 0 ? `-${value}` : 'OK'}
+        </Badge>
+      )
+    }
+  ];
+
   return (
     <div className="space-y-6" data-testid="page-dashboard">
       {/* Header */}
@@ -195,6 +228,27 @@ export default function Dashboard() {
           searchable={false}
         />
       </div>
+
+      {/* Accessories Low Stock */}
+      {lowStockAccessories.length > 0 && (
+        <div className="space-y-4">
+          <div className="space-y-2">
+            <div>
+              <h2 className="text-xl font-semibold">Accessories Low Stock</h2>
+              <p className="text-sm text-muted-foreground mt-1">
+                Active accessories where stock on hand is at or below safety stock level. 
+                Visit the Accessories page to update inventory.
+              </p>
+            </div>
+          </div>
+          <DataTable 
+            columns={accessoriesColumns}
+            data={lowStockAccessories}
+            title=""
+            searchable={false}
+          />
+        </div>
+      )}
     </div>
   );
 }

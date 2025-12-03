@@ -174,3 +174,16 @@ Preferred communication style: Simple, everyday language.
 - Full CRUD operations with viewer read-only support
 - Accessories sorted by: active first, then low stock items, then alphabetically
 - Removed 'Accessories' from product_type dropdown in Items page
+- Dashboard shows "Accessories Low Stock" section for accessories at/below safety stock level
+
+### Order Update Fix (December 2025)
+- Fixed issue where updating orders would break shipment links
+- Order PATCH now preserves existing order_item IDs when items remain the same
+- Only creates new order_item entries when new items are added
+- Only deletes order_item entries when items are removed
+- Quantity changes update existing order_items in place
+- This ensures shipments remain linked to their original order_items
+
+### Modal Styling Consistency (December 2025)
+- ShipmentTracking modal now uses full-modal style (same as BatchFormModal)
+- All modals use default DialogContent with inset-4 positioning
