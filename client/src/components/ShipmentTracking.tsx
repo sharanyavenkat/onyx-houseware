@@ -302,25 +302,25 @@ export default function ShipmentTracking({
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent>
+      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Package className="h-5 w-5" />
-            Shipment Tracking: {itemName}
+            <span className="truncate">Shipment Tracking: {itemName}</span>
           </DialogTitle>
         </DialogHeader>
 
-        <div className="flex-1 overflow-y-auto pr-2 space-y-6">
-          <div className="grid grid-cols-4 gap-4">
+        <div className="space-y-6">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
             <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className="text-sm font-medium text-muted-foreground">
+              <CardHeader className="pb-2 sm:pb-3 px-3 sm:px-6 pt-3 sm:pt-6">
+                <CardTitle className="text-xs sm:text-sm font-medium text-muted-foreground">
                   Ordered
                 </CardTitle>
               </CardHeader>
-              <CardContent>
+              <CardContent className="px-3 sm:px-6 pb-3 sm:pb-6">
                 <p
-                  className="text-2xl font-bold"
+                  className="text-xl sm:text-2xl font-bold"
                   data-testid="text-ordered-quantity"
                 >
                   {orderedQuantity}
@@ -329,14 +329,14 @@ export default function ShipmentTracking({
             </Card>
 
             <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className="text-sm font-medium text-muted-foreground">
-                  Total Shipped
+              <CardHeader className="pb-2 sm:pb-3 px-3 sm:px-6 pt-3 sm:pt-6">
+                <CardTitle className="text-xs sm:text-sm font-medium text-muted-foreground">
+                  Shipped
                 </CardTitle>
               </CardHeader>
-              <CardContent>
+              <CardContent className="px-3 sm:px-6 pb-3 sm:pb-6">
                 <p
-                  className="text-2xl font-bold"
+                  className="text-xl sm:text-2xl font-bold"
                   data-testid="text-total-shipped"
                 >
                   {summary.totalShipped}
@@ -345,14 +345,14 @@ export default function ShipmentTracking({
             </Card>
 
             <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className="text-sm font-medium text-muted-foreground">
+              <CardHeader className="pb-2 sm:pb-3 px-3 sm:px-6 pt-3 sm:pt-6">
+                <CardTitle className="text-xs sm:text-sm font-medium text-muted-foreground">
                   Rejections
                 </CardTitle>
               </CardHeader>
-              <CardContent>
+              <CardContent className="px-3 sm:px-6 pb-3 sm:pb-6">
                 <p
-                  className="text-2xl font-bold text-destructive"
+                  className="text-xl sm:text-2xl font-bold text-destructive"
                   data-testid="text-total-rejections"
                 >
                   {summary.totalRejections}
@@ -361,14 +361,14 @@ export default function ShipmentTracking({
             </Card>
 
             <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className="text-sm font-medium text-muted-foreground">
+              <CardHeader className="pb-2 sm:pb-3 px-3 sm:px-6 pt-3 sm:pt-6">
+                <CardTitle className="text-xs sm:text-sm font-medium text-muted-foreground">
                   Remaining
                 </CardTitle>
               </CardHeader>
-              <CardContent>
+              <CardContent className="px-3 sm:px-6 pb-3 sm:pb-6">
                 <p
-                  className="text-2xl font-bold"
+                  className="text-xl sm:text-2xl font-bold"
                   data-testid="text-remaining-quantity"
                 >
                   {summary.remaining}
@@ -400,7 +400,7 @@ export default function ShipmentTracking({
               <Card>
                 <CardContent className="pt-6">
                   <form onSubmit={handleSubmit} className="space-y-4">
-                    <div className="grid grid-cols-3 gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                       <div>
                         <Label htmlFor="batch_number">
                           Batch Number <span className="text-destructive">*</span>
@@ -533,7 +533,7 @@ export default function ShipmentTracking({
                         Cancel
                       </Button>
                       <Button type="submit" data-testid="button-save-shipment">
-                        {editingShipment ? "Update Shipment" : "Save Shipment"}
+                        {editingShipment ? "Update" : "Save"}
                       </Button>
                     </div>
                   </form>
@@ -542,88 +542,139 @@ export default function ShipmentTracking({
             )}
 
             {shipments.length > 0 ? (
-              <div className="border rounded-md">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Batch Number</TableHead>
-                      <TableHead>Date</TableHead>
-                      <TableHead className="text-right">Shipped</TableHead>
-                      <TableHead className="text-right">Blowholes</TableHead>
-                      <TableHead className="text-right">Handles</TableHead>
-                      <TableHead className="text-right">Other</TableHead>
-                      <TableHead className="text-right">
-                        Total Rejections
-                      </TableHead>
-                      <TableHead className="text-right">Accepted</TableHead>
-                      {canMutate && <TableHead></TableHead>}
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {shipments.map((shipment) => {
-                      const totalRej =
-                        shipment.rejections_blowholes +
-                        shipment.rejections_handles +
-                        shipment.rejections_other;
-                      const accepted = shipment.quantity_shipped - totalRej;
+              <>
+                {/* Desktop Table */}
+                <div className="hidden sm:block border rounded-md">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Batch</TableHead>
+                        <TableHead>Date</TableHead>
+                        <TableHead className="text-right">Shipped</TableHead>
+                        <TableHead className="text-right">Rejected</TableHead>
+                        <TableHead className="text-right">Accepted</TableHead>
+                        {canMutate && <TableHead></TableHead>}
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {shipments.map((shipment) => {
+                        const totalRej =
+                          shipment.rejections_blowholes +
+                          shipment.rejections_handles +
+                          shipment.rejections_other;
+                        const accepted = shipment.quantity_shipped - totalRej;
 
-                      return (
-                        <TableRow
-                          key={shipment.id}
-                          data-testid={`row-shipment-${shipment.id}`}
-                        >
-                          <TableCell className="font-medium">
-                            {shipment.batch_number || "-"}
-                          </TableCell>
-                          <TableCell>
-                            {formatDate(shipment.shipment_date)}
-                          </TableCell>
-                          <TableCell className="text-right">
-                            {shipment.quantity_shipped}
-                          </TableCell>
-                          <TableCell className="text-right">
-                            {shipment.rejections_blowholes}
-                          </TableCell>
-                          <TableCell className="text-right">
-                            {shipment.rejections_handles}
-                          </TableCell>
-                          <TableCell className="text-right">
-                            {shipment.rejections_other}
-                          </TableCell>
-                          <TableCell className="text-right text-destructive font-semibold">
-                            {totalRej}
-                          </TableCell>
-                          <TableCell className="text-right font-semibold">
-                            {accepted}
-                          </TableCell>
-                          {canMutate && (
+                        return (
+                          <TableRow
+                            key={shipment.id}
+                            data-testid={`row-shipment-${shipment.id}`}
+                          >
+                            <TableCell className="font-medium font-mono">
+                              {shipment.batch_number || "-"}
+                            </TableCell>
                             <TableCell>
-                              <div className="flex gap-2">
+                              {formatDate(shipment.shipment_date)}
+                            </TableCell>
+                            <TableCell className="text-right">
+                              {shipment.quantity_shipped}
+                            </TableCell>
+                            <TableCell className="text-right text-destructive font-semibold">
+                              {totalRej}
+                            </TableCell>
+                            <TableCell className="text-right font-semibold">
+                              {accepted}
+                            </TableCell>
+                            {canMutate && (
+                              <TableCell>
+                                <div className="flex gap-2">
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => handleEdit(shipment)}
+                                    data-testid={`button-edit-shipment-${shipment.id}`}
+                                  >
+                                    <Edit className="h-4 w-4" />
+                                  </Button>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => handleDelete(shipment.id)}
+                                    data-testid={`button-delete-shipment-${shipment.id}`}
+                                  >
+                                    Delete
+                                  </Button>
+                                </div>
+                              </TableCell>
+                            )}
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                </div>
+
+                {/* Mobile Cards */}
+                <div className="sm:hidden space-y-3">
+                  {shipments.map((shipment) => {
+                    const totalRej =
+                      shipment.rejections_blowholes +
+                      shipment.rejections_handles +
+                      shipment.rejections_other;
+                    const accepted = shipment.quantity_shipped - totalRej;
+
+                    return (
+                      <Card key={shipment.id} data-testid={`card-shipment-${shipment.id}`}>
+                        <CardContent className="p-4">
+                          <div className="flex justify-between items-start mb-3">
+                            <div>
+                              <div className="font-mono font-semibold">{shipment.batch_number || "-"}</div>
+                              <div className="text-sm text-muted-foreground">{formatDate(shipment.shipment_date)}</div>
+                            </div>
+                            {canMutate && (
+                              <div className="flex gap-1">
                                 <Button
                                   variant="ghost"
-                                  size="sm"
+                                  size="icon"
                                   onClick={() => handleEdit(shipment)}
-                                  data-testid={`button-edit-shipment-${shipment.id}`}
+                                  data-testid={`button-edit-shipment-mobile-${shipment.id}`}
                                 >
                                   <Edit className="h-4 w-4" />
                                 </Button>
                                 <Button
                                   variant="ghost"
-                                  size="sm"
+                                  size="icon"
                                   onClick={() => handleDelete(shipment.id)}
-                                  data-testid={`button-delete-shipment-${shipment.id}`}
+                                  data-testid={`button-delete-shipment-mobile-${shipment.id}`}
+                                  className="text-destructive"
                                 >
-                                  Delete
+                                  <span className="sr-only">Delete</span>
+                                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                  </svg>
                                 </Button>
                               </div>
-                            </TableCell>
-                          )}
-                        </TableRow>
-                      );
-                    })}
-                  </TableBody>
-                </Table>
-              </div>
+                            )}
+                          </div>
+                          <div className="grid grid-cols-3 gap-2 text-sm">
+                            <div>
+                              <div className="text-muted-foreground">Shipped</div>
+                              <div className="font-semibold">{shipment.quantity_shipped}</div>
+                            </div>
+                            <div>
+                              <div className="text-muted-foreground">Rejected</div>
+                              <div className="font-semibold text-destructive">{totalRej}</div>
+                            </div>
+                            <div>
+                              <div className="text-muted-foreground">Accepted</div>
+                              <div className="font-semibold">{accepted}</div>
+                            </div>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    );
+                  })}
+                </div>
+              </>
             ) : (
               <p className="text-sm text-muted-foreground text-center py-8">
                 No shipments recorded yet. Click "Add Shipment" to track your

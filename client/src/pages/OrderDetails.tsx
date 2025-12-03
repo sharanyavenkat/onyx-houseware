@@ -77,7 +77,7 @@ export default function OrderDetails() {
 
   return (
     <div className="space-y-6 p-6" data-testid="page-order-details">
-      <div className="flex items-center gap-4">
+      <div className="flex items-center gap-2 sm:gap-4">
         <Button
           variant="ghost"
           size="icon"
@@ -86,7 +86,7 @@ export default function OrderDetails() {
         >
           <ArrowLeft className="h-5 w-5" />
         </Button>
-        <h1 className="text-2xl font-bold">Order Details: {order.po_number}</h1>
+        <h1 className="text-lg sm:text-2xl font-bold truncate">Order: {order.po_number}</h1>
       </div>
 
       <Card>
@@ -94,7 +94,7 @@ export default function OrderDetails() {
           <CardTitle>Order Information</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
             <div>
               <span className="text-sm text-muted-foreground">Customer:</span>
               <p className="font-medium">{order.customer_name}</p>
@@ -112,7 +112,7 @@ export default function OrderDetails() {
               <p className="font-medium">{formatDate(order.order_date)}</p>
             </div>
             <div>
-              <span className="text-sm text-muted-foreground">Fulfillment Date:</span>
+              <span className="text-sm text-muted-foreground">Fulfillment:</span>
               <p className="font-medium">{formatDate(order.fulfillment_date)}</p>
             </div>
             <div>
@@ -147,13 +147,13 @@ export default function OrderDetails() {
                     className="px-4 py-3"
                     data-testid={`order-detail-item-${index}`}
                   >
-                    <div className="flex justify-between items-start">
+                    <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-3">
                       <div className="flex-1">
                         <div className="font-medium">{item.item_name}</div>
                         <div className="text-sm text-muted-foreground">SKU: {item.sku}</div>
                         
                         {hasShipments && (
-                          <div className="mt-2 flex items-center gap-4 text-sm">
+                          <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
                             <div className="flex items-center gap-1">
                               <span className="text-muted-foreground">Ordered:</span>
                               <span className="font-mono font-semibold">{item.quantity}</span>
@@ -182,7 +182,7 @@ export default function OrderDetails() {
                         )}
                       </div>
                       
-                      <div className="flex items-center gap-4 ml-4">
+                      <div className="flex items-center gap-4">
                         {!hasShipments && (
                           <div className="text-right">
                             <div className="font-semibold">{item.quantity} pcs</div>
@@ -196,9 +196,11 @@ export default function OrderDetails() {
                             setIsTrackingOpen(true);
                           }}
                           data-testid={`button-track-shipment-${index}`}
+                          className="whitespace-nowrap"
                         >
                           <Package className="h-4 w-4 mr-1" />
-                          Track Shipments
+                          <span className="hidden sm:inline">Track Shipments</span>
+                          <span className="sm:hidden">Track</span>
                         </Button>
                       </div>
                     </div>

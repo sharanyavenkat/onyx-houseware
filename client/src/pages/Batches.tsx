@@ -170,12 +170,23 @@ export default function Batches() {
   return (
     <div className="p-6 space-y-6">
       {/* Header with Filters */}
-      <div className="flex items-center justify-between gap-4 flex-wrap">
-        <h1 className="text-2xl font-semibold">Batch Registry</h1>
-        <div className="flex items-center gap-3">
+      <div className="space-y-4">
+        <div className="flex items-center justify-between gap-4">
+          <h1 className="text-xl sm:text-2xl font-semibold">Batch Registry</h1>
+          {canMutate && (
+            <Button
+              onClick={() => setIsCreateModalOpen(true)}
+              data-testid="button-add-batch"
+            >
+              <span className="hidden sm:inline">Add Batch</span>
+              <span className="sm:hidden">Add</span>
+            </Button>
+          )}
+        </div>
+        <div className="flex flex-col sm:flex-row sm:items-center gap-3">
           {/* Item Filter */}
           <Select value={selectedItem} onValueChange={setSelectedItem}>
-            <SelectTrigger className="w-48" data-testid="select-item-filter">
+            <SelectTrigger className="w-full sm:w-48" data-testid="select-item-filter">
               <SelectValue placeholder="All Items" />
             </SelectTrigger>
             <SelectContent>
@@ -190,7 +201,7 @@ export default function Batches() {
 
           {/* Quality Filter */}
           <Select value={qualityFilter} onValueChange={setQualityFilter}>
-            <SelectTrigger className="w-40" data-testid="select-quality-filter">
+            <SelectTrigger className="w-full sm:w-40" data-testid="select-quality-filter">
               <SelectValue placeholder="All Quality" />
             </SelectTrigger>
             <SelectContent>
@@ -203,7 +214,7 @@ export default function Batches() {
 
           {/* Status Filter */}
           <Select value={statusFilter} onValueChange={setStatusFilter}>
-            <SelectTrigger className="w-40" data-testid="select-status-filter">
+            <SelectTrigger className="w-full sm:w-40" data-testid="select-status-filter">
               <SelectValue placeholder="All Status" />
             </SelectTrigger>
             <SelectContent>
@@ -212,15 +223,6 @@ export default function Batches() {
               <SelectItem value="depleted">Depleted</SelectItem>
             </SelectContent>
           </Select>
-
-          {canMutate && (
-            <Button
-              onClick={() => setIsCreateModalOpen(true)}
-              data-testid="button-add-batch"
-            >
-              Add Batch
-            </Button>
-          )}
         </div>
       </div>
 
@@ -249,7 +251,7 @@ export default function Batches() {
                 data-testid={`accordion-item-${item.id}`}
               >
                 <AccordionTrigger className="hover:no-underline py-4">
-                  <div className="flex items-center justify-between w-full pr-4">
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between w-full pr-4 gap-2">
                     {/* Left: Item Name & SKU */}
                     <div className="text-left">
                       <div className="font-semibold text-base">
@@ -261,18 +263,18 @@ export default function Batches() {
                     </div>
 
                     {/* Right: Summary Quantities */}
-                    <div className="flex items-center gap-6 font-mono text-sm">
+                    <div className="flex items-center gap-4 sm:gap-6 font-mono text-sm">
                       <div className="text-center">
                         <div className="text-xs text-muted-foreground mb-1">
-                          Total Remaining
+                          Remaining
                         </div>
-                        <div className="font-bold text-base">
+                        <div className="font-bold text-sm sm:text-base">
                           {totalRemaining.toLocaleString()}
                         </div>
                       </div>
-                      <div className="text-center">
+                      <div className="text-center hidden sm:block">
                         <div className="text-xs text-muted-foreground mb-1">
-                          Total Produced
+                          Produced
                         </div>
                         <div className="text-sm">
                           {totalProduced.toLocaleString()}
@@ -281,7 +283,7 @@ export default function Batches() {
                       {totalRejected > 0 && (
                         <div className="text-center">
                           <div className="text-xs text-muted-foreground mb-1">
-                            Total Rejected
+                            Rejected
                           </div>
                           <div className="text-destructive text-sm">
                             {totalRejected.toLocaleString()}
@@ -298,11 +300,13 @@ export default function Batches() {
                     <div className="text-sm font-medium text-muted-foreground px-4 pb-2">
                       Batches for {item.name}:
                     </div>
-                    <div className="border rounded-lg overflow-hidden">
+                    
+                    {/* Desktop Table */}
+                    <div className="hidden sm:block border rounded-lg overflow-hidden">
                       <table className="w-full text-sm">
                         <thead className="bg-muted/50">
                           <tr>
-                            <th className="text-left py-2 px-4 font-medium">Batch Number</th>
+                            <th className="text-left py-2 px-4 font-medium">Batch</th>
                             <th className="text-left py-2 px-4 font-medium">Received</th>
                             <th className="text-right py-2 px-4 font-medium">Produced</th>
                             <th className="text-right py-2 px-4 font-medium">Remaining</th>
@@ -377,6 +381,75 @@ export default function Batches() {
                           })}
                         </tbody>
                       </table>
+                    </div>
+
+                    {/* Mobile Cards */}
+                    <div className="sm:hidden space-y-3">
+                      {itemBatches.map((batch) => {
+                        const qualityVariants: Record<string, any> = {
+                          Good: "default",
+                          Acceptable: "secondary",
+                          Rejected: "destructive",
+                        };
+                        
+                        return (
+                          <div 
+                            key={batch.id} 
+                            className="border rounded-lg p-4"
+                            data-testid={`card-batch-${batch.id}`}
+                          >
+                            <div className="flex justify-between items-start mb-3">
+                              <div>
+                                <div className="font-mono font-semibold">{batch.batch_number}</div>
+                                <div className="text-sm text-muted-foreground">{formatDate(batch.received_date)}</div>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <Badge
+                                  variant={
+                                    qualityVariants[batch.quality_status || "Good"] ||
+                                    "default"
+                                  }
+                                >
+                                  {batch.quality_status || "Good"}
+                                </Badge>
+                                {canMutate && (
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    onClick={() => handleEdit(batch)}
+                                    data-testid={`button-edit-batch-mobile-${batch.id}`}
+                                  >
+                                    <Edit className="w-4 h-4" />
+                                  </Button>
+                                )}
+                              </div>
+                            </div>
+                            <div className="grid grid-cols-3 gap-2 text-sm">
+                              <div>
+                                <div className="text-muted-foreground">Produced</div>
+                                <div className="font-mono">{batch.quantity_produced.toLocaleString()}</div>
+                              </div>
+                              <div>
+                                <div className="text-muted-foreground">Remaining</div>
+                                <div className="font-mono font-semibold">{batch.quantity_remaining.toLocaleString()}</div>
+                              </div>
+                              <div>
+                                <div className="text-muted-foreground">Rejected</div>
+                                <div className={`font-mono ${batch.quantity_rejected > 0 ? 'text-destructive font-medium' : ''}`}>
+                                  {batch.quantity_rejected.toLocaleString()}
+                                </div>
+                              </div>
+                            </div>
+                            <div className="mt-2">
+                              <Badge
+                                variant={batch.is_depleted ? "secondary" : "default"}
+                              >
+                                {batch.is_depleted ? "Depleted" : "Available"}
+                              </Badge>
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
                     
                     {/* Notes section if any batch has notes */}
