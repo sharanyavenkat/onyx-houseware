@@ -25,16 +25,6 @@ const itemFields = [
     placeholder: "Enter SKU code",
   },
   {
-    name: "product_type",
-    label: "Product Type",
-    type: "select" as const,
-    required: true,
-    options: [
-      { value: "Cookware", label: "Cookware" },
-      { value: "Utensils", label: "Utensils" },
-    ],
-  },
-  {
     name: "size_specification",
     label: "Size/Specification",
     type: "text" as const,
@@ -76,7 +66,6 @@ const itemFields = [
 const itemColumns = [
   { key: "name", label: "Product Name", isPrimary: true },
   { key: "sku", label: "SKU" },
-  { key: "product_type", label: "Type" },
   { key: "size_specification", label: "Size/Spec" },
   {
     key: "price",

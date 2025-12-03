@@ -23,7 +23,6 @@ export const items = sqliteTable("items", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   name: text("name").notNull(),
   sku: text("sku").notNull().unique(),
-  product_type: text("product_type").notNull(),
   size_specification: text("size_specification").notNull(),
   price: real("price").notNull(),
   desired_safety_stock: integer("desired_safety_stock").notNull().default(0),

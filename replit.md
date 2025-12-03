@@ -167,14 +167,19 @@ Preferred communication style: Simple, everyday language.
 
 ### Accessories Tracking Feature (December 2025)
 - New Accessories page at /accessories for tracking handles, glass lids, induction plates
-- Accessories tracked separately from Items (not using product_type='Accessories')
+- Accessories tracked separately from Items with simple stock tracking (no batch tracking)
 - Each accessory has: name, sku (optional), stock_on_hand, safety_stock, status, notes
 - Low stock warning displayed when stock_on_hand <= safety_stock (amber colored)
 - Status field: "active" or "discontinued"
 - Full CRUD operations with viewer read-only support
 - Accessories sorted by: active first, then low stock items, then alphabetically
-- Removed 'Accessories' from product_type dropdown in Items page
 - Dashboard shows "Accessories Low Stock" section for accessories at/below safety stock level
+
+### Simplified Item Schema (December 2025)
+- Removed product_type field from Items - all items are now cookware products
+- Items use batch tracking for inventory management
+- Simpler items (utensils, handles, etc.) should go in Accessories table instead
+- Bootstrap migration automatically drops product_type column from existing databases
 
 ### Order Update Fix (December 2025)
 - Fixed issue where updating orders would break shipment links

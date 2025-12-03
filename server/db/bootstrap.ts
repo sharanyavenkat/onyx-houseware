@@ -67,7 +67,6 @@ export async function bootstrapDatabase() {
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT NOT NULL,
         sku TEXT NOT NULL UNIQUE,
-        product_type TEXT NOT NULL,
         size_specification TEXT NOT NULL,
         price REAL NOT NULL,
         desired_safety_stock INTEGER NOT NULL DEFAULT 0,
@@ -322,6 +321,73 @@ export async function bootstrapDatabase() {
       "status TEXT NOT NULL DEFAULT 'active'",
       "status"
     );
+
+    // Migration: Remove product_type from items table (December 2025)
+    // All items are now considered cookware; utensils go to accessories
+    // Uses safe table rebuild approach for SQLite compatibility
+    try {
+      // Check if product_type column exists
+      const tableInfo = await db.all(sql`PRAGMA table_info(items)`);
+      const hasProductType = tableInfo.some((col: any) => col.name === 'product_type');
+      
+      if (hasProductType) {
+        // Temporarily disable foreign keys for table rebuild
+        await db.run(sql`PRAGMA foreign_keys=OFF`);
+        
+        try {
+          // Begin transaction for safe rebuild
+          await db.run(sql`BEGIN TRANSACTION`);
+          
+          // Create new table without product_type
+          await db.run(sql`
+            CREATE TABLE items_new (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              name TEXT NOT NULL,
+              sku TEXT NOT NULL UNIQUE,
+              size_specification TEXT NOT NULL,
+              price REAL NOT NULL,
+              desired_safety_stock INTEGER NOT NULL DEFAULT 0,
+              is_active INTEGER NOT NULL DEFAULT 1,
+              notes TEXT
+            )
+          `);
+          
+          // Copy data from old table (excluding product_type)
+          await db.run(sql`
+            INSERT INTO items_new (id, name, sku, size_specification, price, desired_safety_stock, is_active, notes)
+            SELECT id, name, sku, size_specification, price, COALESCE(desired_safety_stock, 0), COALESCE(is_active, 1), notes
+            FROM items
+          `);
+          
+          // Drop old table
+          await db.run(sql`DROP TABLE items`);
+          
+          // Rename new table
+          await db.run(sql`ALTER TABLE items_new RENAME TO items`);
+          
+          // Commit transaction
+          await db.run(sql`COMMIT`);
+          
+          console.log("✅ Removed product_type column from items table (table rebuilt)");
+        } catch (rebuildError) {
+          // Rollback on error
+          await db.run(sql`ROLLBACK`);
+          throw rebuildError;
+        } finally {
+          // Re-enable foreign keys
+          await db.run(sql`PRAGMA foreign_keys=ON`);
+        }
+      }
+    } catch (error: any) {
+      const errorMessage = error?.message?.toLowerCase() || '';
+      if (errorMessage.includes("no such column") || 
+          errorMessage.includes("no column named") ||
+          errorMessage.includes("no such table")) {
+        // Column/table already processed, silently continue
+      } else {
+        console.log("ℹ️ product_type column removal skipped:", error.message);
+      }
+    }
 
     // Auto-generate shipment numbers for existing shipments without them
     try {

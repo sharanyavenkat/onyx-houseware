@@ -79,9 +79,10 @@ Preferred communication style: Simple, everyday language.
 
 **Data Model:**
 - **Users:** UUID-based IDs, bcrypt password hashing
-- **Items:** Auto-increment integer IDs, SKU-based product catalog with safety stock levels, active/inactive status
+- **Items:** Auto-increment integer IDs, SKU-based product catalog with safety stock levels, active/inactive status (cookware products requiring batch tracking)
+- **Accessories:** Simple stock tracking for handles, glass lids, induction plates (no batch tracking required)
 - **Customers:** Company-based customer records with contact information
-- **Orders:** PO number tracking, status workflow (draft → confirmed → fulfilled/cancelled), date tracking
+- **Orders:** PO number tracking, status workflow (draft → confirmed → fulfilled/cancelled), date tracking, order type (standard/sample) with free sample flag
 - **Order Items:** Line items with quantity and item references
 - **Indents:** Monthly inventory planning with expected receipts and current safety stock (no opening balance - calculated from batches)
 - **Batches (Lot Tracking):**
