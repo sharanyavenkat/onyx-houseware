@@ -199,6 +199,7 @@ export const accessories = sqliteTable("accessories", {
   sku: text("sku"),
   stock_on_hand: integer("stock_on_hand").notNull().default(0),
   safety_stock: integer("safety_stock").notNull().default(0),
+  status: text("status").notNull().default("active"),
   notes: text("notes"),
 });
 

@@ -101,10 +101,15 @@ export default function OrderDetails() {
             </div>
             <div>
               <span className="text-sm text-muted-foreground">Status:</span>
-              <div className="mt-1">
+              <div className="mt-1 flex flex-wrap gap-1">
                 <Badge variant={statusVariants[order.status] || 'secondary'}>
                   {order.status}
                 </Badge>
+                {order.order_type === 'sample' && (
+                  <Badge variant="outline" className="border-cyan-500 text-cyan-600">
+                    {order.is_free_sample ? 'Free Sample' : 'Sample'}
+                  </Badge>
+                )}
               </div>
             </div>
             <div>

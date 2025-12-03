@@ -1,4 +1,5 @@
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -52,6 +53,8 @@ export default function OrderFormModal({
   const [orderDate, setOrderDate] = useState("");
   const [fulfillmentDate, setFulfillmentDate] = useState("");
   const [status, setStatus] = useState("");
+  const [orderType, setOrderType] = useState("standard");
+  const [isFreeSample, setIsFreeSample] = useState(false);
   const [notes, setNotes] = useState("");
   const [lineItems, setLineItems] = useState<LineItem[]>([]);
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -65,6 +68,8 @@ export default function OrderFormModal({
       setOrderDate(initialData.order_date || "");
       setFulfillmentDate(initialData.fulfillment_date || "");
       setStatus(initialData.status || "");
+      setOrderType(initialData.order_type || "standard");
+      setIsFreeSample(initialData.is_free_sample || false);
       setNotes(initialData.notes || "");
       setLineItems(initialData.line_items || []);
       setErrors({});
@@ -154,6 +159,8 @@ export default function OrderFormModal({
       order_date: orderDate,
       fulfillment_date: fulfillmentDate || null,
       status,
+      order_type: orderType,
+      is_free_sample: orderType === "sample" ? isFreeSample : false,
       notes,
       line_items: lineItems,
     };
@@ -262,6 +269,33 @@ export default function OrderFormModal({
               <p className="text-sm text-destructive mt-1">{errors.status}</p>
             )}
           </div>
+
+          <div>
+            <Label htmlFor="order_type">Order Type</Label>
+            <Select value={orderType} onValueChange={setOrderType}>
+              <SelectTrigger id="order_type" data-testid="select-order-type">
+                <SelectValue placeholder="Select Order Type" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="standard">Standard Order</SelectItem>
+                <SelectItem value="sample">Sample Order</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          {orderType === "sample" && (
+            <div className="flex items-center gap-2">
+              <Checkbox
+                id="is_free_sample"
+                checked={isFreeSample}
+                onCheckedChange={(checked) => setIsFreeSample(checked === true)}
+                data-testid="checkbox-free-sample"
+              />
+              <Label htmlFor="is_free_sample" className="text-sm font-normal cursor-pointer">
+                Free Sample (no charge)
+              </Label>
+            </div>
+          )}
 
           <div className="border-t pt-4">
             <div className="flex items-center justify-between mb-3">

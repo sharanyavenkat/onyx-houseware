@@ -51,6 +51,23 @@ const orderColumns = [
     hideOnMobile: true,
   },
   {
+    key: "order_type",
+    label: "Type",
+    render: (value: string, row: any) => {
+      if (value === "sample") {
+        return (
+          <span className="flex items-center gap-1">
+            <Badge variant="outline" className="border-cyan-500 text-cyan-600">
+              {row.is_free_sample ? "Free Sample" : "Sample"}
+            </Badge>
+          </span>
+        );
+      }
+      return null;
+    },
+    hideOnMobile: true,
+  },
+  {
     key: "status",
     label: "Status",
     render: (value: string) => {
@@ -71,6 +88,7 @@ export default function Orders() {
   const [editingOrder, setEditingOrder] = useState<any>(null);
   const [selectedMonth, setSelectedMonth] = useState<string>("all");
   const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [orderTypeFilter, setOrderTypeFilter] = useState<string>("all");
   const [isConfirmOpen, setIsConfirmOpen] = useState(false);
   const [orderToDelete, setOrderToDelete] = useState<any>(null);
   const { toast } = useToast();
@@ -130,7 +148,7 @@ export default function Orders() {
     return Array.from(months).sort().reverse();
   }, [orders]);
 
-  // Filter orders by selected month and status
+  // Filter orders by selected month, status, and order type
   const filteredOrders = useMemo(() => {
     let result = ordersWithCustomerNames;
 
@@ -155,8 +173,13 @@ export default function Orders() {
       result = result.filter((order) => order.status === statusFilter);
     }
 
+    // Filter by order type
+    if (orderTypeFilter !== "all") {
+      result = result.filter((order) => order.order_type === orderTypeFilter);
+    }
+
     return result;
-  }, [ordersWithCustomerNames, selectedMonth, statusFilter]);
+  }, [ordersWithCustomerNames, selectedMonth, statusFilter, orderTypeFilter]);
 
   const createMutation = useMutation({
     mutationFn: async (data: any) => {
@@ -299,6 +322,23 @@ export default function Orders() {
               <SelectItem value="confirmed">Confirmed</SelectItem>
               <SelectItem value="fulfilled">Fulfilled</SelectItem>
               <SelectItem value="cancelled">Cancelled</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+          <label className="text-sm font-medium">Order Type:</label>
+          <Select value={orderTypeFilter} onValueChange={setOrderTypeFilter}>
+            <SelectTrigger
+              className="w-full sm:w-[180px]"
+              data-testid="select-type-filter"
+            >
+              <SelectValue placeholder="All Types" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Types</SelectItem>
+              <SelectItem value="standard">Standard Orders</SelectItem>
+              <SelectItem value="sample">Sample Orders</SelectItem>
             </SelectContent>
           </Select>
         </div>

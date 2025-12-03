@@ -7,6 +7,7 @@ import { queryClient } from "./lib/queryClient";
 
 // Import pages
 import Sidebar from "@/components/Sidebar";
+import Accessories from "@/pages/Accessories";
 import Batches from "@/pages/Batches";
 import Customers from "@/pages/Customers";
 import Dashboard from "@/pages/Dashboard";
@@ -33,6 +34,7 @@ function AuthenticatedApp() {
             <Route path="/indent" component={Indent} />
             <Route path="/items" component={Items} />
             <Route path="/batches" component={Batches} />
+            <Route path="/accessories" component={Accessories} />
             <Route path="/customers" component={Customers} />
             <Route component={NotFound} />
           </Switch>

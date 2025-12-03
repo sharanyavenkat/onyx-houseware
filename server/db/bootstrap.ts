@@ -311,9 +311,17 @@ export async function bootstrapDatabase() {
         sku TEXT,
         stock_on_hand INTEGER NOT NULL DEFAULT 0,
         safety_stock INTEGER NOT NULL DEFAULT 0,
+        status TEXT NOT NULL DEFAULT 'active',
         notes TEXT
       )
     `);
+
+    // Add status column to accessories table
+    await addColumnIfNotExists(
+      "accessories",
+      "status TEXT NOT NULL DEFAULT 'active'",
+      "status"
+    );
 
     // Auto-generate shipment numbers for existing shipments without them
     try {

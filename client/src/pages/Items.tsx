@@ -32,7 +32,6 @@ const itemFields = [
     options: [
       { value: "Cookware", label: "Cookware" },
       { value: "Utensils", label: "Utensils" },
-      { value: "Accessories", label: "Accessories" },
     ],
   },
   {
