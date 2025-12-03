@@ -154,3 +154,23 @@ Preferred communication style: Simple, everyday language.
 - Viewer role: Read-only access, action buttons hidden except View
 - Middleware: `requireAdmin` blocks mutation endpoints for viewer role
 - Frontend: `canMutate` prop controls visibility of edit/delete actions
+
+## Recent Changes
+
+### Sample Orders Feature (December 2025)
+- Orders now support order_type field: "standard" (default) or "sample"
+- Sample orders can be marked as free samples (is_free_sample boolean)
+- Order form includes Order Type dropdown and Free Sample checkbox (shows only when sample selected)
+- Orders list displays cyan badges for sample orders ("Sample" or "Free Sample")
+- Order type filter added to Orders page for filtering by Standard/Sample orders
+- Sample orders are visually distinct with cyan badges in order details
+
+### Accessories Tracking Feature (December 2025)
+- New Accessories page at /accessories for tracking handles, glass lids, induction plates
+- Accessories tracked separately from Items (not using product_type='Accessories')
+- Each accessory has: name, sku (optional), stock_on_hand, safety_stock, status, notes
+- Low stock warning displayed when stock_on_hand <= safety_stock (amber colored)
+- Status field: "active" or "discontinued"
+- Full CRUD operations with viewer read-only support
+- Accessories sorted by: active first, then low stock items, then alphabetically
+- Removed 'Accessories' from product_type dropdown in Items page
