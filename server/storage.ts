@@ -19,6 +19,8 @@ import {
   type InsertBatch,
   type Invoice,
   type InsertInvoice,
+  type Accessory,
+  type InsertAccessory,
   users,
   items,
   customers,
@@ -27,7 +29,8 @@ import {
   indents,
   shipments,
   batches,
-  invoices
+  invoices,
+  accessories
 } from "@shared/schema";
 
 export interface IStorage {
@@ -91,6 +94,12 @@ export interface IStorage {
   getPendingOrdersByItem(): Promise<Record<number, number>>;
   getOnHandStockByItemWithQuality(includeAcceptable: boolean): Promise<Record<number, number>>;
   getRejectedQuantitiesByItem(): Promise<Record<number, number>>;
+
+  getAllAccessories(): Promise<Accessory[]>;
+  getAccessoryById(id: number): Promise<Accessory | undefined>;
+  createAccessory(accessory: InsertAccessory): Promise<Accessory>;
+  updateAccessory(id: number, accessory: Partial<InsertAccessory>): Promise<Accessory | undefined>;
+  deleteAccessory(id: number): Promise<void>;
 }
 
 export class DbStorage implements IStorage {
@@ -923,6 +932,29 @@ export class DbStorage implements IStorage {
     });
     
     return rejectedByItem;
+  }
+
+  async getAllAccessories(): Promise<Accessory[]> {
+    return await db.select().from(accessories);
+  }
+
+  async getAccessoryById(id: number): Promise<Accessory | undefined> {
+    const [accessory] = await db.select().from(accessories).where(eq(accessories.id, id));
+    return accessory;
+  }
+
+  async createAccessory(insertAccessory: InsertAccessory): Promise<Accessory> {
+    const [accessory] = await db.insert(accessories).values(insertAccessory).returning();
+    return accessory;
+  }
+
+  async updateAccessory(id: number, updates: Partial<InsertAccessory>): Promise<Accessory | undefined> {
+    const [accessory] = await db.update(accessories).set(updates).where(eq(accessories.id, id)).returning();
+    return accessory;
+  }
+
+  async deleteAccessory(id: number): Promise<void> {
+    await db.delete(accessories).where(eq(accessories.id, id));
   }
 }
 

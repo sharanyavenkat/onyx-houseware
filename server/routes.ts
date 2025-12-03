@@ -3,7 +3,7 @@ import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { verifyPassword } from "./auth";
 import { requireAuth, requireAdmin } from "./middleware";
-import { insertItemSchema, insertCustomerSchema, insertOrderSchema, insertOrderItemSchema, insertIndentSchema, insertShipmentSchema, insertBatchSchema, updateBatchSchema, insertInvoiceSchema } from "@shared/schema";
+import { insertItemSchema, insertCustomerSchema, insertOrderSchema, insertOrderItemSchema, insertIndentSchema, insertShipmentSchema, insertBatchSchema, updateBatchSchema, insertInvoiceSchema, insertAccessorySchema } from "@shared/schema";
 import { db } from "./db/client";
 import { batches } from "@shared/schema";
 import { eq } from "drizzle-orm";
@@ -835,6 +835,60 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.delete("/api/invoices/:id", async (req, res) => {
     try {
       await storage.deleteInvoice(parseInt(req.params.id));
+      res.status(204).send();
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Accessories routes
+  app.get("/api/accessories", async (req, res) => {
+    try {
+      const accessories = await storage.getAllAccessories();
+      res.json(accessories);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.get("/api/accessories/:id", async (req, res) => {
+    try {
+      const accessory = await storage.getAccessoryById(parseInt(req.params.id));
+      if (!accessory) {
+        return res.status(404).json({ message: "Accessory not found" });
+      }
+      res.json(accessory);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/accessories", async (req, res) => {
+    try {
+      const validatedData = insertAccessorySchema.parse(req.body);
+      const accessory = await storage.createAccessory(validatedData);
+      res.status(201).json(accessory);
+    } catch (error: any) {
+      res.status(400).json({ message: error.message });
+    }
+  });
+
+  app.patch("/api/accessories/:id", async (req, res) => {
+    try {
+      const validatedData = insertAccessorySchema.partial().parse(req.body);
+      const accessory = await storage.updateAccessory(parseInt(req.params.id), validatedData);
+      if (!accessory) {
+        return res.status(404).json({ message: "Accessory not found" });
+      }
+      res.json(accessory);
+    } catch (error: any) {
+      res.status(400).json({ message: error.message });
+    }
+  });
+
+  app.delete("/api/accessories/:id", async (req, res) => {
+    try {
+      await storage.deleteAccessory(parseInt(req.params.id));
       res.status(204).send();
     } catch (error: any) {
       res.status(500).json({ message: error.message });

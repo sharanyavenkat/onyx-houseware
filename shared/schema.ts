@@ -64,6 +64,8 @@ export const orders = sqliteTable("orders", {
   order_date: text("order_date").notNull(),
   fulfillment_date: text("fulfillment_date"),
   status: text("status").notNull().default("draft"),
+  order_type: text("order_type").notNull().default("standard"),
+  is_free_sample: integer("is_free_sample", { mode: "boolean" }).notNull().default(false),
   notes: text("notes"),
 });
 
@@ -190,3 +192,19 @@ export const insertShipmentSchema = createInsertSchema(shipments).omit({
 
 export type InsertShipment = z.infer<typeof insertShipmentSchema>;
 export type Shipment = typeof shipments.$inferSelect;
+
+export const accessories = sqliteTable("accessories", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  name: text("name").notNull(),
+  sku: text("sku"),
+  stock_on_hand: integer("stock_on_hand").notNull().default(0),
+  safety_stock: integer("safety_stock").notNull().default(0),
+  notes: text("notes"),
+});
+
+export const insertAccessorySchema = createInsertSchema(accessories).omit({
+  id: true,
+});
+
+export type InsertAccessory = z.infer<typeof insertAccessorySchema>;
+export type Accessory = typeof accessories.$inferSelect;

@@ -289,6 +289,32 @@ export async function bootstrapDatabase() {
       "invoice_id"
     );
 
+    // Add order_type column to orders table (standard/sample)
+    await addColumnIfNotExists(
+      "orders",
+      "order_type TEXT NOT NULL DEFAULT 'standard'",
+      "order_type"
+    );
+
+    // Add is_free_sample column to orders table
+    await addColumnIfNotExists(
+      "orders",
+      "is_free_sample INTEGER NOT NULL DEFAULT 0",
+      "is_free_sample"
+    );
+
+    // Create accessories table for tracking induction plates, handles, etc.
+    await db.run(sql`
+      CREATE TABLE IF NOT EXISTS accessories (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        sku TEXT,
+        stock_on_hand INTEGER NOT NULL DEFAULT 0,
+        safety_stock INTEGER NOT NULL DEFAULT 0,
+        notes TEXT
+      )
+    `);
+
     // Auto-generate shipment numbers for existing shipments without them
     try {
       const result = await db.run(sql`
