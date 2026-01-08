@@ -16,7 +16,8 @@ import {
   LogOut,
   Menu,
   Box,
-  Wrench
+  Wrench,
+  Factory
 } from "lucide-react";
 import { useState } from "react";
 import { Link, useLocation } from "wouter";
@@ -33,6 +34,7 @@ const menuItems = [
   { icon: Box, label: "Batches", href: "/batches" },
   { icon: ClipboardList, label: "Indent", href: "/indent" },
   { icon: Package, label: "Items", href: "/items" },
+  { icon: Factory, label: "Casters", href: "/casters" },
   { icon: Wrench, label: "Accessories", href: "/accessories" },
   { icon: Users, label: "Customers", href: "/customers" },
 ];

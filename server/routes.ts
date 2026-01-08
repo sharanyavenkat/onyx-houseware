@@ -3,7 +3,7 @@ import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { verifyPassword } from "./auth";
 import { requireAuth, requireAdmin } from "./middleware";
-import { insertItemSchema, insertCustomerSchema, insertOrderSchema, insertOrderItemSchema, insertIndentSchema, insertShipmentSchema, insertBatchSchema, updateBatchSchema, insertInvoiceSchema, insertAccessorySchema } from "@shared/schema";
+import { insertItemSchema, insertCustomerSchema, insertOrderSchema, insertOrderItemSchema, insertIndentSchema, insertShipmentSchema, insertBatchSchema, updateBatchSchema, insertInvoiceSchema, insertAccessorySchema, insertCasterSchema } from "@shared/schema";
 import { db } from "./db/client";
 import { batches } from "@shared/schema";
 import { eq } from "drizzle-orm";
@@ -241,29 +241,60 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/batches", async (req, res) => {
     try {
-      // Extract and validate only required fields via schema
+      // Extract and validate required fields
       const requiredInput = {
         item_id: req.body.item_id,
         batch_number: req.body.batch_number,
-        received_date: req.body.received_date,
-        quantity_produced: req.body.quantity_produced
+        received_date: req.body.received_date
       };
 
       // Schema validation for required fields only
       const validated = insertBatchSchema.pick({
         item_id: true,
         batch_number: true,
-        received_date: true,
-        quantity_produced: true
+        received_date: true
       }).parse(requiredInput);
 
-      // Handle optional fields separately (preserve caller intent)
+      // Handle caster field (optional)
+      const caster_id = req.body.caster_id ? parseInt(req.body.caster_id) : null;
+      if (caster_id) {
+        const caster = await storage.getCasterById(caster_id);
+        if (!caster) {
+          return res.status(404).json({ message: `Caster with ID ${caster_id} not found` });
+        }
+      }
+
+      // Handle quantity fields
+      const quantity_received = parseInt(req.body.quantity_received) || 0;
+      const quantity_rejected = parseInt(req.body.quantity_rejected) || 0;
+      
+      // Calculate expected final qty (received - rejected)
+      const expectedFinalQty = quantity_received - quantity_rejected;
+      
+      // If quantity_produced is provided and differs from expected, it's a manual override
+      let quantity_produced: number;
+      let is_manual_quantity = false;
+      
+      if (req.body.quantity_produced !== undefined && req.body.quantity_produced !== null && req.body.quantity_produced !== '') {
+        quantity_produced = parseInt(req.body.quantity_produced);
+        is_manual_quantity = quantity_produced !== expectedFinalQty;
+      } else {
+        quantity_produced = Math.max(0, expectedFinalQty);
+      }
+
+      // Handle optional fields
       const quality_status = req.body.quality_status ?? 'Good';
       const notes = req.body.notes ?? null;
 
       // Additional business rules validation
-      if (validated.quantity_produced < 0) {
-        return res.status(400).json({ message: "Quantity produced cannot be negative" });
+      if (quantity_produced < 0) {
+        return res.status(400).json({ message: "Final quantity cannot be negative" });
+      }
+      if (quantity_received < 0) {
+        return res.status(400).json({ message: "Received quantity cannot be negative" });
+      }
+      if (quantity_rejected < 0) {
+        return res.status(400).json({ message: "Rejected quantity cannot be negative" });
       }
 
       // Validate ISO date format
@@ -285,17 +316,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       // Compute derived fields server-side
-      // For new batches: remaining = produced (no shipments/rejections yet)
+      // For new batches: remaining = produced (no shipments yet)
       const batchData = {
         item_id: validated.item_id,
+        caster_id: caster_id,
         batch_number: validated.batch_number,
         received_date: validated.received_date,
-        quantity_produced: validated.quantity_produced,
-        quantity_remaining: validated.quantity_produced,  // Server-computed
-        quantity_rejected: 0,                             // Server-computed
-        quality_status: quality_status,                   // Server-defaulted
-        is_depleted: validated.quantity_produced === 0,   // Server-computed
-        notes: notes                                      // Preserves empty strings
+        quantity_received: quantity_received,
+        quantity_rejected: quantity_rejected,
+        quantity_produced: quantity_produced,
+        quantity_remaining: quantity_produced,  // Server-computed (no shipments yet)
+        is_manual_quantity: is_manual_quantity,
+        quality_status: quality_status,
+        is_depleted: quantity_produced === 0,
+        notes: notes
       };
 
       // Create batch
@@ -907,6 +941,80 @@ export async function registerRoutes(app: Express): Promise<Server> {
       await storage.deleteAccessory(parseInt(req.params.id));
       res.status(204).send();
     } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Casters routes
+  app.get("/api/casters", async (req, res) => {
+    try {
+      const casters = await storage.getAllCasters();
+      res.json(casters);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.get("/api/casters/:id", async (req, res) => {
+    try {
+      const caster = await storage.getCasterById(parseInt(req.params.id));
+      if (!caster) {
+        return res.status(404).json({ message: "Caster not found" });
+      }
+      res.json(caster);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.get("/api/casters/:id/stats", async (req, res) => {
+    try {
+      const casterId = parseInt(req.params.id);
+      const caster = await storage.getCasterById(casterId);
+      if (!caster) {
+        return res.status(404).json({ message: "Caster not found" });
+      }
+      const stats = await storage.getCasterRejectionStats(casterId);
+      res.json(stats);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/casters", async (req, res) => {
+    try {
+      const validatedData = insertCasterSchema.parse(req.body);
+      const caster = await storage.createCaster(validatedData);
+      res.status(201).json(caster);
+    } catch (error: any) {
+      res.status(400).json({ message: error.message });
+    }
+  });
+
+  app.patch("/api/casters/:id", async (req, res) => {
+    try {
+      const validatedData = insertCasterSchema.partial().parse(req.body);
+      const caster = await storage.updateCaster(parseInt(req.params.id), validatedData);
+      if (!caster) {
+        return res.status(404).json({ message: "Caster not found" });
+      }
+      res.json(caster);
+    } catch (error: any) {
+      res.status(400).json({ message: error.message });
+    }
+  });
+
+  app.delete("/api/casters/:id", async (req, res) => {
+    try {
+      await storage.deleteCaster(parseInt(req.params.id));
+      res.status(204).send();
+    } catch (error: any) {
+      // Check for foreign key constraint (caster used in batches)
+      if (error.message && error.message.toLowerCase().includes('foreign key constraint')) {
+        return res.status(400).json({ 
+          message: "Cannot delete this caster because they have existing batches. Please remove their batches first." 
+        });
+      }
       res.status(500).json({ message: error.message });
     }
   });

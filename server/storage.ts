@@ -21,6 +21,8 @@ import {
   type InsertInvoice,
   type Accessory,
   type InsertAccessory,
+  type Caster,
+  type InsertCaster,
   users,
   items,
   customers,
@@ -30,7 +32,8 @@ import {
   shipments,
   batches,
   invoices,
-  accessories
+  accessories,
+  casters
 } from "@shared/schema";
 
 export interface IStorage {
@@ -102,6 +105,13 @@ export interface IStorage {
   createAccessory(accessory: InsertAccessory): Promise<Accessory>;
   updateAccessory(id: number, accessory: Partial<InsertAccessory>): Promise<Accessory | undefined>;
   deleteAccessory(id: number): Promise<void>;
+
+  getAllCasters(): Promise<Caster[]>;
+  getCasterById(id: number): Promise<Caster | undefined>;
+  createCaster(caster: InsertCaster): Promise<Caster>;
+  updateCaster(id: number, caster: Partial<InsertCaster>): Promise<Caster | undefined>;
+  deleteCaster(id: number): Promise<void>;
+  getCasterRejectionStats(casterId: number): Promise<{ totalReceived: number; totalRejected: number; rejectionRate: number; batchesWithRejections: Array<{ batchNumber: string; itemName: string; received: number; rejected: number; receivedDate: string }> }>;
 }
 
 export class DbStorage implements IStorage {
@@ -323,23 +333,20 @@ export class DbStorage implements IStorage {
     }
     const [shipment] = await db.insert(shipments).values(shipmentData).returning();
     
-    // Update batch with new rejection totals (only if batch_number is provided)
+    // Update batch quantity_remaining (only if batch_number is provided)
+    // Note: Rejections are now tracked at batch creation (from caster), not at shipment
     if (shipment.batch_number) {
       const allShipmentsForBatch = await db.select().from(shipments)
         .where(eq(shipments.batch_number, shipment.batch_number));
-      
-      const totalRejected = allShipmentsForBatch.reduce((sum, s) => {
-        return sum + (s.rejections_blowholes || 0) + (s.rejections_handles || 0) + (s.rejections_other || 0);
-      }, 0);
       
       const totalShipped = allShipmentsForBatch.reduce((sum, s) => sum + s.quantity_shipped, 0);
       
       const [batch] = await db.select().from(batches).where(eq(batches.batch_number, shipment.batch_number));
       if (batch) {
-        const newRemaining = batch.quantity_produced - totalShipped - totalRejected;
+        // remaining = produced - rejected (at caster) - shipped
+        const newRemaining = batch.quantity_produced - batch.quantity_rejected - totalShipped;
         await db.update(batches)
           .set({
-            quantity_rejected: totalRejected,
             quantity_remaining: Math.max(0, newRemaining),
             is_depleted: newRemaining <= 0
           })
@@ -368,18 +375,13 @@ export class DbStorage implements IStorage {
       const oldBatchShipments = await db.select().from(shipments)
         .where(eq(shipments.batch_number, oldBatchNumber));
       
-      const oldTotalRejected = oldBatchShipments.reduce((sum, s) => {
-        return sum + (s.rejections_blowholes || 0) + (s.rejections_handles || 0) + (s.rejections_other || 0);
-      }, 0);
-      
       const oldTotalShipped = oldBatchShipments.reduce((sum, s) => sum + s.quantity_shipped, 0);
       
       const [oldBatch] = await db.select().from(batches).where(eq(batches.batch_number, oldBatchNumber));
       if (oldBatch) {
-        const oldNewRemaining = oldBatch.quantity_produced - oldTotalShipped - oldTotalRejected;
+        const oldNewRemaining = oldBatch.quantity_produced - oldBatch.quantity_rejected - oldTotalShipped;
         await db.update(batches)
           .set({
-            quantity_rejected: oldTotalRejected,
             quantity_remaining: Math.max(0, oldNewRemaining),
             is_depleted: oldNewRemaining <= 0
           })
@@ -392,18 +394,13 @@ export class DbStorage implements IStorage {
       const newBatchShipments = await db.select().from(shipments)
         .where(eq(shipments.batch_number, newBatchNumber));
       
-      const newTotalRejected = newBatchShipments.reduce((sum, s) => {
-        return sum + (s.rejections_blowholes || 0) + (s.rejections_handles || 0) + (s.rejections_other || 0);
-      }, 0);
-      
       const newTotalShipped = newBatchShipments.reduce((sum, s) => sum + s.quantity_shipped, 0);
       
       const [newBatch] = await db.select().from(batches).where(eq(batches.batch_number, newBatchNumber));
       if (newBatch) {
-        const newNewRemaining = newBatch.quantity_produced - newTotalShipped - newTotalRejected;
+        const newNewRemaining = newBatch.quantity_produced - newBatch.quantity_rejected - newTotalShipped;
         await db.update(batches)
           .set({
-            quantity_rejected: newTotalRejected,
             quantity_remaining: Math.max(0, newNewRemaining),
             is_depleted: newNewRemaining <= 0
           })
@@ -424,23 +421,18 @@ export class DbStorage implements IStorage {
     // Delete the shipment
     await db.delete(shipments).where(eq(shipments.id, id));
     
-    // Update batch with new rejection totals (only if batch_number exists)
+    // Update batch quantity_remaining (only if batch_number exists)
     if (batchNumber) {
       const allShipmentsForBatch = await db.select().from(shipments)
         .where(eq(shipments.batch_number, batchNumber));
-      
-      const totalRejected = allShipmentsForBatch.reduce((sum, s) => {
-        return sum + (s.rejections_blowholes || 0) + (s.rejections_handles || 0) + (s.rejections_other || 0);
-      }, 0);
       
       const totalShipped = allShipmentsForBatch.reduce((sum, s) => sum + s.quantity_shipped, 0);
       
       const [batch] = await db.select().from(batches).where(eq(batches.batch_number, batchNumber));
       if (batch) {
-        const newRemaining = batch.quantity_produced - totalShipped - totalRejected;
+        const newRemaining = batch.quantity_produced - batch.quantity_rejected - totalShipped;
         await db.update(batches)
           .set({
-            quantity_rejected: totalRejected,
             quantity_remaining: Math.max(0, newRemaining),
             is_depleted: newRemaining <= 0
           })
@@ -878,28 +870,21 @@ export class DbStorage implements IStorage {
     // Get all shipments
     const allShipments = await db.select().from(shipments);
     
-    // Calculate shipped quantities and rejected quantities per order item
+    // Calculate shipped quantities per order item
+    // Note: Rejections are now tracked at batch level (caster receipt), not shipment level
+    // Customer rejections don't trigger replacements - orders are considered complete
     const shippedByOrderItem: Record<number, number> = {};
-    const rejectedByOrderItem: Record<number, number> = {};
     allShipments.forEach(shipment => {
       shippedByOrderItem[shipment.order_item_id] = 
         (shippedByOrderItem[shipment.order_item_id] || 0) + shipment.quantity_shipped;
-      
-      const totalRejected = (shipment.rejections_blowholes || 0) + 
-                           (shipment.rejections_handles || 0) + 
-                           (shipment.rejections_other || 0);
-      rejectedByOrderItem[shipment.order_item_id] = 
-        (rejectedByOrderItem[shipment.order_item_id] || 0) + totalRejected;
     });
     
-    // Calculate pending (ordered - shipped + rejected) per item
-    // Rejected pieces need to be replaced, so they add to pending quantity
+    // Calculate pending (ordered - shipped) per item
     const pending: Record<number, number> = {};
     allOrderItems.forEach(oi => {
       if (activeOrderIds.has(oi.order_id)) {
         const shipped = shippedByOrderItem[oi.id] || 0;
-        const rejected = rejectedByOrderItem[oi.id] || 0;
-        const pendingQty = oi.quantity - shipped + rejected;
+        const pendingQty = oi.quantity - shipped;
         if (pendingQty > 0) {
           pending[oi.item_id] = (pending[oi.item_id] || 0) + pendingQty;
         }
@@ -966,6 +951,75 @@ export class DbStorage implements IStorage {
 
   async deleteAccessory(id: number): Promise<void> {
     await db.delete(accessories).where(eq(accessories.id, id));
+  }
+
+  async getAllCasters(): Promise<Caster[]> {
+    return await db.select().from(casters);
+  }
+
+  async getCasterById(id: number): Promise<Caster | undefined> {
+    const [caster] = await db.select().from(casters).where(eq(casters.id, id));
+    return caster;
+  }
+
+  async createCaster(insertCaster: InsertCaster): Promise<Caster> {
+    const [caster] = await db.insert(casters).values(insertCaster).returning();
+    return caster;
+  }
+
+  async updateCaster(id: number, updates: Partial<InsertCaster>): Promise<Caster | undefined> {
+    const [caster] = await db.update(casters).set(updates).where(eq(casters.id, id)).returning();
+    return caster;
+  }
+
+  async deleteCaster(id: number): Promise<void> {
+    await db.delete(casters).where(eq(casters.id, id));
+  }
+
+  async getCasterRejectionStats(casterId: number): Promise<{ 
+    totalReceived: number; 
+    totalRejected: number; 
+    rejectionRate: number; 
+    batchesWithRejections: Array<{ batchNumber: string; itemName: string; received: number; rejected: number; receivedDate: string }> 
+  }> {
+    // Get all batches for this caster
+    const casterBatches = await db.select().from(batches).where(eq(batches.caster_id, casterId));
+    
+    // Get all items for names
+    const allItems = await db.select().from(items);
+    const itemMap = new Map(allItems.map(i => [i.id, i.name]));
+    
+    let totalReceived = 0;
+    let totalRejected = 0;
+    const batchesWithRejections: Array<{ batchNumber: string; itemName: string; received: number; rejected: number; receivedDate: string }> = [];
+    
+    casterBatches.forEach(batch => {
+      totalReceived += batch.quantity_received || 0;
+      totalRejected += batch.quantity_rejected || 0;
+      
+      // Only include batches that have rejections
+      if (batch.quantity_rejected > 0) {
+        batchesWithRejections.push({
+          batchNumber: batch.batch_number,
+          itemName: itemMap.get(batch.item_id) || 'Unknown',
+          received: batch.quantity_received || 0,
+          rejected: batch.quantity_rejected,
+          receivedDate: batch.received_date
+        });
+      }
+    });
+    
+    // Sort by received_date descending
+    batchesWithRejections.sort((a, b) => b.receivedDate.localeCompare(a.receivedDate));
+    
+    const rejectionRate = totalReceived > 0 ? (totalRejected / totalReceived) * 100 : 0;
+    
+    return {
+      totalReceived,
+      totalRejected,
+      rejectionRate,
+      batchesWithRejections
+    };
   }
 }
 

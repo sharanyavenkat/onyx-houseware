@@ -24,17 +24,22 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import type { Item } from "@shared/schema";
+import type { Item, Caster } from "@shared/schema";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useMutation } from "@tanstack/react-query";
-import { useForm } from "react-hook-form";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { useForm, useWatch } from "react-hook-form";
 import { z } from "zod";
+import { useEffect } from "react";
+import { Badge } from "@/components/ui/badge";
 
 const batchFormSchema = z.object({
   item_id: z.string().min(1, "Item is required"),
+  caster_id: z.string().optional(),
   batch_number: z.string().min(1, "Batch number is required"),
   received_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Invalid date format"),
-  quantity_produced: z.string().min(1, "Quantity is required"),
+  quantity_received: z.string().min(1, "Received quantity is required"),
+  quantity_rejected: z.string().optional(),
+  quantity_produced: z.string().min(1, "Final quantity is required"),
   quality_status: z.enum(["Good", "Acceptable", "Rejected"]),
   notes: z.string().optional(),
 });
@@ -54,31 +59,58 @@ export default function BatchFormModal({
 }: BatchFormModalProps) {
   const { toast } = useToast();
 
+  const { data: casters = [] } = useQuery<Caster[]>({
+    queryKey: ['/api/casters'],
+  });
+
   const form = useForm<BatchFormData>({
     resolver: zodResolver(batchFormSchema),
     defaultValues: {
       item_id: "",
+      caster_id: "",
       batch_number: "",
       received_date: new Date().toISOString().split("T")[0],
+      quantity_received: "",
+      quantity_rejected: "0",
       quantity_produced: "",
       quality_status: "Good",
       notes: "",
     },
   });
 
+  const quantityReceived = useWatch({ control: form.control, name: "quantity_received" }) || "";
+  const quantityRejected = useWatch({ control: form.control, name: "quantity_rejected" }) || "";
+  const quantityProduced = useWatch({ control: form.control, name: "quantity_produced" }) || "";
+
+  const expectedFinalQty = Math.max(0, (parseInt(quantityReceived) || 0) - (parseInt(quantityRejected) || 0));
+  const isManualOverride = quantityProduced !== "" && parseInt(quantityProduced) !== expectedFinalQty;
+
+  useEffect(() => {
+    const received = parseInt(quantityReceived) || 0;
+    const rejected = parseInt(quantityRejected) || 0;
+    const calculated = Math.max(0, received - rejected);
+    
+    if (!isManualOverride || quantityProduced === "") {
+      form.setValue("quantity_produced", calculated.toString());
+    }
+  }, [quantityReceived, quantityRejected]);
+
   const createMutation = useMutation({
     mutationFn: async (data: any) => {
-      // Convert string values to proper types
       const payload = {
         ...data,
         item_id: parseInt(data.item_id),
-        quantity_produced: parseFloat(data.quantity_produced),
+        caster_id: data.caster_id ? parseInt(data.caster_id) : null,
+        quantity_received: parseInt(data.quantity_received) || 0,
+        quantity_rejected: parseInt(data.quantity_rejected) || 0,
+        quantity_produced: parseInt(data.quantity_produced) || 0,
       };
       return await apiRequest("POST", "/api/batches", payload);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/batches"] });
       queryClient.invalidateQueries({ queryKey: ["/api/batches/on-hand-stock"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/casters"] });
       toast({ title: "Batch created successfully" });
       form.reset();
       onOpenChange(false);
@@ -96,7 +128,6 @@ export default function BatchFormModal({
     createMutation.mutate(data);
   };
 
-  // Auto-format batch number when item or date changes
   const handleItemOrDateChange = () => {
     const itemId = form.watch("item_id");
     const receivedDate = form.watch("received_date");
@@ -104,7 +135,6 @@ export default function BatchFormModal({
     if (itemId && receivedDate) {
       const item = items.find((i) => i.id === parseInt(itemId));
       if (item) {
-        // Format: SKU (without hyphens) + YYMMDD
         const sku = item.sku.replace(/-/g, "");
         const date = new Date(receivedDate);
         const yy = date.getFullYear().toString().slice(-2);
@@ -116,14 +146,18 @@ export default function BatchFormModal({
     }
   };
 
+  const handleRecalculate = () => {
+    form.setValue("quantity_produced", expectedFinalQty.toString());
+  };
+
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
-      <DialogContent>
+      <DialogContent className="max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Create New Batch</DialogTitle>
         </DialogHeader>
         <Form {...form}>
-          <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4 flex-1 overflow-y-auto pr-2">
+          <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4">
             <FormField
               control={form.control}
               name="item_id"
@@ -150,6 +184,35 @@ export default function BatchFormModal({
                             {item.name} ({item.sku})
                           </SelectItem>
                         ))}
+                    </SelectContent>
+                  </Select>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name="caster_id"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Caster (Optional)</FormLabel>
+                  <Select
+                    value={field.value}
+                    onValueChange={field.onChange}
+                  >
+                    <FormControl>
+                      <SelectTrigger data-testid="select-batch-caster">
+                        <SelectValue placeholder="Select caster" />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      <SelectItem value="">No caster</SelectItem>
+                      {casters.map((caster) => (
+                        <SelectItem key={caster.id} value={caster.id.toString()}>
+                          {caster.name}
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                   <FormMessage />
@@ -200,23 +263,102 @@ export default function BatchFormModal({
               )}
             />
 
+            <div className="grid grid-cols-2 gap-4">
+              <FormField
+                control={form.control}
+                name="quantity_received"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Qty Received</FormLabel>
+                    <FormControl>
+                      <Input
+                        type="text"
+                        inputMode="numeric"
+                        pattern="[0-9]*"
+                        {...field}
+                        onChange={(e) => {
+                          const value = e.target.value.replace(/[^0-9]/g, '');
+                          field.onChange(value);
+                        }}
+                        placeholder="0"
+                        data-testid="input-quantity-received"
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="quantity_rejected"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Qty Rejected (QC)</FormLabel>
+                    <FormControl>
+                      <Input
+                        type="text"
+                        inputMode="numeric"
+                        pattern="[0-9]*"
+                        {...field}
+                        onChange={(e) => {
+                          const value = e.target.value.replace(/[^0-9]/g, '');
+                          field.onChange(value);
+                        }}
+                        placeholder="0"
+                        data-testid="input-quantity-rejected"
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </div>
+
             <FormField
               control={form.control}
               name="quantity_produced"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Quantity Produced</FormLabel>
+                  <div className="flex items-center gap-2">
+                    <FormLabel>Final Quantity (Available)</FormLabel>
+                    {isManualOverride && (
+                      <Badge variant="outline" className="text-xs">
+                        Manual Override
+                      </Badge>
+                    )}
+                  </div>
                   <FormControl>
-                    <Input
-                      type="number"
-                      min="0"
-                      step="1"
-                      {...field}
-                      placeholder="Enter quantity produced"
-                      data-testid="input-quantity-produced"
-                    />
+                    <div className="flex gap-2">
+                      <Input
+                        type="text"
+                        inputMode="numeric"
+                        pattern="[0-9]*"
+                        {...field}
+                        onChange={(e) => {
+                          const value = e.target.value.replace(/[^0-9]/g, '');
+                          field.onChange(value);
+                        }}
+                        placeholder="Auto-calculated"
+                        data-testid="input-quantity-produced"
+                      />
+                      {isManualOverride && (
+                        <Button 
+                          type="button" 
+                          variant="outline" 
+                          size="sm"
+                          onClick={handleRecalculate}
+                          data-testid="button-recalculate"
+                        >
+                          Reset
+                        </Button>
+                      )}
+                    </div>
                   </FormControl>
                   <FormMessage />
+                  <p className="text-sm text-muted-foreground">
+                    Expected: {expectedFinalQty} (received - rejected)
+                  </p>
                 </FormItem>
               )}
             />

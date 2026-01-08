@@ -177,33 +177,25 @@ export default function InvoiceSection({ orderId, shipments, items }: InvoiceSec
   };
 
   const getShipmentDisplay = (shipment: Shipment) => {
-    const totalRejected = (shipment.rejections_blowholes || 0) + 
-                          (shipment.rejections_handles || 0) + 
-                          (shipment.rejections_other || 0);
     const itemName = getItemName(shipment.order_item_id);
-    return `${shipment.shipment_number || `#${shipment.id}`} - ${itemName} x${shipment.quantity_shipped}${totalRejected > 0 ? ` (${totalRejected} rej)` : ''}`;
+    return `${shipment.shipment_number || `#${shipment.id}`} - ${itemName} x${shipment.quantity_shipped}`;
   };
 
   const getInvoiceSummary = (invoice: Invoice) => {
     const linkedShipments = shipments.filter(s => s.invoice_id === invoice.id);
     if (linkedShipments.length === 0) return "No shipments linked";
 
-    const itemSummary: Record<string, { shipped: number; rejected: number }> = {};
+    const itemSummary: Record<string, number> = {};
     linkedShipments.forEach(s => {
       const itemName = getItemName(s.order_item_id);
       if (!itemSummary[itemName]) {
-        itemSummary[itemName] = { shipped: 0, rejected: 0 };
+        itemSummary[itemName] = 0;
       }
-      itemSummary[itemName].shipped += s.quantity_shipped;
-      itemSummary[itemName].rejected += (s.rejections_blowholes || 0) + 
-                                         (s.rejections_handles || 0) + 
-                                         (s.rejections_other || 0);
+      itemSummary[itemName] += s.quantity_shipped;
     });
 
     return Object.entries(itemSummary)
-      .map(([name, { shipped, rejected }]) => 
-        `${name} x${shipped}${rejected > 0 ? ` (${rejected} rej)` : ''}`
-      )
+      .map(([name, shipped]) => `${name} x${shipped}`)
       .join(", ");
   };
 

@@ -29,7 +29,7 @@ import { formatDate, toInputDate } from "@/lib/dateUtils";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { Batch, Shipment } from "@shared/schema";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { AlertTriangle, Edit, Package, Plus } from "lucide-react";
+import { Edit, Package, Plus } from "lucide-react";
 import { useMemo, useState } from "react";
 import ConfirmDialog from "./ConfirmDialog";
 
@@ -61,9 +61,6 @@ export default function ShipmentTracking({
   const [batchNumber, setBatchNumber] = useState("");
   const [quantityShipped, setQuantityShipped] = useState("");
   const [shipmentDate, setShipmentDate] = useState("");
-  const [rejectionsBlowhole, setRejectionsBlowhole] = useState("");
-  const [rejectionsHandles, setRejectionsHandles] = useState("");
-  const [rejectionsOther, setRejectionsOther] = useState("");
 
   const { data: shipments = [] } = useQuery<Shipment[]>({
     queryKey: ["/api/shipments/order-item", orderItemId],
@@ -75,7 +72,6 @@ export default function ShipmentTracking({
     enabled: isOpen,
   });
 
-  // Fetch active batches for this item
   const { data: availableBatches = [] } = useQuery<Batch[]>({
     queryKey: ["/api/batches/active/by-item", itemId],
     queryFn: async () => {
@@ -111,9 +107,6 @@ export default function ShipmentTracking({
       });
       queryClient.invalidateQueries({
         queryKey: ["/api/orders/pending-by-item"],
-      });
-      queryClient.invalidateQueries({
-        queryKey: ["/api/batches/rejected-by-item"],
       });
       toast({ title: "Shipment recorded successfully" });
       resetForm();
@@ -153,9 +146,6 @@ export default function ShipmentTracking({
       });
       queryClient.invalidateQueries({
         queryKey: ["/api/orders/pending-by-item"],
-      });
-      queryClient.invalidateQueries({
-        queryKey: ["/api/batches/rejected-by-item"],
       });
       toast({ title: "Shipment updated successfully" });
       resetForm();
@@ -197,9 +187,6 @@ export default function ShipmentTracking({
       queryClient.invalidateQueries({
         queryKey: ["/api/orders/pending-by-item"],
       });
-      queryClient.invalidateQueries({
-        queryKey: ["/api/batches/rejected-by-item"],
-      });
       toast({ title: "Shipment deleted successfully" });
     },
     onError: (error: Error) => {
@@ -215,9 +202,6 @@ export default function ShipmentTracking({
     setBatchNumber("");
     setQuantityShipped("");
     setShipmentDate("");
-    setRejectionsBlowhole("");
-    setRejectionsHandles("");
-    setRejectionsOther("");
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -236,9 +220,6 @@ export default function ShipmentTracking({
       order_item_id: orderItemId,
       batch_number: batchNumber,
       quantity_shipped: parseInt(quantityShipped),
-      rejections_blowholes: parseInt(rejectionsBlowhole) || 0,
-      rejections_handles: parseInt(rejectionsHandles) || 0,
-      rejections_other: parseInt(rejectionsOther) || 0,
       shipment_date: shipmentDate,
     };
 
@@ -254,9 +235,6 @@ export default function ShipmentTracking({
     setBatchNumber(shipment.batch_number || "");
     setQuantityShipped(shipment.quantity_shipped.toString());
     setShipmentDate(toInputDate(shipment.shipment_date));
-    setRejectionsBlowhole(shipment.rejections_blowholes.toString());
-    setRejectionsHandles(shipment.rejections_handles.toString());
-    setRejectionsOther(shipment.rejections_other.toString());
     setIsFormOpen(true);
   };
 
@@ -278,24 +256,10 @@ export default function ShipmentTracking({
       (sum, s) => sum + s.quantity_shipped,
       0
     );
-    const totalRejections = shipments.reduce(
-      (sum, s) =>
-        sum +
-        s.rejections_blowholes +
-        s.rejections_handles +
-        s.rejections_other,
-      0
-    );
-    const totalAccepted = Math.max(
-      0,
-      Math.min(totalShipped - totalRejections, orderedQuantity)
-    );
-    const remaining = orderedQuantity - totalAccepted;
+    const remaining = orderedQuantity - totalShipped;
 
     return {
       totalShipped,
-      totalRejections,
-      totalAccepted,
       remaining: Math.max(0, remaining),
     };
   }, [shipments, orderedQuantity]);
@@ -311,7 +275,7 @@ export default function ShipmentTracking({
         </DialogHeader>
 
         <div className="space-y-6">
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
+          <div className="grid grid-cols-3 gap-3 sm:gap-4">
             <Card>
               <CardHeader className="pb-2 sm:pb-3 px-3 sm:px-6 pt-3 sm:pt-6">
                 <CardTitle className="text-xs sm:text-sm font-medium text-muted-foreground">
@@ -347,28 +311,12 @@ export default function ShipmentTracking({
             <Card>
               <CardHeader className="pb-2 sm:pb-3 px-3 sm:px-6 pt-3 sm:pt-6">
                 <CardTitle className="text-xs sm:text-sm font-medium text-muted-foreground">
-                  Rejections
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="px-3 sm:px-6 pb-3 sm:pb-6">
-                <p
-                  className="text-xl sm:text-2xl font-bold text-destructive"
-                  data-testid="text-total-rejections"
-                >
-                  {summary.totalRejections}
-                </p>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader className="pb-2 sm:pb-3 px-3 sm:px-6 pt-3 sm:pt-6">
-                <CardTitle className="text-xs sm:text-sm font-medium text-muted-foreground">
                   Remaining
                 </CardTitle>
               </CardHeader>
               <CardContent className="px-3 sm:px-6 pb-3 sm:pb-6">
                 <p
-                  className="text-xl sm:text-2xl font-bold"
+                  className={`text-xl sm:text-2xl font-bold ${summary.remaining > 0 ? 'text-amber-600' : 'text-green-600'}`}
                   data-testid="text-remaining-quantity"
                 >
                   {summary.remaining}
@@ -456,69 +404,6 @@ export default function ShipmentTracking({
                       </div>
                     </div>
 
-                    <div>
-                      <Label className="text-sm font-semibold mb-2 flex items-center gap-1">
-                        <AlertTriangle className="h-4 w-4" />
-                        Rejections (Optional)
-                      </Label>
-                      <div className="grid grid-cols-3 gap-4 mt-2">
-                        <div>
-                          <Label
-                            htmlFor="rejections_blowholes"
-                            className="text-xs"
-                          >
-                            Blowholes
-                          </Label>
-                          <Input
-                            id="rejections_blowholes"
-                            type="number"
-                            min="0"
-                            value={rejectionsBlowhole}
-                            onChange={(e) =>
-                              setRejectionsBlowhole(e.target.value)
-                            }
-                            placeholder="0"
-                            data-testid="input-rejections-blowholes"
-                          />
-                        </div>
-
-                        <div>
-                          <Label
-                            htmlFor="rejections_handles"
-                            className="text-xs"
-                          >
-                            Handles
-                          </Label>
-                          <Input
-                            id="rejections_handles"
-                            type="number"
-                            min="0"
-                            value={rejectionsHandles}
-                            onChange={(e) =>
-                              setRejectionsHandles(e.target.value)
-                            }
-                            placeholder="0"
-                            data-testid="input-rejections-handles"
-                          />
-                        </div>
-
-                        <div>
-                          <Label htmlFor="rejections_other" className="text-xs">
-                            Other
-                          </Label>
-                          <Input
-                            id="rejections_other"
-                            type="number"
-                            min="0"
-                            value={rejectionsOther}
-                            onChange={(e) => setRejectionsOther(e.target.value)}
-                            placeholder="0"
-                            data-testid="input-rejections-other"
-                          />
-                        </div>
-                      </div>
-                    </div>
-
                     <div className="flex gap-2 justify-end">
                       <Button
                         type="button"
@@ -551,158 +436,117 @@ export default function ShipmentTracking({
                         <TableHead>Batch</TableHead>
                         <TableHead>Date</TableHead>
                         <TableHead className="text-right">Shipped</TableHead>
-                        <TableHead className="text-right">Rejected</TableHead>
-                        <TableHead className="text-right">Accepted</TableHead>
                         {canMutate && <TableHead></TableHead>}
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {shipments.map((shipment) => {
-                        const totalRej =
-                          shipment.rejections_blowholes +
-                          shipment.rejections_handles +
-                          shipment.rejections_other;
-                        const accepted = shipment.quantity_shipped - totalRej;
-
-                        return (
-                          <TableRow
-                            key={shipment.id}
-                            data-testid={`row-shipment-${shipment.id}`}
-                          >
-                            <TableCell className="font-medium font-mono">
-                              {shipment.batch_number || "-"}
-                            </TableCell>
+                      {shipments.map((shipment) => (
+                        <TableRow
+                          key={shipment.id}
+                          data-testid={`row-shipment-${shipment.id}`}
+                        >
+                          <TableCell className="font-medium font-mono">
+                            {shipment.batch_number || "-"}
+                          </TableCell>
+                          <TableCell>
+                            {formatDate(shipment.shipment_date)}
+                          </TableCell>
+                          <TableCell className="text-right font-semibold">
+                            {shipment.quantity_shipped}
+                          </TableCell>
+                          {canMutate && (
                             <TableCell>
-                              {formatDate(shipment.shipment_date)}
+                              <div className="flex gap-2">
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => handleEdit(shipment)}
+                                  data-testid={`button-edit-shipment-${shipment.id}`}
+                                >
+                                  <Edit className="h-4 w-4" />
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => handleDelete(shipment.id)}
+                                  data-testid={`button-delete-shipment-${shipment.id}`}
+                                >
+                                  Delete
+                                </Button>
+                              </div>
                             </TableCell>
-                            <TableCell className="text-right">
-                              {shipment.quantity_shipped}
-                            </TableCell>
-                            <TableCell className="text-right text-destructive font-semibold">
-                              {totalRej}
-                            </TableCell>
-                            <TableCell className="text-right font-semibold">
-                              {accepted}
-                            </TableCell>
-                            {canMutate && (
-                              <TableCell>
-                                <div className="flex gap-2">
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={() => handleEdit(shipment)}
-                                    data-testid={`button-edit-shipment-${shipment.id}`}
-                                  >
-                                    <Edit className="h-4 w-4" />
-                                  </Button>
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={() => handleDelete(shipment.id)}
-                                    data-testid={`button-delete-shipment-${shipment.id}`}
-                                  >
-                                    Delete
-                                  </Button>
-                                </div>
-                              </TableCell>
-                            )}
-                          </TableRow>
-                        );
-                      })}
+                          )}
+                        </TableRow>
+                      ))}
                     </TableBody>
                   </Table>
                 </div>
 
                 {/* Mobile Cards */}
                 <div className="sm:hidden space-y-3">
-                  {shipments.map((shipment) => {
-                    const totalRej =
-                      shipment.rejections_blowholes +
-                      shipment.rejections_handles +
-                      shipment.rejections_other;
-                    const accepted = shipment.quantity_shipped - totalRej;
-
-                    return (
-                      <Card key={shipment.id} data-testid={`card-shipment-${shipment.id}`}>
-                        <CardContent className="p-4">
-                          <div className="flex justify-between items-start mb-3">
-                            <div>
-                              <div className="font-mono font-semibold">{shipment.batch_number || "-"}</div>
-                              <div className="text-sm text-muted-foreground">{formatDate(shipment.shipment_date)}</div>
+                  {shipments.map((shipment) => (
+                    <Card key={shipment.id} data-testid={`card-shipment-${shipment.id}`}>
+                      <CardContent className="p-4">
+                        <div className="flex justify-between items-start">
+                          <div>
+                            <div className="font-mono font-semibold">
+                              {shipment.batch_number || "-"}
                             </div>
-                            {canMutate && (
-                              <div className="flex gap-1">
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  onClick={() => handleEdit(shipment)}
-                                  data-testid={`button-edit-shipment-mobile-${shipment.id}`}
-                                >
-                                  <Edit className="h-4 w-4" />
-                                </Button>
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  onClick={() => handleDelete(shipment.id)}
-                                  data-testid={`button-delete-shipment-mobile-${shipment.id}`}
-                                  className="text-destructive"
-                                >
-                                  <span className="sr-only">Delete</span>
-                                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                                  </svg>
-                                </Button>
-                              </div>
-                            )}
-                          </div>
-                          <div className="grid grid-cols-3 gap-2 text-sm">
-                            <div>
-                              <div className="text-muted-foreground">Shipped</div>
-                              <div className="font-semibold">{shipment.quantity_shipped}</div>
-                            </div>
-                            <div>
-                              <div className="text-muted-foreground">Rejected</div>
-                              <div className="font-semibold text-destructive">{totalRej}</div>
-                            </div>
-                            <div>
-                              <div className="text-muted-foreground">Accepted</div>
-                              <div className="font-semibold">{accepted}</div>
+                            <div className="text-sm text-muted-foreground">
+                              {formatDate(shipment.shipment_date)}
                             </div>
                           </div>
-                        </CardContent>
-                      </Card>
-                    );
-                  })}
+                          <div className="text-right">
+                            <div className="font-bold text-lg">
+                              {shipment.quantity_shipped}
+                            </div>
+                            <div className="text-xs text-muted-foreground">shipped</div>
+                          </div>
+                        </div>
+                        {canMutate && (
+                          <div className="flex gap-2 mt-3 justify-end">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleEdit(shipment)}
+                              data-testid={`button-edit-shipment-mobile-${shipment.id}`}
+                            >
+                              <Edit className="h-4 w-4 mr-1" />
+                              Edit
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleDelete(shipment.id)}
+                              className="text-destructive"
+                              data-testid={`button-delete-shipment-mobile-${shipment.id}`}
+                            >
+                              Delete
+                            </Button>
+                          </div>
+                        )}
+                      </CardContent>
+                    </Card>
+                  ))}
                 </div>
               </>
             ) : (
-              <p className="text-sm text-muted-foreground text-center py-8">
-                No shipments recorded yet. Click "Add Shipment" to track your
-                deliveries.
-              </p>
+              <div className="text-center text-muted-foreground py-8">
+                No shipments recorded yet
+              </div>
             )}
           </div>
         </div>
 
-        <div className="flex justify-end pt-4 border-t flex-shrink-0">
-          <Button
-            variant="outline"
-            onClick={onClose}
-            data-testid="button-close-tracking"
-          >
-            Close
-          </Button>
-        </div>
+        <ConfirmDialog
+          open={isConfirmOpen}
+          onOpenChange={setIsConfirmOpen}
+          onConfirm={confirmDelete}
+          title="Delete Shipment"
+          description="Are you sure you want to delete this shipment? This action cannot be undone."
+          confirmText="Delete"
+        />
       </DialogContent>
-
-      <ConfirmDialog
-        open={isConfirmOpen}
-        onOpenChange={setIsConfirmOpen}
-        onConfirm={confirmDelete}
-        title="Delete Shipment"
-        description="Are you sure you want to delete this shipment? This action cannot be undone."
-        confirmText="Delete"
-      />
     </Dialog>
   );
 }

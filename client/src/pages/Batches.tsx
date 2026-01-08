@@ -17,7 +17,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
 import { formatDate } from "@/lib/dateUtils";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import type { Batch, Item } from "@shared/schema";
+import type { Batch, Item, Caster } from "@shared/schema";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import BatchFormModal from "../components/BatchFormModal";
@@ -44,17 +44,24 @@ export default function Batches() {
     queryKey: ["/api/items"],
   });
 
-  // Enrich batches with item information
+  // Fetch all casters
+  const { data: casters = [] } = useQuery<Caster[]>({
+    queryKey: ["/api/casters"],
+  });
+
+  // Enrich batches with item and caster information
   const enrichedBatches = useMemo(() => {
     return batches.map((batch) => {
       const item = items.find((i) => i.id === batch.item_id);
+      const caster = batch.caster_id ? casters.find((c) => c.id === batch.caster_id) : null;
       return {
         ...batch,
         item_name: item?.name || "Unknown Item",
         item_sku: item?.sku || "",
+        caster_name: caster?.name || null,
       };
     });
-  }, [batches, items]);
+  }, [batches, items, casters]);
 
   // Apply filters
   const filteredBatches = useMemo(() => {
@@ -307,6 +314,7 @@ export default function Batches() {
                         <thead className="bg-muted/50">
                           <tr>
                             <th className="text-left py-2 px-4 font-medium">Batch</th>
+                            <th className="text-left py-2 px-4 font-medium">Caster</th>
                             <th className="text-left py-2 px-4 font-medium">Received</th>
                             <th className="text-right py-2 px-4 font-medium">Produced</th>
                             <th className="text-right py-2 px-4 font-medium">Remaining</th>
@@ -334,6 +342,9 @@ export default function Batches() {
                               >
                                 <td className="py-3 px-4 font-mono text-sm">
                                   {batch.batch_number}
+                                </td>
+                                <td className="py-3 px-4 text-sm text-muted-foreground">
+                                  {batch.caster_name || "-"}
                                 </td>
                                 <td className="py-3 px-4">
                                   {formatDate(batch.received_date)}
@@ -401,7 +412,10 @@ export default function Batches() {
                             <div className="flex justify-between items-start mb-3">
                               <div>
                                 <div className="font-mono font-semibold">{batch.batch_number}</div>
-                                <div className="text-sm text-muted-foreground">{formatDate(batch.received_date)}</div>
+                                <div className="text-sm text-muted-foreground">
+                                  {formatDate(batch.received_date)}
+                                  {batch.caster_name && ` • ${batch.caster_name}`}
+                                </div>
                               </div>
                               <div className="flex items-center gap-2">
                                 <Badge

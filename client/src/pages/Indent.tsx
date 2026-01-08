@@ -59,11 +59,6 @@ export default function IndentPage() {
     queryKey: ['/api/orders/pending-by-item'],
   });
 
-  // Fetch rejected quantities per item
-  const { data: rejectedByItem = {} } = useQuery<Record<number, number>>({
-    queryKey: ['/api/batches/rejected-by-item'],
-  });
-
   // Sort items: active first, then by name alphabetically
   const sortedItems = useMemo(() => {
     return [...items].sort((a, b) => {
@@ -105,7 +100,6 @@ export default function IndentPage() {
         desired_safety_stock: item.desired_safety_stock,
         current_safety_stock: currentSafetyStock,
         pending_order_qty: pendingQty,
-        total_rejected: rejectedByItem[item.id] || 0,
         working_stock: metrics.workingStock,
         usable_stock: metrics.usableStock,
         post_pending_stock: metrics.postPendingStock,
@@ -117,7 +111,7 @@ export default function IndentPage() {
         is_safety_buffer_breached: metrics.isSafetyBufferBreached,
       };
     });
-  }, [sortedItems, indents, pendingOrdersByItem, editingCells, onHandStock, rejectedByItem]);
+  }, [sortedItems, indents, pendingOrdersByItem, editingCells, onHandStock]);
 
   // Save mutation for indent data
   const saveIndentMutation = useMutation({
@@ -222,19 +216,12 @@ export default function IndentPage() {
       key: 'on_hand_stock', 
       label: 'Current Stock (from Batches)', 
       render: (value: number, row: any) => (
-        <div className="space-y-1">
-          <div 
-            className="font-mono text-sm px-2 py-1 bg-muted/30 rounded"
-            data-testid={`text-on-hand-stock-${row.id}`}
-            title="Real-time stock from batches (read-only)"
-          >
-            {value.toLocaleString()}
-          </div>
-          {row.total_rejected > 0 && (
-            <div className="text-xs text-destructive font-mono px-2" data-testid={`text-rejected-${row.id}`}>
-              Rejected: {row.total_rejected.toLocaleString()}
-            </div>
-          )}
+        <div 
+          className="font-mono text-sm px-2 py-1 bg-muted/30 rounded"
+          data-testid={`text-on-hand-stock-${row.id}`}
+          title="Real-time stock from batches (read-only)"
+        >
+          {value.toLocaleString()}
         </div>
       )
     },

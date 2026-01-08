@@ -115,11 +115,14 @@ export const batches = sqliteTable("batches", {
   item_id: integer("item_id")
     .notNull()
     .references(() => items.id),
+  caster_id: integer("caster_id").references(() => casters.id),
   batch_number: text("batch_number").notNull().unique(),
   received_date: text("received_date").notNull(),
+  quantity_received: integer("quantity_received").notNull().default(0),
+  quantity_rejected: integer("quantity_rejected").notNull().default(0),
   quantity_produced: integer("quantity_produced").notNull(),
   quantity_remaining: integer("quantity_remaining").notNull(),
-  quantity_rejected: integer("quantity_rejected").notNull().default(0),
+  is_manual_quantity: integer("is_manual_quantity", { mode: "boolean" }).notNull().default(false),
   quality_status: text("quality_status").notNull().default("Good"),
   notes: text("notes"),
   is_depleted: integer("is_depleted", { mode: "boolean" }).notNull().default(false),
@@ -131,11 +134,24 @@ export const insertBatchSchema = createInsertSchema(batches).omit({
 
 export const updateBatchSchema = z.object({
   batch_number: z.string().min(1).optional(),
+  caster_id: z.preprocess(
+    (val) => val === undefined || val === "" || val === null ? undefined : typeof val === "string" ? parseInt(val, 10) : val,
+    z.number().int().min(1).optional().nullable()
+  ),
   received_date: z.string().min(1).optional(),
+  quantity_received: z.preprocess(
+    (val) => val === undefined || val === "" ? undefined : typeof val === "string" ? parseInt(val, 10) : val,
+    z.number().int().min(0).optional()
+  ),
+  quantity_rejected: z.preprocess(
+    (val) => val === undefined || val === "" ? undefined : typeof val === "string" ? parseInt(val, 10) : val,
+    z.number().int().min(0).optional()
+  ),
   quantity_produced: z.preprocess(
     (val) => val === undefined || val === "" ? undefined : typeof val === "string" ? parseInt(val, 10) : val,
-    z.number().int().min(1).optional()
+    z.number().int().min(0).optional()
   ),
+  is_manual_quantity: z.boolean().optional(),
   quality_status: z.enum(["Good", "Acceptable", "Rejected"]).optional(),
   notes: z.string().optional(),
 }).refine(data => {
@@ -178,9 +194,6 @@ export const shipments = sqliteTable("shipments", {
   shipment_number: text("shipment_number"),
   batch_number: text("batch_number"),
   quantity_shipped: integer("quantity_shipped").notNull(),
-  rejections_blowholes: integer("rejections_blowholes").notNull().default(0),
-  rejections_handles: integer("rejections_handles").notNull().default(0),
-  rejections_other: integer("rejections_other").notNull().default(0),
   shipment_date: text("shipment_date").notNull(),
   invoice_id: integer("invoice_id").references(() => invoices.id, { onDelete: "set null" }),
 });
@@ -208,3 +221,17 @@ export const insertAccessorySchema = createInsertSchema(accessories).omit({
 
 export type InsertAccessory = z.infer<typeof insertAccessorySchema>;
 export type Accessory = typeof accessories.$inferSelect;
+
+export const casters = sqliteTable("casters", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  name: text("name").notNull(),
+  address: text("address"),
+  notes: text("notes"),
+});
+
+export const insertCasterSchema = createInsertSchema(casters).omit({
+  id: true,
+});
+
+export type InsertCaster = z.infer<typeof insertCasterSchema>;
+export type Caster = typeof casters.$inferSelect;

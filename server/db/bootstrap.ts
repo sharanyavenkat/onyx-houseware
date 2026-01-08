@@ -322,6 +322,103 @@ export async function bootstrapDatabase() {
       "status"
     );
 
+    // Create casters table for tracking casting suppliers
+    await db.run(sql`
+      CREATE TABLE IF NOT EXISTS casters (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        address TEXT,
+        notes TEXT
+      )
+    `);
+
+    // Add caster_id column to batches table (references casters)
+    await addColumnIfNotExists(
+      "batches",
+      "caster_id INTEGER REFERENCES casters(id)",
+      "caster_id"
+    );
+
+    // Add quantity_received column to batches table (raw qty from caster before QC)
+    await addColumnIfNotExists(
+      "batches",
+      "quantity_received INTEGER NOT NULL DEFAULT 0",
+      "quantity_received"
+    );
+
+    // Add is_manual_quantity column to batches table (when final qty differs from calculated)
+    await addColumnIfNotExists(
+      "batches",
+      "is_manual_quantity INTEGER NOT NULL DEFAULT 0",
+      "is_manual_quantity"
+    );
+
+    // Migration: For existing batches, set quantity_received = quantity_produced + quantity_rejected
+    try {
+      const result = await db.run(sql`
+        UPDATE batches 
+        SET quantity_received = quantity_produced + quantity_rejected 
+        WHERE quantity_received = 0 AND quantity_produced > 0
+      `);
+      if (result.changes && result.changes > 0) {
+        console.log(`✅ Backfilled quantity_received for ${result.changes} existing batches`);
+      }
+    } catch (error: any) {
+      console.log("ℹ️ Batch quantity_received backfill skipped");
+    }
+
+    // Migration: Remove rejection columns from shipments table (January 2026)
+    // Rejections now happen at caster receipt (batch level), not at customer shipment
+    try {
+      const tableInfo = await db.all(sql`PRAGMA table_info(shipments)`);
+      const hasRejectionsColumns = tableInfo.some((col: any) => col.name === 'rejections_blowholes');
+      
+      if (hasRejectionsColumns) {
+        await db.run(sql`PRAGMA foreign_keys=OFF`);
+        
+        try {
+          await db.run(sql`BEGIN TRANSACTION`);
+          
+          // Create new shipments table without rejection columns
+          await db.run(sql`
+            CREATE TABLE shipments_new (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              order_id INTEGER NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+              order_item_id INTEGER NOT NULL REFERENCES order_items(id) ON DELETE CASCADE,
+              shipment_number TEXT,
+              batch_number TEXT,
+              quantity_shipped INTEGER NOT NULL,
+              shipment_date TEXT NOT NULL,
+              invoice_id INTEGER REFERENCES invoices(id) ON DELETE SET NULL
+            )
+          `);
+          
+          // Copy data (excluding rejection columns)
+          await db.run(sql`
+            INSERT INTO shipments_new (id, order_id, order_item_id, shipment_number, batch_number, quantity_shipped, shipment_date, invoice_id)
+            SELECT id, order_id, order_item_id, shipment_number, batch_number, quantity_shipped, shipment_date, invoice_id
+            FROM shipments
+          `);
+          
+          await db.run(sql`DROP TABLE shipments`);
+          await db.run(sql`ALTER TABLE shipments_new RENAME TO shipments`);
+          await db.run(sql`COMMIT`);
+          
+          console.log("✅ Removed rejection columns from shipments table (table rebuilt)");
+        } catch (rebuildError) {
+          await db.run(sql`ROLLBACK`);
+          throw rebuildError;
+        } finally {
+          await db.run(sql`PRAGMA foreign_keys=ON`);
+        }
+      }
+    } catch (error: any) {
+      const errorMessage = error?.message?.toLowerCase() || '';
+      if (!errorMessage.includes("no such column") && !errorMessage.includes("no such table")) {
+        console.log("ℹ️ Shipments rejection columns removal skipped:", error.message);
+      }
+    }
+
     // Migration: Remove product_type from items table (December 2025)
     // All items are now considered cookware; utensils go to accessories
     // Uses safe table rebuild approach for SQLite compatibility
