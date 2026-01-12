@@ -29,7 +29,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useForm, useWatch } from "react-hook-form";
 import { z } from "zod";
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { Badge } from "@/components/ui/badge";
 
 const batchFormSchema = z.object({
@@ -58,6 +58,7 @@ export default function BatchFormModal({
   items,
 }: BatchFormModalProps) {
   const { toast } = useToast();
+  const isManualOverrideRef = useRef(false);
 
   const { data: casters = [] } = useQuery<Caster[]>({
     queryKey: ['/api/casters'],
@@ -80,20 +81,20 @@ export default function BatchFormModal({
 
   const quantityReceived = useWatch({ control: form.control, name: "quantity_received" }) || "";
   const quantityRejected = useWatch({ control: form.control, name: "quantity_rejected" }) || "";
-  const quantityProduced = useWatch({ control: form.control, name: "quantity_produced" }) || "";
 
   const expectedFinalQty = Math.max(0, (parseInt(quantityReceived) || 0) - (parseInt(quantityRejected) || 0));
-  const isManualOverride = quantityProduced !== "" && parseInt(quantityProduced) !== expectedFinalQty;
 
   useEffect(() => {
-    const received = parseInt(quantityReceived) || 0;
-    const rejected = parseInt(quantityRejected) || 0;
-    const calculated = Math.max(0, received - rejected);
-    
-    if (!isManualOverride || quantityProduced === "") {
-      form.setValue("quantity_produced", calculated.toString());
+    if (!isManualOverrideRef.current) {
+      form.setValue("quantity_produced", expectedFinalQty.toString());
     }
-  }, [quantityReceived, quantityRejected]);
+  }, [quantityReceived, quantityRejected, expectedFinalQty, form]);
+
+  useEffect(() => {
+    if (!isOpen) {
+      isManualOverrideRef.current = false;
+    }
+  }, [isOpen]);
 
   const createMutation = useMutation({
     mutationFn: async (data: any) => {
@@ -147,8 +148,12 @@ export default function BatchFormModal({
   };
 
   const handleRecalculate = () => {
+    isManualOverrideRef.current = false;
     form.setValue("quantity_produced", expectedFinalQty.toString());
   };
+
+  const quantityProduced = useWatch({ control: form.control, name: "quantity_produced" }) || "";
+  const isManualOverride = isManualOverrideRef.current && quantityProduced !== "" && parseInt(quantityProduced) !== expectedFinalQty;
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
@@ -338,6 +343,9 @@ export default function BatchFormModal({
                         onChange={(e) => {
                           const value = e.target.value.replace(/[^0-9]/g, '');
                           field.onChange(value);
+                          if (parseInt(value) !== expectedFinalQty) {
+                            isManualOverrideRef.current = true;
+                          }
                         }}
                         placeholder="Auto-calculated"
                         data-testid="input-quantity-produced"

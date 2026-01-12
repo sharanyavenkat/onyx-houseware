@@ -23,20 +23,22 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
-import type { Batch } from "@shared/schema";
+import { Badge } from "@/components/ui/badge";
+import type { Batch, Caster } from "@shared/schema";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useEffect } from "react";
-import { useForm } from "react-hook-form";
+import { useEffect, useRef } from "react";
+import { useForm, useWatch } from "react-hook-form";
+import { useQuery } from "@tanstack/react-query";
 import { z } from "zod";
 import { Trash2 } from "lucide-react";
 
 const batchEditSchema = z.object({
   batch_number: z.string().min(1, "Batch number is required"),
+  caster_id: z.string().optional(),
   received_date: z.string().min(1, "Received date is required"),
-  quantity_produced: z.preprocess(
-    (val) => val === undefined || val === "" ? undefined : val,
-    z.number().int().min(1, "Produced quantity must be at least 1")
-  ),
+  quantity_received: z.string().min(1, "Received quantity is required"),
+  quantity_rejected: z.string().optional(),
+  quantity_produced: z.string().min(1, "Final quantity is required"),
   quality_status: z.enum(["Good", "Acceptable", "Rejected"]),
   notes: z.string().optional(),
 });
@@ -47,7 +49,7 @@ interface BatchEditDialogProps {
   isOpen: boolean;
   onOpenChange: (open: boolean) => void;
   batch: Batch | null;
-  onSave: (data: BatchEditData) => void;
+  onSave: (data: any) => void;
   onDelete?: () => void;
   isPending: boolean;
   isDeleting?: boolean;
@@ -62,48 +64,90 @@ export default function BatchEditDialog({
   isPending,
   isDeleting,
 }: BatchEditDialogProps) {
+  const isManualOverrideRef = useRef(false);
+
+  const { data: casters = [] } = useQuery<Caster[]>({
+    queryKey: ['/api/casters'],
+  });
+
   const form = useForm<BatchEditData>({
     resolver: zodResolver(batchEditSchema),
     defaultValues: {
       batch_number: "",
+      caster_id: "",
       received_date: "",
-      quantity_produced: 0,
+      quantity_received: "0",
+      quantity_rejected: "0",
+      quantity_produced: "0",
       quality_status: "Good",
       notes: "",
     },
   });
 
-  // Reset form when batch changes
+  const quantityReceived = useWatch({ control: form.control, name: "quantity_received" }) || "0";
+  const quantityRejected = useWatch({ control: form.control, name: "quantity_rejected" }) || "0";
+
+  const expectedFinalQty = Math.max(0, (parseInt(quantityReceived) || 0) - (parseInt(quantityRejected) || 0));
+
   useEffect(() => {
     if (batch) {
+      isManualOverrideRef.current = batch.is_manual_quantity || false;
       form.reset({
         batch_number: batch.batch_number,
+        caster_id: batch.caster_id ? batch.caster_id.toString() : "",
         received_date: batch.received_date,
-        quantity_produced: batch.quantity_produced,
+        quantity_received: batch.quantity_received?.toString() || "0",
+        quantity_rejected: batch.quantity_rejected?.toString() || "0",
+        quantity_produced: batch.quantity_produced.toString(),
         quality_status: batch.quality_status as "Good" | "Acceptable" | "Rejected",
         notes: batch.notes || "",
       });
     }
   }, [batch, form]);
 
+  useEffect(() => {
+    if (!isManualOverrideRef.current) {
+      form.setValue("quantity_produced", expectedFinalQty.toString());
+    }
+  }, [quantityReceived, quantityRejected, expectedFinalQty, form]);
+
+  const handleRecalculate = () => {
+    isManualOverrideRef.current = false;
+    form.setValue("quantity_produced", expectedFinalQty.toString());
+  };
+
   const handleSubmit = (data: BatchEditData) => {
-    onSave(data);
+    const payload = {
+      batch_number: data.batch_number,
+      caster_id: data.caster_id && data.caster_id !== "none" ? parseInt(data.caster_id) : null,
+      received_date: data.received_date,
+      quantity_received: parseInt(data.quantity_received) || 0,
+      quantity_rejected: parseInt(data.quantity_rejected || "0") || 0,
+      quantity_produced: parseInt(data.quantity_produced) || 0,
+      is_manual_quantity: isManualOverrideRef.current,
+      quality_status: data.quality_status,
+      notes: data.notes,
+    };
+    onSave(payload);
   };
 
   if (!batch) return null;
 
+  const casterName = batch.caster_id 
+    ? casters.find(c => c.id === batch.caster_id)?.name || "Unknown" 
+    : "None";
+
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
-      <DialogContent>
+      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Edit Batch</DialogTitle>
           <DialogDescription>
-            Update batch information and quality status
+            Update batch information including caster and QC rejection data
           </DialogDescription>
         </DialogHeader>
         
         <div className="grid grid-cols-2 gap-6 flex-1 overflow-y-auto pr-2">
-          {/* Left column - Current values */}
           <div className="space-y-3">
             <h3 className="font-medium text-sm text-muted-foreground">Current Values</h3>
             <div className="p-4 bg-muted rounded-md space-y-2">
@@ -111,16 +155,25 @@ export default function BatchEditDialog({
                 <span className="font-medium">Batch Number:</span> {batch.batch_number}
               </p>
               <p className="text-sm">
+                <span className="font-medium">Caster:</span> {casterName}
+              </p>
+              <p className="text-sm">
                 <span className="font-medium">Received Date:</span> {batch.received_date}
               </p>
               <p className="text-sm">
-                <span className="font-medium">Produced:</span> {batch.quantity_produced.toLocaleString()}
+                <span className="font-medium">Qty Received:</span> {(batch.quantity_received || 0).toLocaleString()}
               </p>
               <p className="text-sm">
-                <span className="font-medium">Shipped:</span> {(batch.quantity_produced - batch.quantity_remaining - batch.quantity_rejected).toLocaleString()}
+                <span className="font-medium">Qty Rejected (QC):</span> {batch.quantity_rejected.toLocaleString()}
               </p>
+              <div className="text-sm flex items-center gap-2">
+                <span className="font-medium">Final Qty:</span> {batch.quantity_produced.toLocaleString()}
+                {batch.is_manual_quantity && (
+                  <Badge variant="secondary" className="text-xs">Manual</Badge>
+                )}
+              </div>
               <p className="text-sm">
-                <span className="font-medium">Rejected:</span> {batch.quantity_rejected.toLocaleString()}
+                <span className="font-medium">Shipped:</span> {(batch.quantity_produced - batch.quantity_remaining).toLocaleString()}
               </p>
               <p className="text-sm">
                 <span className="font-medium">Remaining:</span> {batch.quantity_remaining.toLocaleString()}
@@ -129,12 +182,11 @@ export default function BatchEditDialog({
                 <span className="font-medium">Quality:</span> {batch.quality_status}
               </p>
               <p className="text-sm text-muted-foreground text-xs mt-3">
-                Formula: Remaining = Produced - Shipped - Rejected
+                Formula: Final = Received - Rejected (QC)
               </p>
             </div>
           </div>
 
-          {/* Right column - Edit form */}
           <div>
             <h3 className="font-medium text-sm text-muted-foreground mb-3">Edit Values</h3>
             <Form {...form}>
@@ -159,6 +211,35 @@ export default function BatchEditDialog({
 
                 <FormField
                   control={form.control}
+                  name="caster_id"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Caster (Optional)</FormLabel>
+                      <Select
+                        value={field.value || "none"}
+                        onValueChange={(value) => field.onChange(value === "none" ? "" : value)}
+                      >
+                        <FormControl>
+                          <SelectTrigger data-testid="select-edit-caster">
+                            <SelectValue placeholder="Select caster" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="none">No caster</SelectItem>
+                          {casters.map((caster) => (
+                            <SelectItem key={caster.id} value={caster.id.toString()}>
+                              {caster.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
                   name="received_date"
                   render={({ field }) => (
                     <FormItem>
@@ -176,24 +257,98 @@ export default function BatchEditDialog({
                   )}
                 />
 
+                <div className="grid grid-cols-2 gap-3">
+                  <FormField
+                    control={form.control}
+                    name="quantity_received"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Qty Received</FormLabel>
+                        <FormControl>
+                          <Input
+                            type="text"
+                            inputMode="numeric"
+                            pattern="[0-9]*"
+                            {...field}
+                            onChange={(e) => {
+                              const value = e.target.value.replace(/[^0-9]/g, '');
+                              field.onChange(value);
+                            }}
+                            data-testid="input-edit-quantity-received"
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="quantity_rejected"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Qty Rejected (QC)</FormLabel>
+                        <FormControl>
+                          <Input
+                            type="text"
+                            inputMode="numeric"
+                            pattern="[0-9]*"
+                            {...field}
+                            onChange={(e) => {
+                              const value = e.target.value.replace(/[^0-9]/g, '');
+                              field.onChange(value);
+                            }}
+                            data-testid="input-edit-quantity-rejected"
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+
                 <FormField
                   control={form.control}
                   name="quantity_produced"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Quantity Produced</FormLabel>
-                      <FormControl>
-                        <Input
-                          type="number"
-                          value={field.value || ""}
-                          onChange={(e) => {
-                            const value = e.target.value;
-                            const newValue = value === "" ? undefined : parseInt(value);
-                            field.onChange(newValue);
-                          }}
-                          data-testid="input-edit-quantity-produced"
-                        />
-                      </FormControl>
+                      <FormLabel className="flex items-center gap-2">
+                        Final Quantity
+                        {isManualOverrideRef.current && (
+                          <Badge variant="secondary" className="text-xs">Manual Override</Badge>
+                        )}
+                      </FormLabel>
+                      <div className="flex gap-2">
+                        <FormControl>
+                          <Input
+                            type="text"
+                            inputMode="numeric"
+                            pattern="[0-9]*"
+                            {...field}
+                            onChange={(e) => {
+                              const value = e.target.value.replace(/[^0-9]/g, '');
+                              field.onChange(value);
+                              if (parseInt(value) !== expectedFinalQty) {
+                                isManualOverrideRef.current = true;
+                              }
+                            }}
+                            data-testid="input-edit-quantity-produced"
+                          />
+                        </FormControl>
+                        {isManualOverrideRef.current && (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={handleRecalculate}
+                          >
+                            Reset
+                          </Button>
+                        )}
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        Expected: {expectedFinalQty.toLocaleString()} (Received - Rejected)
+                      </p>
                       <FormMessage />
                     </FormItem>
                   )}
@@ -222,22 +377,6 @@ export default function BatchEditDialog({
                   )}
                 />
 
-                <FormItem>
-                  <FormLabel>Rejected Quantity</FormLabel>
-                  <FormControl>
-                    <Input
-                      type="number"
-                      value={batch.quantity_rejected}
-                      disabled
-                      className="bg-muted cursor-not-allowed"
-                      data-testid="input-edit-quantity-rejected"
-                    />
-                  </FormControl>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Read-only: Rejections are tracked in shipments (blowholes, handles, other defects)
-                  </p>
-                </FormItem>
-
                 <FormField
                   control={form.control}
                   name="notes"
@@ -249,7 +388,7 @@ export default function BatchEditDialog({
                           {...field}
                           placeholder="Additional notes about this batch..."
                           className="resize-none"
-                          rows={4}
+                          rows={3}
                           data-testid="textarea-edit-notes"
                         />
                       </FormControl>
