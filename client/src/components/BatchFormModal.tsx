@@ -198,8 +198,8 @@ export default function BatchFormModal({
                 <FormItem>
                   <FormLabel>Caster (Optional)</FormLabel>
                   <Select
-                    value={field.value}
-                    onValueChange={field.onChange}
+                    value={field.value || "none"}
+                    onValueChange={(value) => field.onChange(value === "none" ? "" : value)}
                   >
                     <FormControl>
                       <SelectTrigger data-testid="select-batch-caster">
@@ -207,7 +207,7 @@ export default function BatchFormModal({
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>
-                      <SelectItem value="">No caster</SelectItem>
+                      <SelectItem value="none">No caster</SelectItem>
                       {casters.map((caster) => (
                         <SelectItem key={caster.id} value={caster.id.toString()}>
                           {caster.name}
