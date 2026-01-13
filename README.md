@@ -87,18 +87,21 @@ Preferred communication style: Simple, everyday language.
 - **Indents:** Monthly inventory planning with expected receipts and current safety stock (no opening balance - calculated from batches)
 - **Batches (Lot Tracking):**
   - Production batch/lot tracking with batch_number in SKU+YYMMDD format (e.g., TW280251122)
-  - Quantity fields: quantity (total produced), quantity_remaining (available), quantity_rejected (sum of rejections)
-  - Canonical invariant: `quantity_remaining = quantity - quantity_shipped - quantity_rejected`
+  - Quantity fields: quantity_received (from caster), quantity_rejected (at QC), quantity_produced (after QC), quantity_remaining (available for shipment)
+  - **Rejection happens at caster receipt (QC)**, not at customer shipment
+  - Canonical invariants:
+    - `quantity_produced = quantity_received - quantity_rejected` (final qty after QC)
+    - `quantity_remaining = quantity_produced - total_shipped` (no double subtraction of rejections)
   - Quality status: Good, Acceptable, or Rejected
-  - Metadata: receipt_date, notes, is_depleted flag
+  - Metadata: received_date, notes, is_depleted flag (renamed to "Empty" in UI)
   - **Single Source of Truth** for all inventory calculations
-  - Automatic updates via database triggers when shipments are created/modified/deleted
+  - Optional caster assignment for batch origin tracking
 - **Shipments:** 
   - Batch-based shipment tracking linking orders to specific batches
   - Required fields: order_id, order_item_id, batch_number (links to batches table)
-  - Rejection tracking: quantity_rejected_blowholes, quantity_rejected_handles, quantity_rejected_other
+  - Quantity shipped deducted from batch's quantity_remaining
   - Shipment date tracking
-  - Updates batch quantities automatically via triggers
+  - FIFO ordering: oldest batches displayed first in shipment forms
 
 **Type Conversions from PostgreSQL:**
 - `serial` → `integer` with autoIncrement
@@ -131,33 +134,31 @@ Preferred communication style: Simple, everyday language.
 - Purchase order number (PO) uniqueness validation
 - Date tracking for order date and fulfillment date
 
-**Pending Orders Calculation (November 2025 Architecture):**
-- **Formula:** `pending = ordered - shipped + rejected`
-- **Rationale:** Rejected pieces need replacement, so they count against fulfillment
+**Pending Orders Calculation:**
+- **Formula:** `pending = ordered - shipped`
+- **Rationale:** Rejections happen at caster receipt (batch QC), not at customer shipment, so they don't affect pending order calculations
 - **Single Source of Truth:** Backend method `getPendingOrdersByItem()` used across all pages (Dashboard, Indent, Order Details)
-- **Implementation:** Aggregates rejection totals (blowholes + handles + other) per order item from shipments table
 - **Consistency:** All UI components fetch from `/api/orders/pending-by-item` endpoint instead of local calculations
 
-**Shipment & Rejection Tracking (November 2025 Architecture):**
-- **Single Source of Truth:** Shipments table captures all rejection data at inspection time
-- **Batch-based shipments:** Each shipment links to order item with batch_number (required field, renamed from lot_number)
-- **Rejection Categories:** blowholes, handles, other defects tracked per shipment
-- **Read-only Aggregation:** `batch.quantity_rejected` is calculated sum of rejections, not directly editable
-- **Batch Updates:** Automated triggers update `batch.quantity_remaining` and `quantity_rejected` when shipments change
-- **Canonical Invariant:** `quantity_remaining = quantity_produced - quantity_shipped - quantity_rejected`
-- **UI Terminology:** "Batch number" (not "Lot number"), "Available" batches (not "Active"), "Desired Safety Stock" (not "Target")
-- **CRUD Operations:** Shipments can be added/edited/deleted per order item with rejection tracking
+**Batch Rejection Tracking:**
+- **Where rejections happen:** At caster receipt during quality check (QC), BEFORE batching into inventory
+- **Not at shipment:** Customer shipments do not track rejections - only quantity shipped
+- **Batch-based shipments:** Each shipment links to order item with batch_number (required field)
+- **Batch quantity invariants:**
+  - `quantity_produced = quantity_received - quantity_rejected` (final qty after QC)
+  - `quantity_remaining = quantity_produced - total_shipped` (available stock)
+- **UI Terminology:** "Batch number" (not "Lot number"), "Available" batches (not "Active"), "Empty" (not "Depleted"), "Desired Safety Stock" (not "Target")
+- **CRUD Operations:** Shipments can be added/edited/deleted per order item
 
-**Cache Invalidation Strategy (November 2025):**
+**Cache Invalidation Strategy:**
 - **Shipment Mutations** (create/update/delete) invalidate:
   - `/api/shipments/order-item` - Refresh shipment list for specific order item
   - `/api/orders` - Refresh order details
   - `/api/shipments` - Refresh all shipments
-  - `/api/batches` - Refresh batch list (quantity_remaining, quantity_rejected updates)
+  - `/api/batches` - Refresh batch list (quantity_remaining updates)
   - `/api/batches/active/by-item` - Refresh batch dropdown in shipment form
-  - `/api/batches/on-hand-stock` - Refresh real-time stock calculations (replaces opening-balance)
+  - `/api/batches/on-hand-stock` - Refresh real-time stock calculations
   - `/api/orders/pending-by-item` - Refresh pending orders on Dashboard and Indent
-  - `/api/batches/rejected-by-item` - Refresh rejection totals on Indent page
 - **Batch Mutations** (create/update/delete) invalidate:
   - `/api/batches` - Refresh batch list
   - `/api/batches/active/by-item` - Refresh available batches dropdown
