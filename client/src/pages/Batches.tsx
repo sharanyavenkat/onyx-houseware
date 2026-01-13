@@ -281,7 +281,7 @@ export default function Batches() {
                       </div>
                       <div className="text-center hidden sm:block">
                         <div className="text-xs text-muted-foreground mb-1">
-                          Produced
+                          Final Qty
                         </div>
                         <div className="text-sm">
                           {totalProduced.toLocaleString()}
@@ -290,7 +290,7 @@ export default function Batches() {
                       {totalRejected > 0 && (
                         <div className="text-center">
                           <div className="text-xs text-muted-foreground mb-1">
-                            Rejected
+                            Qty Rejected
                           </div>
                           <div className="text-destructive text-sm">
                             {totalRejected.toLocaleString()}
@@ -309,20 +309,21 @@ export default function Batches() {
                     </div>
                     
                     {/* Desktop Table */}
-                    <div className="hidden sm:block border rounded-lg overflow-hidden">
-                      <table className="w-full text-sm">
+                    <div className="hidden md:block border rounded-lg overflow-x-auto">
+                      <table className="w-full text-sm min-w-[800px]">
                         <thead className="bg-muted/50">
                           <tr>
-                            <th className="text-left py-2 px-4 font-medium">Batch</th>
-                            <th className="text-left py-2 px-4 font-medium">Caster</th>
-                            <th className="text-left py-2 px-4 font-medium">Received</th>
-                            <th className="text-right py-2 px-4 font-medium">Produced</th>
-                            <th className="text-right py-2 px-4 font-medium">Remaining</th>
-                            <th className="text-right py-2 px-4 font-medium">Rejected</th>
-                            <th className="text-center py-2 px-4 font-medium">Quality</th>
-                            <th className="text-center py-2 px-4 font-medium">Status</th>
+                            <th className="text-left py-2 px-3 font-medium">Batch</th>
+                            <th className="text-left py-2 px-3 font-medium">Caster</th>
+                            <th className="text-left py-2 px-3 font-medium">Date</th>
+                            <th className="text-right py-2 px-3 font-medium">Qty Received</th>
+                            <th className="text-right py-2 px-3 font-medium">Qty Rejected</th>
+                            <th className="text-right py-2 px-3 font-medium">Final Qty</th>
+                            <th className="text-right py-2 px-3 font-medium">Remaining</th>
+                            <th className="text-center py-2 px-3 font-medium">Quality</th>
+                            <th className="text-center py-2 px-3 font-medium">Status</th>
                             {canMutate && (
-                              <th className="text-center py-2 px-4 font-medium">Actions</th>
+                              <th className="text-center py-2 px-3 font-medium">Actions</th>
                             )}
                           </tr>
                         </thead>
@@ -340,25 +341,28 @@ export default function Batches() {
                                 className="border-t hover-elevate"
                                 data-testid={`row-batch-${batch.id}`}
                               >
-                                <td className="py-3 px-4 font-mono text-sm">
+                                <td className="py-3 px-3 font-mono text-sm">
                                   {batch.batch_number}
                                 </td>
-                                <td className="py-3 px-4 text-sm text-muted-foreground">
+                                <td className="py-3 px-3 text-sm text-muted-foreground">
                                   {batch.caster_name || "-"}
                                 </td>
-                                <td className="py-3 px-4">
+                                <td className="py-3 px-3">
                                   {formatDate(batch.received_date)}
                                 </td>
-                                <td className="py-3 px-4 text-right font-mono">
-                                  {batch.quantity_produced.toLocaleString()}
+                                <td className="py-3 px-3 text-right font-mono">
+                                  {batch.quantity_received.toLocaleString()}
                                 </td>
-                                <td className="py-3 px-4 text-right font-mono font-semibold">
-                                  {batch.quantity_remaining.toLocaleString()}
-                                </td>
-                                <td className={`py-3 px-4 text-right font-mono ${batch.quantity_rejected > 0 ? 'text-destructive font-medium' : ''}`}>
+                                <td className={`py-3 px-3 text-right font-mono ${batch.quantity_rejected > 0 ? 'text-destructive font-medium' : ''}`}>
                                   {batch.quantity_rejected.toLocaleString()}
                                 </td>
-                                <td className="py-3 px-4 text-center">
+                                <td className="py-3 px-3 text-right font-mono">
+                                  {batch.quantity_produced.toLocaleString()}
+                                </td>
+                                <td className="py-3 px-3 text-right font-mono font-semibold">
+                                  {batch.quantity_remaining.toLocaleString()}
+                                </td>
+                                <td className="py-3 px-3 text-center">
                                   <Badge
                                     variant={
                                       qualityVariants[batch.quality_status || "Good"] ||
@@ -368,7 +372,7 @@ export default function Batches() {
                                     {batch.quality_status || "Good"}
                                   </Badge>
                                 </td>
-                                <td className="py-3 px-4 text-center">
+                                <td className="py-3 px-3 text-center">
                                   <Badge
                                     variant={batch.is_depleted ? "secondary" : "default"}
                                   >
@@ -376,7 +380,7 @@ export default function Batches() {
                                   </Badge>
                                 </td>
                                 {canMutate && (
-                                  <td className="py-3 px-4 text-center">
+                                  <td className="py-3 px-3 text-center">
                                     <Button
                                       variant="ghost"
                                       size="sm"
@@ -395,7 +399,7 @@ export default function Batches() {
                     </div>
 
                     {/* Mobile Cards */}
-                    <div className="sm:hidden space-y-3">
+                    <div className="md:hidden space-y-3">
                       {itemBatches.map((batch) => {
                         const qualityVariants: Record<string, any> = {
                           Good: "default",
@@ -438,23 +442,29 @@ export default function Batches() {
                                 )}
                               </div>
                             </div>
-                            <div className="grid grid-cols-3 gap-2 text-sm">
+                            <div className="grid grid-cols-2 gap-2 text-sm mb-2">
                               <div>
-                                <div className="text-muted-foreground">Produced</div>
-                                <div className="font-mono">{batch.quantity_produced.toLocaleString()}</div>
+                                <div className="text-muted-foreground text-xs">Qty Received</div>
+                                <div className="font-mono">{batch.quantity_received.toLocaleString()}</div>
                               </div>
                               <div>
-                                <div className="text-muted-foreground">Remaining</div>
-                                <div className="font-mono font-semibold">{batch.quantity_remaining.toLocaleString()}</div>
-                              </div>
-                              <div>
-                                <div className="text-muted-foreground">Rejected</div>
+                                <div className="text-muted-foreground text-xs">Qty Rejected</div>
                                 <div className={`font-mono ${batch.quantity_rejected > 0 ? 'text-destructive font-medium' : ''}`}>
                                   {batch.quantity_rejected.toLocaleString()}
                                 </div>
                               </div>
                             </div>
-                            <div className="mt-2">
+                            <div className="grid grid-cols-2 gap-2 text-sm">
+                              <div>
+                                <div className="text-muted-foreground text-xs">Final Qty</div>
+                                <div className="font-mono">{batch.quantity_produced.toLocaleString()}</div>
+                              </div>
+                              <div>
+                                <div className="text-muted-foreground text-xs">Remaining</div>
+                                <div className="font-mono font-semibold">{batch.quantity_remaining.toLocaleString()}</div>
+                              </div>
+                            </div>
+                            <div className="mt-3">
                               <Badge
                                 variant={batch.is_depleted ? "secondary" : "default"}
                               >

@@ -343,8 +343,8 @@ export class DbStorage implements IStorage {
       
       const [batch] = await db.select().from(batches).where(eq(batches.batch_number, shipment.batch_number));
       if (batch) {
-        // remaining = produced - rejected (at caster) - shipped
-        const newRemaining = batch.quantity_produced - batch.quantity_rejected - totalShipped;
+        // remaining = produced - shipped (rejections already subtracted from produced during QC)
+        const newRemaining = batch.quantity_produced - totalShipped;
         await db.update(batches)
           .set({
             quantity_remaining: Math.max(0, newRemaining),
@@ -379,7 +379,8 @@ export class DbStorage implements IStorage {
       
       const [oldBatch] = await db.select().from(batches).where(eq(batches.batch_number, oldBatchNumber));
       if (oldBatch) {
-        const oldNewRemaining = oldBatch.quantity_produced - oldBatch.quantity_rejected - oldTotalShipped;
+        // remaining = produced - shipped (rejections already subtracted from produced during QC)
+        const oldNewRemaining = oldBatch.quantity_produced - oldTotalShipped;
         await db.update(batches)
           .set({
             quantity_remaining: Math.max(0, oldNewRemaining),
@@ -398,7 +399,8 @@ export class DbStorage implements IStorage {
       
       const [newBatch] = await db.select().from(batches).where(eq(batches.batch_number, newBatchNumber));
       if (newBatch) {
-        const newNewRemaining = newBatch.quantity_produced - newBatch.quantity_rejected - newTotalShipped;
+        // remaining = produced - shipped (rejections already subtracted from produced during QC)
+        const newNewRemaining = newBatch.quantity_produced - newTotalShipped;
         await db.update(batches)
           .set({
             quantity_remaining: Math.max(0, newNewRemaining),
@@ -430,7 +432,8 @@ export class DbStorage implements IStorage {
       
       const [batch] = await db.select().from(batches).where(eq(batches.batch_number, batchNumber));
       if (batch) {
-        const newRemaining = batch.quantity_produced - batch.quantity_rejected - totalShipped;
+        // remaining = produced - shipped (rejections already subtracted from produced during QC)
+        const newRemaining = batch.quantity_produced - totalShipped;
         await db.update(batches)
           .set({
             quantity_remaining: Math.max(0, newRemaining),
@@ -520,7 +523,7 @@ export class DbStorage implements IStorage {
     return batch;
   }
 
-  async updateBatch(id: number, updates: { batch_number?: string, received_date?: string, quantity_produced?: number, quantity_rejected?: number, quality_status?: string, notes?: string }): Promise<Batch> {
+  async updateBatch(id: number, updates: { batch_number?: string, received_date?: string, quantity_received?: number, quantity_produced?: number, quantity_rejected?: number, quality_status?: string, notes?: string, is_manual_quantity?: boolean }): Promise<Batch> {
     // Get current batch
     const [currentBatch] = await db.select().from(batches).where(eq(batches.id, id));
     
@@ -535,30 +538,59 @@ export class DbStorage implements IStorage {
     const newReceivedDate = updates.received_date ?? currentBatch.received_date;
     const newQualityStatus = updates.quality_status ?? currentBatch.quality_status;
     const newNotes = updates.notes !== undefined ? updates.notes : currentBatch.notes;
-    const newProduced = updates.quantity_produced ?? currentBatch.quantity_produced;
     const newRejected = updates.quantity_rejected ?? currentBatch.quantity_rejected;
     
-    // Calculate shipped from invariant: shipped = produced - remaining - rejected
-    const currentShipped = currentBatch.quantity_produced - currentBatch.quantity_remaining - currentBatch.quantity_rejected;
+    // Get quantity_received - use provided value, stored value, or derive from current state
+    const currentReceived = currentBatch.quantity_received || (currentBatch.quantity_produced + currentBatch.quantity_rejected);
+    const newReceived = updates.quantity_received ?? currentReceived;
     
-    // Calculate new remaining: remaining = produced - shipped - rejected
-    const newRemaining = newProduced - currentShipped - newRejected;
-    
-    // Validate invariant: produced >= shipped + rejected
-    if (newRemaining < 0) {
+    // Validate rejected doesn't exceed received
+    if (newRejected > newReceived) {
       const error: any = new Error(
-        `Cannot update batch: new produced (${newProduced}) < shipped (${currentShipped}) + rejected (${newRejected})`
-      );
-      error.code = 'INVARIANT_VIOLATION';
-      throw error;
-    }
-
-    // Validate rejected quantity doesn't exceed available quantity
-    if (newRejected > newProduced - currentShipped) {
-      const error: any = new Error(
-        `Rejected quantity (${newRejected}) exceeds available quantity (${newProduced - currentShipped})`
+        `Rejected quantity (${newRejected}) exceeds received quantity (${newReceived})`
       );
       error.code = 'INVALID_REJECTED_QUANTITY';
+      throw error;
+    }
+    
+    // Calculate new produced based on whether it's manually overridden
+    // If is_manual_quantity flag is set, use provided quantity_produced
+    // Otherwise, always derive from: produced = received - rejected
+    const isManual = updates.is_manual_quantity ?? currentBatch.is_manual_quantity ?? false;
+    let newProduced: number;
+    
+    if (updates.quantity_produced !== undefined) {
+      // Caller explicitly provided produced value
+      newProduced = updates.quantity_produced;
+    } else if (isManual && currentBatch.is_manual_quantity) {
+      // Keep existing manual value, but adjust if rejected changed
+      // For manual batches, only recalculate if rejected increased beyond previous
+      const rejectedDelta = newRejected - currentBatch.quantity_rejected;
+      if (rejectedDelta > 0) {
+        // Additional rejections reduce produced
+        newProduced = Math.max(0, currentBatch.quantity_produced - rejectedDelta);
+      } else {
+        // Keep existing produced for manual batches
+        newProduced = currentBatch.quantity_produced;
+      }
+    } else {
+      // Auto-calculate: produced = received - rejected
+      newProduced = Math.max(0, newReceived - newRejected);
+    }
+    
+    // Calculate shipped from invariant: shipped = produced - remaining
+    const currentShipped = currentBatch.quantity_produced - currentBatch.quantity_remaining;
+    
+    // Calculate new remaining: remaining = produced - shipped
+    const newRemaining = newProduced - currentShipped;
+    
+    // Validate invariant: produced >= shipped (can't reduce produced below what's been shipped)
+    if (newRemaining < 0) {
+      const error: any = new Error(
+        `Cannot update batch: new produced (${newProduced}) < shipped (${currentShipped}). ` +
+        `Reduce rejections or update produced to at least ${currentShipped}.`
+      );
+      error.code = 'INVARIANT_VIOLATION';
       throw error;
     }
     
@@ -570,12 +602,14 @@ export class DbStorage implements IStorage {
       .set({
         batch_number: newBatchNumber,
         received_date: newReceivedDate,
+        quantity_received: newReceived,
         quantity_produced: newProduced,
         quantity_rejected: newRejected,
         quantity_remaining: newRemaining,
         quality_status: newQualityStatus,
         notes: newNotes,
         is_depleted: isDepleted,
+        is_manual_quantity: updates.quantity_produced !== undefined ? (newProduced !== (newReceived - newRejected)) : (currentBatch.is_manual_quantity ?? false),
       })
       .where(eq(batches.id, id))
       .returning();
@@ -594,14 +628,15 @@ export class DbStorage implements IStorage {
     // If quantity_produced is being updated, recalculate quantity_remaining
     if (updates.quantity_produced !== undefined) {
       const newProduced = updates.quantity_produced;
-      // Calculate shipped from invariant: shipped = produced - remaining - rejected
-      const currentShipped = batch.quantity_produced - batch.quantity_remaining - batch.quantity_rejected;
-      const newRemaining = newProduced - currentShipped - batch.quantity_rejected;
+      // Calculate shipped from invariant: shipped = produced - remaining
+      // (rejections are already subtracted from produced during QC)
+      const currentShipped = batch.quantity_produced - batch.quantity_remaining;
+      const newRemaining = newProduced - currentShipped;
       
       // Validate that new remaining is non-negative
       if (newRemaining < 0) {
         const error: any = new Error(
-          `Cannot update batch: new produced quantity (${newProduced}) is less than shipped (${currentShipped}) + rejected (${batch.quantity_rejected})`
+          `Cannot update batch: new produced quantity (${newProduced}) is less than shipped (${currentShipped})`
         );
         error.code = 'INVARIANT_VIOLATION';
         throw error;
@@ -646,8 +681,9 @@ export class DbStorage implements IStorage {
       throw error;
     }
 
-    // Calculate current shipped quantity: produced - remaining - rejected
-    const currentShipped = batch.quantity_produced - batch.quantity_remaining - batch.quantity_rejected;
+    // Calculate current shipped quantity: shipped = produced - remaining
+    // (rejections are already subtracted from produced during QC)
+    const currentShipped = batch.quantity_produced - batch.quantity_remaining;
 
     // Validate that existing data doesn't violate invariants
     if (currentShipped < 0) {
@@ -655,28 +691,38 @@ export class DbStorage implements IStorage {
         `Batch ${batch.batch_number} has invalid historical data (shipped cannot be negative). ` +
         `Produced: ${batch.quantity_produced}, ` +
         `Remaining: ${batch.quantity_remaining}, ` +
-        `Rejected: ${batch.quantity_rejected}, ` +
         `Derived shipped: ${currentShipped}`
       );
       error.code = 'INVARIANT_VIOLATION';
       throw error;
     }
 
-    // Validate that new rejected quantity doesn't exceed available quantity
-    if (newRejected + currentShipped > batch.quantity_produced) {
+    // Calculate received quantity from batch data
+    const received = batch.quantity_received || (batch.quantity_produced + batch.quantity_rejected);
+    
+    // Validate that new rejected quantity doesn't exceed received quantity
+    if (newRejected > received) {
       const error: any = new Error(
-        `Rejected quantity exceeds available quantity in batch ${batch.batch_number}. ` +
-        `Produced: ${batch.quantity_produced}, ` +
-        `Shipped: ${currentShipped}, ` +
-        `New rejected: ${newRejected}, ` +
-        `Exceeds by: ${(newRejected + currentShipped) - batch.quantity_produced}`
+        `Rejected quantity (${newRejected}) exceeds received quantity (${received}) in batch ${batch.batch_number}`
       );
       error.code = 'INSUFFICIENT_QUANTITY';
       throw error;
     }
 
-    // Recompute remaining using canonical invariant: remaining = produced - shipped - rejected
-    const newRemaining = batch.quantity_produced - currentShipped - newRejected;
+    // Calculate new produced: produced = received - rejected
+    const newProduced = received - newRejected;
+    
+    // Validate that we still have enough produced for what's already shipped
+    if (newProduced < currentShipped) {
+      const error: any = new Error(
+        `Cannot increase rejection: would result in produced (${newProduced}) < shipped (${currentShipped}) in batch ${batch.batch_number}`
+      );
+      error.code = 'INSUFFICIENT_QUANTITY';
+      throw error;
+    }
+
+    // Recompute remaining: remaining = produced - shipped
+    const newRemaining = newProduced - currentShipped;
 
     // Enforce non-negative invariant (should always pass if previous check passed)
     if (newRemaining < 0) {
@@ -691,9 +737,10 @@ export class DbStorage implements IStorage {
       throw error;
     }
 
-    // Update batch with new rejected quantity and recalculated remaining
+    // Update batch with new rejected quantity, recalculated produced and remaining
     const updates: any = {
       quantity_rejected: newRejected,
+      quantity_produced: newProduced,
       quantity_remaining: newRemaining,
       is_depleted: newRemaining === 0,
     };
@@ -752,8 +799,9 @@ export class DbStorage implements IStorage {
         throw error;
       }
 
-      // Calculate total shipped from current state: produced - remaining - rejected
-      const currentShipped = batch.quantity_produced - batch.quantity_remaining - batch.quantity_rejected;
+      // Calculate current shipped: shipped = produced - remaining
+      // (rejections are already subtracted from produced during QC)
+      const currentShipped = batch.quantity_produced - batch.quantity_remaining;
       
       // Validate that existing data doesn't violate invariants (catches bad historical data)
       if (currentShipped < 0) {
@@ -761,75 +809,52 @@ export class DbStorage implements IStorage {
           `Batch ${batchNumber} has invalid historical data (shipped cannot be negative). ` +
           `Produced: ${batch.quantity_produced}, ` +
           `Remaining: ${batch.quantity_remaining}, ` +
-          `Rejected: ${batch.quantity_rejected}, ` +
           `Derived shipped: ${currentShipped}`
         );
         error.code = 'INVARIANT_VIOLATION';
         throw error;
       }
 
-      // Apply adjustments to get new totals
-      const totalShipped = currentShipped + shippedDelta;
-      const totalRejected = batch.quantity_rejected + rejectedDelta;
-
-      // Validate sufficient quantity for this adjustment
-      const requiredQuantity = shippedDelta + rejectedDelta;
-      if (batch.quantity_remaining < requiredQuantity) {
+      // Get received quantity from batch data
+      const received = batch.quantity_received || (batch.quantity_produced + batch.quantity_rejected);
+      
+      // Apply rejection adjustment first (affects produced)
+      const newRejected = batch.quantity_rejected + rejectedDelta;
+      const newProduced = received - newRejected;
+      
+      // Validate rejection doesn't exceed received
+      if (newRejected > received) {
         const error: any = new Error(
-          `Insufficient quantity in batch ${batchNumber}. ` +
-          `Requested: ${requiredQuantity} (${shippedDelta} shipped + ${rejectedDelta} rejected), ` +
-          `Available: ${batch.quantity_remaining}`
+          `Rejection adjustment would exceed received quantity in batch ${batchNumber}. ` +
+          `Received: ${received}, New rejected: ${newRejected}`
         );
         error.code = 'INSUFFICIENT_QUANTITY';
         throw error;
       }
 
-      // Recompute remaining using canonical invariant: remaining = produced - shipped - rejected
-      const newRemaining = batch.quantity_produced - totalShipped - totalRejected;
+      // Apply shipped adjustment
+      const newShipped = currentShipped + shippedDelta;
+      
+      // Calculate new remaining: remaining = produced - shipped
+      const newRemaining = newProduced - newShipped;
 
-      // Enforce non-negative invariant
+      // Validate sufficient quantity for this adjustment
       if (newRemaining < 0) {
         const error: any = new Error(
-          `Batch ${batchNumber} adjustment violated invariant (remaining cannot be negative). ` +
-          `Produced: ${batch.quantity_produced}, ` +
-          `Total shipped: ${totalShipped}, ` +
-          `Total rejected: ${totalRejected}, ` +
-          `Calculated remaining: ${newRemaining}`
+          `Insufficient quantity in batch ${batchNumber}. ` +
+          `New produced: ${newProduced}, New shipped: ${newShipped}, ` +
+          `Would result in remaining: ${newRemaining}`
         );
-        error.code = 'INVARIANT_VIOLATION';
-        throw error;
-      }
-
-      // Validate that remaining doesn't exceed produced (catches over-counting)
-      if (newRemaining > batch.quantity_produced) {
-        const error: any = new Error(
-          `Batch ${batchNumber} adjustment violated invariant (remaining cannot exceed produced). ` +
-          `Produced: ${batch.quantity_produced}, ` +
-          `Calculated remaining: ${newRemaining}, ` +
-          `Total shipped: ${totalShipped}, ` +
-          `Total rejected: ${totalRejected}`
-        );
-        error.code = 'INVARIANT_VIOLATION';
-        throw error;
-      }
-
-      // Validate canonical relationship: produced >= shipped + rejected
-      if (batch.quantity_produced < totalShipped + totalRejected) {
-        const error: any = new Error(
-          `Batch ${batchNumber} adjustment violated invariant (produced must be >= shipped + rejected). ` +
-          `Produced: ${batch.quantity_produced}, ` +
-          `Total shipped: ${totalShipped}, ` +
-          `Total rejected: ${totalRejected}`
-        );
-        error.code = 'INVARIANT_VIOLATION';
+        error.code = 'INSUFFICIENT_QUANTITY';
         throw error;
       }
 
       // Update batch with new calculated values and auto-compute depleted flag
       const [updated] = await tx.update(batches)
         .set({
+          quantity_produced: newProduced,
+          quantity_rejected: newRejected,
           quantity_remaining: newRemaining,
-          quantity_rejected: totalRejected,
           is_depleted: newRemaining === 0
         })
         .where(eq(batches.batch_number, batchNumber))

@@ -209,9 +209,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const batches = await storage.getAllBatches();
       // Add calculated quantity_shipped field to each batch
+      // shipped = produced - remaining (rejections already subtracted from produced during QC)
       const enrichedBatches = batches.map(batch => ({
         ...batch,
-        quantity_shipped: batch.quantity_produced - batch.quantity_remaining - batch.quantity_rejected
+        quantity_shipped: batch.quantity_produced - batch.quantity_remaining
       }));
       res.json(enrichedBatches);
     } catch (error: any) {
