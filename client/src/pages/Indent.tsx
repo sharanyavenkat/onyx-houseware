@@ -4,6 +4,9 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
+import { Button } from '@/components/ui/button';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
+import { ChevronDown, ChevronRight, HelpCircle } from 'lucide-react';
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { queryClient, apiRequest } from '@/lib/queryClient';
@@ -18,6 +21,7 @@ export default function IndentPage() {
   const [includeAcceptable, setIncludeAcceptable] = useState(true);
   const [editingCells, setEditingCells] = useState<Record<string, string>>({});
   const [dirtyItems, setDirtyItems] = useState<Set<number>>(new Set());
+  const [isHelpOpen, setIsHelpOpen] = useState(false);
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const { toast} = useToast();
 
@@ -351,62 +355,77 @@ export default function IndentPage() {
         </div>
       </div>
 
-      {/* Formula Explanation */}
-      <div className="bg-muted/50 p-4 rounded-lg border space-y-3">
-        <div>
-          <h3 className="font-medium mb-2">📦 Simplified Stock Tracking:</h3>
-          <div className="text-sm text-muted-foreground space-y-1">
-            <p><strong>Current Stock (from Batches)</strong>: Real-time inventory from your batches - this is your single source of truth!</p>
-            <p><strong>Expected Receipts</strong>: Batches you plan to receive this month (update this to 0 when batches arrive to avoid double counting)</p>
-            <p className="text-xs pt-1 italic">💡 Your batches drive everything. When batches arrive, reduce Expected Receipts to avoid counting them twice!</p>
-          </div>
-        </div>
-        <div>
-          <h3 className="font-medium mb-2">Two-Tier Inventory Model:</h3>
-          <div className="text-sm text-muted-foreground space-y-1">
-            <p><strong>Working Stock</strong> = Current Stock + Expected Receipts <span className="text-xs">(normal operational inventory)</span></p>
-            <p><strong>Total Usable Stock</strong> = Working Stock + Safety Stock <span className="text-xs">(safety stock can be used to fulfill orders)</span></p>
-            <p><strong>Stock After Pending</strong> = Total Usable Stock - Pending Orders <span className="text-xs">(remaining after using all available stock)</span></p>
-          </div>
-        </div>
-        <div>
-          <h3 className="font-medium mb-2">Order Requirements (Split View):</h3>
-          <div className="text-sm text-muted-foreground space-y-1">
-            <p><strong className="text-destructive">Req. to Fulfill Orders</strong> = max(0, Pending - Usable Stock) <span className="text-xs">(critical - needed to complete pending orders)</span></p>
-            <p><strong className="text-orange-600 dark:text-orange-400">Req. for Safety Stock</strong> = max(0, Safety Stock - max(0, Stock After Pending)) <span className="text-xs">(optional - to restore safety buffer)</span></p>
-            <p className="text-xs pt-1 italic">These are split so you can decide: order just what's needed for orders, or also refill safety stock based on production capacity.</p>
-          </div>
-        </div>
-        <div>
-          <h3 className="font-medium mb-2">Safety Stock Management:</h3>
-          <div className="text-sm text-muted-foreground space-y-1">
-            <p><strong>Desired Safety Stock</strong>: Long-term desired safety stock level (set in Items page)</p>
-            <p><strong>Current Safety Stock</strong>: Month-specific safety stock you can actually maintain based on production capacity, caster bottlenecks, and demand</p>
-            <p className="text-xs pt-1 italic">Current safety stock defaults to desired but can be adjusted monthly. All changes auto-save.</p>
-          </div>
-        </div>
-        <div>
-          <h3 className="font-medium mb-2">Safety Stock Status Legend:</h3>
-          <div className="flex items-center gap-4 text-sm flex-wrap">
-            <div className="flex items-center gap-2">
-              <Badge variant="destructive" data-testid="badge-legend-critical">Critical</Badge>
-              <span className="text-muted-foreground">Cannot fulfill orders (negative stock)</span>
+      {/* Formula Explanation - Collapsible */}
+      <Collapsible open={isHelpOpen} onOpenChange={setIsHelpOpen}>
+        <div className="bg-muted/50 rounded-lg border">
+          <CollapsibleTrigger asChild>
+            <Button variant="ghost" className="w-full justify-between p-4 h-auto">
+              <span className="flex items-center gap-2 font-medium">
+                <HelpCircle className="h-4 w-4" />
+                How Stock Tracking Works
+              </span>
+              {isHelpOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+            </Button>
+          </CollapsibleTrigger>
+          <CollapsibleContent>
+            <div className="px-4 pb-4 space-y-3">
+              <div>
+                <h3 className="font-medium mb-2">Simplified Stock Tracking:</h3>
+                <div className="text-sm text-muted-foreground space-y-1">
+                  <p><strong>Current Stock (from Batches)</strong>: Real-time inventory from your batches - this is your single source of truth!</p>
+                  <p><strong>Expected Receipts</strong>: Batches you plan to receive this month (update this to 0 when batches arrive to avoid double counting)</p>
+                  <p className="text-xs pt-1 italic">Your batches drive everything. When batches arrive, reduce Expected Receipts to avoid counting them twice!</p>
+                </div>
+              </div>
+              <div>
+                <h3 className="font-medium mb-2">Two-Tier Inventory Model:</h3>
+                <div className="text-sm text-muted-foreground space-y-1">
+                  <p><strong>Working Stock</strong> = Current Stock + Expected Receipts <span className="text-xs">(normal operational inventory)</span></p>
+                  <p><strong>Total Usable Stock</strong> = Working Stock + Safety Stock <span className="text-xs">(safety stock can be used to fulfill orders)</span></p>
+                  <p><strong>Stock After Pending</strong> = Total Usable Stock - Pending Orders <span className="text-xs">(remaining after using all available stock)</span></p>
+                </div>
+              </div>
+              <div>
+                <h3 className="font-medium mb-2">Order Requirements (Split View):</h3>
+                <div className="text-sm text-muted-foreground space-y-1">
+                  <p><strong className="text-destructive">Req. to Fulfill Orders</strong> = max(0, Pending - Usable Stock) <span className="text-xs">(critical - needed to complete pending orders)</span></p>
+                  <p><strong className="text-orange-600 dark:text-orange-400">Req. for Safety Stock</strong> = max(0, Safety Stock - max(0, Stock After Pending)) <span className="text-xs">(optional - to restore safety buffer)</span></p>
+                  <p className="text-xs pt-1 italic">These are split so you can decide: order just what's needed for orders, or also refill safety stock based on production capacity.</p>
+                </div>
+              </div>
+              <div>
+                <h3 className="font-medium mb-2">Safety Stock Management:</h3>
+                <div className="text-sm text-muted-foreground space-y-1">
+                  <p><strong>Desired Safety Stock</strong>: Long-term desired safety stock level (set in Items page)</p>
+                  <p><strong>Current Safety Stock</strong>: Month-specific safety stock you can actually maintain based on production capacity, caster bottlenecks, and demand</p>
+                  <p className="text-xs pt-1 italic">Current safety stock defaults to desired but can be adjusted monthly. All changes auto-save.</p>
+                </div>
+              </div>
+              <div>
+                <h3 className="font-medium mb-2">Safety Stock Status Legend:</h3>
+                <div className="flex items-center gap-4 text-sm flex-wrap">
+                  <div className="flex items-center gap-2">
+                    <Badge variant="destructive" data-testid="badge-legend-critical">Critical</Badge>
+                    <span className="text-muted-foreground">Cannot fulfill orders (negative stock)</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Badge variant="secondary" data-testid="badge-legend-low">Low</Badge>
+                    <span className="text-muted-foreground">Can fulfill orders but safety stock below target</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Badge variant="default" data-testid="badge-legend-good">Good</Badge>
+                    <span className="text-muted-foreground">Stock after pending ≥ desired safety stock</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Badge variant="outline" className="text-xs">Refill Needed</Badge>
+                    <span className="text-muted-foreground">Appears when safety stock needs refilling</span>
+                  </div>
+                </div>
+              </div>
             </div>
-            <div className="flex items-center gap-2">
-              <Badge variant="secondary" data-testid="badge-legend-low">Low</Badge>
-              <span className="text-muted-foreground">Can fulfill orders but safety stock below target</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <Badge variant="default" data-testid="badge-legend-good">Good</Badge>
-              <span className="text-muted-foreground">Stock after pending ≥ desired safety stock</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <Badge variant="outline" className="text-xs">Refill Needed</Badge>
-              <span className="text-muted-foreground">Appears when safety stock needs refilling</span>
-            </div>
-          </div>
+          </CollapsibleContent>
         </div>
-      </div>
+      </Collapsible>
 
       {/* Indent Table */}
       <DataTable 

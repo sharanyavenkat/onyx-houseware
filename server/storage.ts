@@ -515,7 +515,7 @@ export class DbStorage implements IStorage {
           eq(batches.is_depleted, false)
         )
       )
-      .orderBy(desc(batches.received_date));
+      .orderBy(batches.received_date);  // Order by oldest first (ascending) for FIFO
   }
 
   async createBatch(insertBatch: InsertBatch): Promise<Batch> {
@@ -523,7 +523,7 @@ export class DbStorage implements IStorage {
     return batch;
   }
 
-  async updateBatch(id: number, updates: { batch_number?: string, received_date?: string, quantity_received?: number, quantity_produced?: number, quantity_rejected?: number, quality_status?: string, notes?: string, is_manual_quantity?: boolean }): Promise<Batch> {
+  async updateBatch(id: number, updates: { batch_number?: string, caster_id?: number | null, received_date?: string, quantity_received?: number, quantity_produced?: number, quantity_rejected?: number, quality_status?: string, notes?: string, is_manual_quantity?: boolean }): Promise<Batch> {
     // Get current batch
     const [currentBatch] = await db.select().from(batches).where(eq(batches.id, id));
     
@@ -535,6 +535,7 @@ export class DbStorage implements IStorage {
 
     // Build merged batch state with updates applied
     const newBatchNumber = updates.batch_number ?? currentBatch.batch_number;
+    const newCasterId = updates.caster_id !== undefined ? updates.caster_id : currentBatch.caster_id;
     const newReceivedDate = updates.received_date ?? currentBatch.received_date;
     const newQualityStatus = updates.quality_status ?? currentBatch.quality_status;
     const newNotes = updates.notes !== undefined ? updates.notes : currentBatch.notes;
@@ -601,6 +602,7 @@ export class DbStorage implements IStorage {
     const [updatedBatch] = await db.update(batches)
       .set({
         batch_number: newBatchNumber,
+        caster_id: newCasterId,
         received_date: newReceivedDate,
         quantity_received: newReceived,
         quantity_produced: newProduced,

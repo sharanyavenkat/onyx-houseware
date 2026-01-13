@@ -227,7 +227,7 @@ export default function Batches() {
             <SelectContent>
               <SelectItem value="all">All Status</SelectItem>
               <SelectItem value="active">Available</SelectItem>
-              <SelectItem value="depleted">Depleted</SelectItem>
+              <SelectItem value="depleted">Empty</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -246,8 +246,6 @@ export default function Batches() {
 
             // Calculate summary stats for this item
             const totalRemaining = itemBatches.reduce((sum, b) => sum + b.quantity_remaining, 0);
-            const totalProduced = itemBatches.reduce((sum, b) => sum + b.quantity_produced, 0);
-            const totalRejected = itemBatches.reduce((sum, b) => sum + b.quantity_rejected, 0);
             const activeBatches = itemBatches.filter(b => !b.is_depleted).length;
             
             return (
@@ -269,8 +267,8 @@ export default function Batches() {
                       </div>
                     </div>
 
-                    {/* Right: Summary Quantities */}
-                    <div className="flex items-center gap-4 sm:gap-6 font-mono text-sm">
+                    {/* Right: Remaining Quantity */}
+                    <div className="flex items-center gap-2 font-mono text-sm">
                       <div className="text-center">
                         <div className="text-xs text-muted-foreground mb-1">
                           Remaining
@@ -279,24 +277,6 @@ export default function Batches() {
                           {totalRemaining.toLocaleString()}
                         </div>
                       </div>
-                      <div className="text-center hidden sm:block">
-                        <div className="text-xs text-muted-foreground mb-1">
-                          Final Qty
-                        </div>
-                        <div className="text-sm">
-                          {totalProduced.toLocaleString()}
-                        </div>
-                      </div>
-                      {totalRejected > 0 && (
-                        <div className="text-center">
-                          <div className="text-xs text-muted-foreground mb-1">
-                            Qty Rejected
-                          </div>
-                          <div className="text-destructive text-sm">
-                            {totalRejected.toLocaleString()}
-                          </div>
-                        </div>
-                      )}
                     </div>
                   </div>
                 </AccordionTrigger>
@@ -376,7 +356,7 @@ export default function Batches() {
                                   <Badge
                                     variant={batch.is_depleted ? "secondary" : "default"}
                                   >
-                                    {batch.is_depleted ? "Depleted" : "Available"}
+                                    {batch.is_depleted ? "Empty" : "Available"}
                                   </Badge>
                                 </td>
                                 {canMutate && (
@@ -468,7 +448,7 @@ export default function Batches() {
                               <Badge
                                 variant={batch.is_depleted ? "secondary" : "default"}
                               >
-                                {batch.is_depleted ? "Depleted" : "Available"}
+                                {batch.is_depleted ? "Empty" : "Available"}
                               </Badge>
                             </div>
                           </div>
