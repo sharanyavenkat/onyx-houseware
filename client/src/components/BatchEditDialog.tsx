@@ -2,7 +2,6 @@ import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -133,64 +132,15 @@ export default function BatchEditDialog({
 
   if (!batch) return null;
 
-  const casterName = batch.caster_id 
-    ? casters.find(c => c.id === batch.caster_id)?.name || "Unknown" 
-    : "None";
-
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Edit Batch</DialogTitle>
-          <DialogDescription>
-            Update batch information including caster and QC rejection data
-          </DialogDescription>
         </DialogHeader>
         
-        <div className="grid grid-cols-2 gap-6 flex-1 overflow-y-auto pr-2">
-          <div className="space-y-3">
-            <h3 className="font-medium text-sm text-muted-foreground">Current Values</h3>
-            <div className="p-4 bg-muted rounded-md space-y-2">
-              <p className="text-sm">
-                <span className="font-medium">Batch Number:</span> {batch.batch_number}
-              </p>
-              <p className="text-sm">
-                <span className="font-medium">Caster:</span> {casterName}
-              </p>
-              <p className="text-sm">
-                <span className="font-medium">Received Date:</span> {batch.received_date}
-              </p>
-              <p className="text-sm">
-                <span className="font-medium">Qty Received:</span> {(batch.quantity_received || 0).toLocaleString()}
-              </p>
-              <p className="text-sm">
-                <span className="font-medium">Qty Rejected (QC):</span> {batch.quantity_rejected.toLocaleString()}
-              </p>
-              <div className="text-sm flex items-center gap-2">
-                <span className="font-medium">Final Qty:</span> {batch.quantity_produced.toLocaleString()}
-                {batch.is_manual_quantity && (
-                  <Badge variant="secondary" className="text-xs">Manual</Badge>
-                )}
-              </div>
-              <p className="text-sm">
-                <span className="font-medium">Shipped:</span> {(batch.quantity_produced - batch.quantity_remaining).toLocaleString()}
-              </p>
-              <p className="text-sm">
-                <span className="font-medium">Remaining:</span> {batch.quantity_remaining.toLocaleString()}
-              </p>
-              <p className="text-sm">
-                <span className="font-medium">Quality:</span> {batch.quality_status}
-              </p>
-              <p className="text-sm text-muted-foreground text-xs mt-3">
-                Formula: Final = Received - Rejected (QC)
-              </p>
-            </div>
-          </div>
-
-          <div>
-            <h3 className="font-medium text-sm text-muted-foreground mb-3">Edit Values</h3>
-            <Form {...form}>
-              <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4">
+        <Form {...form}>
+          <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4">
                 <FormField
                   control={form.control}
                   name="batch_number"
@@ -397,43 +347,41 @@ export default function BatchEditDialog({
                   )}
                 />
 
-                <div className="flex justify-between items-center gap-3 pt-4">
-                  <div>
-                    {onDelete && (
-                      <Button
-                        type="button"
-                        variant="destructive"
-                        onClick={onDelete}
-                        disabled={isDeleting}
-                        data-testid="button-delete-batch"
-                      >
-                        <Trash2 className="w-4 h-4 mr-2" />
-                        {isDeleting ? "Deleting..." : "Delete Batch"}
-                      </Button>
-                    )}
-                  </div>
-                  <div className="flex gap-3">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={() => onOpenChange(false)}
-                      data-testid="button-cancel-edit"
-                    >
-                      Cancel
-                    </Button>
-                    <Button
-                      type="submit"
-                      disabled={isPending}
-                      data-testid="button-save-edit"
-                    >
-                      {isPending ? "Saving..." : "Save Changes"}
-                    </Button>
-                  </div>
-                </div>
-              </form>
-            </Form>
-          </div>
-        </div>
+            <div className="flex justify-between items-center gap-3 pt-4">
+              <div>
+                {onDelete && (
+                  <Button
+                    type="button"
+                    variant="destructive"
+                    onClick={onDelete}
+                    disabled={isDeleting}
+                    data-testid="button-delete-batch"
+                  >
+                    <Trash2 className="w-4 h-4 mr-2" />
+                    {isDeleting ? "Deleting..." : "Delete Batch"}
+                  </Button>
+                )}
+              </div>
+              <div className="flex gap-3">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => onOpenChange(false)}
+                  data-testid="button-cancel-edit"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  disabled={isPending}
+                  data-testid="button-save-edit"
+                >
+                  {isPending ? "Saving..." : "Save Changes"}
+                </Button>
+              </div>
+            </div>
+          </form>
+        </Form>
       </DialogContent>
     </Dialog>
   );

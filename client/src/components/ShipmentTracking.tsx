@@ -204,12 +204,44 @@ export default function ShipmentTracking({
     setShipmentDate("");
   };
 
+  const selectedBatch = useMemo(() => {
+    return availableBatches.find(b => b.batch_number === batchNumber);
+  }, [availableBatches, batchNumber]);
+
+  const availableRemainingForBatch = useMemo(() => {
+    if (!selectedBatch) return 0;
+    
+    // When editing, add back the original shipment's quantity to the available remaining
+    // since we're replacing that quantity, not adding to it
+    let available = selectedBatch.quantity_remaining;
+    if (editingShipment && editingShipment.batch_number === batchNumber) {
+      available += editingShipment.quantity_shipped;
+    }
+    
+    return available;
+  }, [selectedBatch, editingShipment, batchNumber]);
+
+  const quantityExceedsBatch = useMemo(() => {
+    if (!selectedBatch || !quantityShipped) return false;
+    const qtyShipped = parseInt(quantityShipped) || 0;
+    return qtyShipped > availableRemainingForBatch;
+  }, [selectedBatch, quantityShipped, availableRemainingForBatch]);
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
 
     if (!batchNumber || !quantityShipped || !shipmentDate) {
       toast({
         title: "Please fill all required fields (Batch Number, Quantity, Date)",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (quantityExceedsBatch) {
+      toast({
+        title: "Quantity exceeds batch remaining",
+        description: `Only ${availableRemainingForBatch.toLocaleString()} pieces available in this batch.`,
         variant: "destructive",
       });
       return;
@@ -387,6 +419,11 @@ export default function ShipmentTracking({
                           placeholder="e.g., 300"
                           data-testid="input-quantity-shipped"
                         />
+                        {quantityExceedsBatch && selectedBatch && (
+                          <p className="text-sm text-destructive mt-1">
+                            Exceeds batch remaining ({availableRemainingForBatch.toLocaleString()} available)
+                          </p>
+                        )}
                       </div>
 
                       <div>
@@ -417,7 +454,11 @@ export default function ShipmentTracking({
                       >
                         Cancel
                       </Button>
-                      <Button type="submit" data-testid="button-save-shipment">
+                      <Button 
+                        type="submit" 
+                        data-testid="button-save-shipment"
+                        disabled={quantityExceedsBatch}
+                      >
                         {editingShipment ? "Update" : "Save"}
                       </Button>
                     </div>

@@ -34,8 +34,9 @@ export default function OrderDetails() {
   });
 
   // Calculate shipment summary per order item
+  // Note: Rejections are now tracked at batch level (caster QC), not at shipment level
   const shipmentSummary = useMemo(() => {
-    const summary: Record<number, { shipped: number; rejected: number; remaining: number }> = {};
+    const summary: Record<number, { shipped: number; remaining: number }> = {};
     
     if (!order?.line_items || !shipments) return summary;
     
@@ -46,15 +47,11 @@ export default function OrderDetails() {
       // Find all shipments for this order item
       const itemShipments = shipments.filter((s: any) => s.order_item_id === orderItemId);
       
-      // Calculate totals
+      // Calculate totals - simple: ordered minus shipped
       const shipped = itemShipments.reduce((sum: number, s: any) => sum + s.quantity_shipped, 0);
-      const rejected = itemShipments.reduce((sum: number, s: any) => {
-        return sum + (s.rejections_blowholes || 0) + (s.rejections_handles || 0) + (s.rejections_other || 0);
-      }, 0);
-      // Remaining includes rejected items that need to be replaced
-      const remaining = orderedQty - shipped + rejected;
+      const remaining = orderedQty - shipped;
       
-      summary[orderItemId] = { shipped, rejected, remaining };
+      summary[orderItemId] = { shipped, remaining };
     });
     
     return summary;
@@ -169,14 +166,6 @@ export default function OrderDetails() {
                                 {summary.shipped}
                               </span>
                             </div>
-                            {summary.rejected > 0 && (
-                              <div className="flex items-center gap-1">
-                                <span className="text-muted-foreground">Rejected:</span>
-                                <span className="font-mono font-semibold text-destructive">
-                                  {summary.rejected}
-                                </span>
-                              </div>
-                            )}
                             <div className="flex items-center gap-1">
                               <span className="text-muted-foreground">Remaining:</span>
                               <span className={`font-mono font-semibold ${summary.remaining === 0 ? 'text-muted-foreground' : 'text-orange-600 dark:text-orange-400'}`}>
