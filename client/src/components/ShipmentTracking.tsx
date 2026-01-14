@@ -72,7 +72,7 @@ export default function ShipmentTracking({
     enabled: isOpen,
   });
 
-  const { data: availableBatches = [] } = useQuery<Batch[]>({
+  const { data: activeBatches = [] } = useQuery<Batch[]>({
     queryKey: ["/api/batches/active/by-item", itemId],
     queryFn: async () => {
       const response = await fetch(`/api/batches/active/by-item/${itemId}`);
@@ -81,6 +81,26 @@ export default function ShipmentTracking({
     },
     enabled: isOpen,
   });
+
+  // When editing, fetch the specific batch (even if depleted) to include in dropdown
+  const { data: editingBatch } = useQuery<Batch>({
+    queryKey: ["/api/batches/by-number", editingShipment?.batch_number],
+    queryFn: async () => {
+      const response = await fetch(`/api/batches/by-number/${editingShipment?.batch_number}`);
+      if (!response.ok) throw new Error("Failed to fetch batch");
+      return response.json();
+    },
+    enabled: isOpen && !!editingShipment?.batch_number,
+  });
+
+  // Merge active batches with the editing batch (if not already included)
+  const availableBatches = useMemo(() => {
+    if (!editingBatch) return activeBatches;
+    const alreadyIncluded = activeBatches.some(b => b.batch_number === editingBatch.batch_number);
+    if (alreadyIncluded) return activeBatches;
+    // Add the depleted batch at the beginning for visibility
+    return [editingBatch, ...activeBatches];
+  }, [activeBatches, editingBatch]);
 
   const createMutation = useMutation({
     mutationFn: async (data: any) => {

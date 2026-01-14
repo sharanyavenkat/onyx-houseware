@@ -240,6 +240,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Get a specific batch by batch_number (for editing shipments with depleted batches)
+  app.get("/api/batches/by-number/:batchNumber", async (req, res) => {
+    try {
+      const batchNumber = req.params.batchNumber;
+      const batch = await storage.getBatchByNumber(batchNumber);
+      if (!batch) {
+        return res.status(404).json({ message: "Batch not found" });
+      }
+      res.json(batch);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
   app.post("/api/batches", async (req, res) => {
     try {
       // Extract and validate required fields
