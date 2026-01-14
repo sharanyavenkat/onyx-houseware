@@ -395,14 +395,26 @@ export default function ShipmentTracking({
                                 No active batches available
                               </SelectItem>
                             ) : (
-                              availableBatches.map((batch) => (
-                                <SelectItem key={batch.id} value={batch.batch_number}>
-                                  {batch.batch_number} ({batch.quantity_remaining.toLocaleString()} remaining)
-                                </SelectItem>
-                              ))
+                              availableBatches.map((batch) => {
+                                // When editing, show adjusted remaining for the batch being edited
+                                const isEditingThisBatch = editingShipment && editingShipment.batch_number === batch.batch_number;
+                                const displayRemaining = isEditingThisBatch 
+                                  ? batch.quantity_remaining + editingShipment.quantity_shipped
+                                  : batch.quantity_remaining;
+                                return (
+                                  <SelectItem key={batch.id} value={batch.batch_number}>
+                                    {batch.batch_number} ({displayRemaining.toLocaleString()} available)
+                                  </SelectItem>
+                                );
+                              })
                             )}
                           </SelectContent>
                         </Select>
+                        {editingShipment && selectedBatch && editingShipment.batch_number === batchNumber && (
+                          <p className="text-sm text-muted-foreground mt-1">
+                            Editing: {editingShipment.quantity_shipped.toLocaleString()} currently shipped from this batch
+                          </p>
+                        )}
                       </div>
 
                       <div>
