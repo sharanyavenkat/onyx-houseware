@@ -289,7 +289,7 @@ export default function Batches() {
                     </div>
                     
                     {/* Desktop Table */}
-                    <div className="hidden md:block border rounded-lg overflow-x-auto">
+                    <div className="hidden md:block border rounded-lg overflow-x-auto max-h-96 overflow-y-auto">
                       <table className="w-full text-sm min-w-[800px]">
                         <thead className="bg-muted/50">
                           <tr>
@@ -379,7 +379,7 @@ export default function Batches() {
                     </div>
 
                     {/* Mobile Cards */}
-                    <div className="md:hidden space-y-3">
+                    <div className="md:hidden space-y-3 max-h-96 overflow-y-auto">
                       {itemBatches.map((batch) => {
                         const qualityVariants: Record<string, any> = {
                           Good: "default",

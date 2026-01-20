@@ -303,6 +303,13 @@ export default function ShipmentTracking({
     }
   };
 
+  // Sort shipments by date (newest first)
+  const sortedShipments = useMemo(() => {
+    return [...shipments].sort((a, b) => 
+      new Date(b.shipment_date).getTime() - new Date(a.shipment_date).getTime()
+    );
+  }, [shipments]);
+
   const summary = useMemo(() => {
     const totalShipped = shipments.reduce(
       (sum, s) => sum + s.quantity_shipped,
@@ -492,10 +499,10 @@ export default function ShipmentTracking({
               </Card>
             )}
 
-            {shipments.length > 0 ? (
+            {sortedShipments.length > 0 ? (
               <>
                 {/* Desktop Table */}
-                <div className="hidden sm:block border rounded-md">
+                <div className="hidden sm:block border rounded-md max-h-64 overflow-y-auto">
                   <Table>
                     <TableHeader>
                       <TableRow>
@@ -506,7 +513,7 @@ export default function ShipmentTracking({
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {shipments.map((shipment) => (
+                      {sortedShipments.map((shipment) => (
                         <TableRow
                           key={shipment.id}
                           data-testid={`row-shipment-${shipment.id}`}
@@ -549,8 +556,8 @@ export default function ShipmentTracking({
                 </div>
 
                 {/* Mobile Cards */}
-                <div className="sm:hidden space-y-3">
-                  {shipments.map((shipment) => (
+                <div className="sm:hidden space-y-3 max-h-64 overflow-y-auto">
+                  {sortedShipments.map((shipment) => (
                     <Card key={shipment.id} data-testid={`card-shipment-${shipment.id}`}>
                       <CardContent className="p-4">
                         <div className="flex justify-between items-start">
