@@ -325,7 +325,7 @@ export default function ShipmentTracking({
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent>
+      <DialogContent className="max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Package className="h-5 w-5" />
@@ -502,7 +502,7 @@ export default function ShipmentTracking({
             {sortedShipments.length > 0 ? (
               <>
                 {/* Desktop Table */}
-                <div className="hidden sm:block border rounded-md max-h-64 overflow-y-auto">
+                <div className="hidden sm:block border rounded-md">
                   <Table>
                     <TableHeader>
                       <TableRow>
@@ -556,7 +556,7 @@ export default function ShipmentTracking({
                 </div>
 
                 {/* Mobile Cards */}
-                <div className="sm:hidden space-y-3 max-h-64 overflow-y-auto">
+                <div className="sm:hidden space-y-3">
                   {sortedShipments.map((shipment) => (
                     <Card key={shipment.id} data-testid={`card-shipment-${shipment.id}`}>
                       <CardContent className="p-4">

@@ -320,7 +320,7 @@ export default function InvoiceSection({ orderId, shipments, items }: InvoiceSec
         }
         setIsFormOpen(open);
       }}>
-        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>
               {editingInvoice ? "Edit Invoice" : "Add Invoice"}
