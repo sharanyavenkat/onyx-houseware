@@ -178,6 +178,22 @@ export default function Orders() {
       result = result.filter((order) => order.order_type === orderTypeFilter);
     }
 
+    // Sort: Active orders (draft/confirmed) first, then by latest order date
+    result = [...result].sort((a, b) => {
+      const activeStatuses = ['draft', 'confirmed'];
+      const aIsActive = activeStatuses.includes(a.status);
+      const bIsActive = activeStatuses.includes(b.status);
+      
+      // Active orders come first
+      if (aIsActive && !bIsActive) return -1;
+      if (!aIsActive && bIsActive) return 1;
+      
+      // Within same group, sort by order date (newest first)
+      const dateA = new Date(a.order_date).getTime();
+      const dateB = new Date(b.order_date).getTime();
+      return dateB - dateA;
+    });
+
     return result;
   }, [ordersWithCustomerNames, selectedMonth, statusFilter, orderTypeFilter]);
 
