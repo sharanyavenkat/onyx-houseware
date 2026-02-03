@@ -127,7 +127,19 @@ export default function OrderDetails() {
                 {order.line_items?.reduce((sum: number, item: any) => sum + item.quantity, 0) || 0}
               </p>
             </div>
+            <div>
+              <span className="text-sm text-muted-foreground">Total Shipped:</span>
+              <p className="font-medium">
+                {shipments.reduce((sum: number, s: Shipment) => sum + s.quantity_shipped, 0)}
+              </p>
+            </div>
           </div>
+          {order.notes && (
+            <div className="mt-4 pt-4 border-t">
+              <span className="text-sm text-muted-foreground">Notes:</span>
+              <p className="mt-1 whitespace-pre-wrap">{order.notes}</p>
+            </div>
+          )}
         </CardContent>
       </Card>
 
