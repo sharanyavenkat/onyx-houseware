@@ -178,9 +178,9 @@ export default function Orders() {
       result = result.filter((order) => order.order_type === orderTypeFilter);
     }
 
-    // Sort: Active orders (draft/confirmed) first, then by latest order date
+    // Sort: Active orders (confirmed) first, then by latest order date
     result = [...result].sort((a, b) => {
-      const activeStatuses = ['draft', 'confirmed'];
+      const activeStatuses = ['confirmed'];
       const aIsActive = activeStatuses.includes(a.status);
       const bIsActive = activeStatuses.includes(b.status);
       
