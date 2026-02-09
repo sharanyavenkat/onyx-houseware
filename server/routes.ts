@@ -254,6 +254,58 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Monthly castings report: batches received per caster per item for a given month
+  app.get("/api/batches/monthly-report", async (req, res) => {
+    try {
+      const { month } = req.query; // format: YYYY-MM
+      if (!month || typeof month !== 'string') {
+        return res.status(400).json({ message: "Month parameter required (YYYY-MM)" });
+      }
+
+      const allBatches = await storage.getAllBatches();
+      const allItems = await storage.getAllItems();
+
+      const itemMap = new Map(allItems.map(i => [i.id, i.name]));
+
+      // Filter batches by month and that have a caster
+      // Use string slicing to avoid timezone issues with Date parsing
+      const filtered = allBatches.filter(b => {
+        if (!b.caster_id || !b.received_date) return false;
+        const batchMonth = b.received_date.slice(0, 7);
+        return batchMonth === month;
+      });
+
+      // Group by caster_id, then by item_id
+      const report: Record<number, { item_id: number; item_name: string; qty_received: number; qty_produced: number; qty_rejected: number; batch_count: number }[]> = {};
+
+      filtered.forEach(b => {
+        const casterId = b.caster_id!;
+        if (!report[casterId]) report[casterId] = [];
+
+        const existing = report[casterId].find(r => r.item_id === b.item_id);
+        if (existing) {
+          existing.qty_received += b.quantity_received;
+          existing.qty_produced += b.quantity_produced;
+          existing.qty_rejected += b.quantity_rejected;
+          existing.batch_count += 1;
+        } else {
+          report[casterId].push({
+            item_id: b.item_id,
+            item_name: itemMap.get(b.item_id) || "Unknown",
+            qty_received: b.quantity_received,
+            qty_produced: b.quantity_produced,
+            qty_rejected: b.quantity_rejected,
+            batch_count: 1,
+          });
+        }
+      });
+
+      res.json(report);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
   app.post("/api/batches", async (req, res) => {
     try {
       // Extract and validate required fields
