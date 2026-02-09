@@ -69,7 +69,12 @@ export default function Casters() {
   });
 
   const { data: monthlyReport = {}, isLoading: reportLoading } = useQuery<MonthlyReport>({
-    queryKey: [`/api/batches/monthly-report?month=${selectedMonth}`],
+    queryKey: ['/api/batches/monthly-report', selectedMonth],
+    queryFn: async () => {
+      const res = await fetch(`/api/batches/monthly-report?month=${selectedMonth}`, { credentials: 'include' });
+      if (!res.ok) throw new Error('Failed to fetch report');
+      return res.json();
+    },
   });
 
   const casterMap = useMemo(() => {

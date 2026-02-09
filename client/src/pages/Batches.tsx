@@ -123,6 +123,7 @@ export default function Batches() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/batches"] });
       queryClient.invalidateQueries({ queryKey: ["/api/batches/on-hand-stock"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/batches/monthly-report"] });
       toast({ title: "Batch updated successfully" });
       setIsEditDialogOpen(false);
       setEditingBatch(null);
@@ -144,6 +145,7 @@ export default function Batches() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/batches"] });
       queryClient.invalidateQueries({ queryKey: ["/api/batches/on-hand-stock"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/batches/monthly-report"] });
       toast({ title: "Batch deleted successfully" });
       setIsEditDialogOpen(false);
       setEditingBatch(null);
