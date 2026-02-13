@@ -124,6 +124,7 @@ export const batches = sqliteTable("batches", {
   quantity_remaining: integer("quantity_remaining").notNull(),
   is_manual_quantity: integer("is_manual_quantity", { mode: "boolean" }).notNull().default(false),
   quality_status: text("quality_status").notNull().default("Good"),
+  purchase_order_id: integer("purchase_order_id").references(() => purchaseOrders.id, { onDelete: "set null" }),
   notes: text("notes"),
   is_depleted: integer("is_depleted", { mode: "boolean" }).notNull().default(false),
 });
@@ -235,3 +236,41 @@ export const insertCasterSchema = createInsertSchema(casters).omit({
 
 export type InsertCaster = z.infer<typeof insertCasterSchema>;
 export type Caster = typeof casters.$inferSelect;
+
+export const purchaseOrders = sqliteTable("purchase_orders", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  po_number: text("po_number").notNull().unique(),
+  caster_id: integer("caster_id")
+    .notNull()
+    .references(() => casters.id),
+  order_date: text("order_date").notNull(),
+  expected_delivery_date: text("expected_delivery_date"),
+  status: text("status").notNull().default("confirmed"),
+  notes: text("notes"),
+});
+
+export const insertPurchaseOrderSchema = createInsertSchema(purchaseOrders).omit({
+  id: true,
+});
+
+export type InsertPurchaseOrder = z.infer<typeof insertPurchaseOrderSchema>;
+export type PurchaseOrder = typeof purchaseOrders.$inferSelect;
+
+export const purchaseOrderItems = sqliteTable("purchase_order_items", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  purchase_order_id: integer("purchase_order_id")
+    .notNull()
+    .references(() => purchaseOrders.id, { onDelete: "cascade" }),
+  item_id: integer("item_id")
+    .notNull()
+    .references(() => items.id),
+  quantity_ordered: integer("quantity_ordered").notNull(),
+  quantity_received: integer("quantity_received").notNull().default(0),
+});
+
+export const insertPurchaseOrderItemSchema = createInsertSchema(purchaseOrderItems).omit({
+  id: true,
+});
+
+export type InsertPurchaseOrderItem = z.infer<typeof insertPurchaseOrderItemSchema>;
+export type PurchaseOrderItem = typeof purchaseOrderItems.$inferSelect;

@@ -565,6 +565,37 @@ export async function bootstrapDatabase() {
     }
     */
 
+    // Create purchase_orders table for tracking orders to casters
+    await db.run(sql`
+      CREATE TABLE IF NOT EXISTS purchase_orders (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        po_number TEXT NOT NULL UNIQUE,
+        caster_id INTEGER NOT NULL REFERENCES casters(id),
+        order_date TEXT NOT NULL,
+        expected_delivery_date TEXT,
+        status TEXT NOT NULL DEFAULT 'confirmed',
+        notes TEXT
+      )
+    `);
+
+    // Create purchase_order_items table for line items on purchase orders
+    await db.run(sql`
+      CREATE TABLE IF NOT EXISTS purchase_order_items (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        purchase_order_id INTEGER NOT NULL REFERENCES purchase_orders(id) ON DELETE CASCADE,
+        item_id INTEGER NOT NULL REFERENCES items(id),
+        quantity_ordered INTEGER NOT NULL,
+        quantity_received INTEGER NOT NULL DEFAULT 0
+      )
+    `);
+
+    // Add purchase_order_id column to batches table (link batches to purchase orders)
+    await addColumnIfNotExists(
+      "batches",
+      "purchase_order_id INTEGER REFERENCES purchase_orders(id) ON DELETE SET NULL",
+      "purchase_order_id"
+    );
+
     console.log("✅ SQLite database tables initialized successfully");
   } catch (error) {
     console.error("❌ Error bootstrapping database:", error);

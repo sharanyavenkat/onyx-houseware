@@ -3,7 +3,7 @@ import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { verifyPassword } from "./auth";
 import { requireAuth, requireAdmin } from "./middleware";
-import { insertItemSchema, insertCustomerSchema, insertOrderSchema, insertOrderItemSchema, insertIndentSchema, insertShipmentSchema, insertBatchSchema, updateBatchSchema, insertInvoiceSchema, insertAccessorySchema, insertCasterSchema } from "@shared/schema";
+import { insertItemSchema, insertCustomerSchema, insertOrderSchema, insertOrderItemSchema, insertIndentSchema, insertShipmentSchema, insertBatchSchema, updateBatchSchema, insertInvoiceSchema, insertAccessorySchema, insertCasterSchema, insertPurchaseOrderSchema, insertPurchaseOrderItemSchema } from "@shared/schema";
 import { db } from "./db/client";
 import { batches } from "@shared/schema";
 import { eq } from "drizzle-orm";
@@ -399,8 +399,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
         notes: notes
       };
 
+      // Handle purchase_order_id if provided
+      const purchase_order_id = req.body.purchase_order_id ? parseInt(req.body.purchase_order_id) : null;
+
       // Create batch
-      const batch = await storage.createBatch(batchData);
+      const batch = await storage.createBatch({
+        ...batchData,
+        purchase_order_id,
+      });
+      
+      // Auto-update purchase order received quantities if linked
+      if (purchase_order_id) {
+        await storage.recalculatePurchaseOrderReceived(purchase_order_id);
+        await storage.checkAndAutoCompletePurchaseOrder(purchase_order_id);
+      }
+      
       res.status(201).json(batch);
     } catch (error: any) {
       if (error.name === 'ZodError') {
@@ -426,8 +439,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
       
+      // Get the batch before update to check purchase_order_id
+      const existingBatch = await storage.getBatchById(id);
+      
       // Use unified storage.updateBatch method
       const updatedBatch = await storage.updateBatch(id, validationResult.data);
+      
+      // Handle purchase_order_id update if provided in body
+      if (req.body.purchase_order_id !== undefined) {
+        const newPoId = req.body.purchase_order_id ? parseInt(req.body.purchase_order_id) : null;
+        await db.update(batches).set({ purchase_order_id: newPoId }).where(eq(batches.id, id));
+        
+        // Recalculate old PO if batch was previously linked
+        if (existingBatch?.purchase_order_id && existingBatch.purchase_order_id !== newPoId) {
+          await storage.recalculatePurchaseOrderReceived(existingBatch.purchase_order_id);
+          await storage.checkAndAutoCompletePurchaseOrder(existingBatch.purchase_order_id);
+        }
+        // Recalculate new PO
+        if (newPoId) {
+          await storage.recalculatePurchaseOrderReceived(newPoId);
+          await storage.checkAndAutoCompletePurchaseOrder(newPoId);
+        }
+      } else if (existingBatch?.purchase_order_id) {
+        // If batch quantities changed, recalculate linked PO
+        await storage.recalculatePurchaseOrderReceived(existingBatch.purchase_order_id);
+        await storage.checkAndAutoCompletePurchaseOrder(existingBatch.purchase_order_id);
+      }
+      
       return res.json(updatedBatch);
     } catch (error: any) {
       if (error.code === 'BATCH_NOT_FOUND') {
@@ -443,7 +481,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.delete("/api/batches/:id", async (req, res) => {
     try {
       const id = parseInt(req.params.id);
+      const batch = await storage.getBatchById(id);
+      const poId = batch?.purchase_order_id;
+      
       await storage.deleteBatch(id);
+      
+      if (poId) {
+        await storage.recalculatePurchaseOrderReceived(poId);
+        await storage.checkAndAutoCompletePurchaseOrder(poId);
+      }
+      
       res.status(204).send();
     } catch (error: any) {
       res.status(500).json({ message: error.message });
@@ -1082,6 +1129,172 @@ export async function registerRoutes(app: Express): Promise<Server> {
           message: "Cannot delete this caster because they have existing batches. Please remove their batches first." 
         });
       }
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Purchase Orders routes
+  app.get("/api/purchase-orders", async (req, res) => {
+    try {
+      const allPOs = await storage.getAllPurchaseOrders();
+      const allCasters = await storage.getAllCasters();
+      const allItems = await storage.getAllItems();
+      
+      const posWithDetails = await Promise.all(
+        allPOs.map(async (po) => {
+          const caster = allCasters.find(c => c.id === po.caster_id);
+          const poItems = await storage.getPurchaseOrderItemsByPOId(po.id);
+          
+          const line_items = poItems.map(poi => {
+            const item = allItems.find(i => i.id === poi.item_id);
+            return {
+              ...poi,
+              item_name: item?.name || '',
+              sku: item?.sku || '',
+            };
+          });
+
+          return {
+            ...po,
+            caster_name: caster?.name || '',
+            line_items,
+          };
+        })
+      );
+
+      res.json(posWithDetails);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.get("/api/purchase-orders/:id", async (req, res) => {
+    try {
+      const po = await storage.getPurchaseOrderById(parseInt(req.params.id));
+      if (!po) {
+        return res.status(404).json({ message: "Purchase order not found" });
+      }
+
+      const caster = await storage.getCasterById(po.caster_id);
+      const poItems = await storage.getPurchaseOrderItemsByPOId(po.id);
+      const allItems = await storage.getAllItems();
+
+      const line_items = poItems.map(poi => {
+        const item = allItems.find(i => i.id === poi.item_id);
+        return {
+          ...poi,
+          item_name: item?.name || '',
+          sku: item?.sku || '',
+        };
+      });
+
+      res.json({
+        ...po,
+        caster_name: caster?.name || '',
+        line_items,
+      });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/purchase-orders", async (req, res) => {
+    try {
+      const { line_items, ...poData } = req.body;
+      
+      const validatedPO = insertPurchaseOrderSchema.parse({
+        ...poData,
+        status: poData.status || 'confirmed',
+      });
+
+      const po = await storage.createPurchaseOrder(validatedPO);
+
+      if (line_items && Array.isArray(line_items)) {
+        for (const item of line_items) {
+          await storage.createPurchaseOrderItem({
+            purchase_order_id: po.id,
+            item_id: item.item_id,
+            quantity_ordered: item.quantity_ordered,
+            quantity_received: 0,
+          });
+        }
+      }
+
+      res.status(201).json(po);
+    } catch (error: any) {
+      if (error.name === 'ZodError') {
+        return res.status(400).json({ message: error.message });
+      }
+      if (error.message && error.message.includes('UNIQUE constraint failed')) {
+        return res.status(400).json({ message: "PO number already exists" });
+      }
+      res.status(400).json({ message: error.message });
+    }
+  });
+
+  app.patch("/api/purchase-orders/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const { line_items, ...poData } = req.body;
+      
+      const po = await storage.updatePurchaseOrder(id, poData);
+      if (!po) {
+        return res.status(404).json({ message: "Purchase order not found" });
+      }
+
+      if (line_items && Array.isArray(line_items)) {
+        await storage.deletePurchaseOrderItemsByPOId(id);
+        for (const item of line_items) {
+          await storage.createPurchaseOrderItem({
+            purchase_order_id: id,
+            item_id: item.item_id,
+            quantity_ordered: item.quantity_ordered,
+            quantity_received: item.quantity_received || 0,
+          });
+        }
+        await storage.recalculatePurchaseOrderReceived(id);
+        await storage.checkAndAutoCompletePurchaseOrder(id);
+      }
+
+      const updated = await storage.getPurchaseOrderById(id);
+      res.json(updated);
+    } catch (error: any) {
+      res.status(400).json({ message: error.message });
+    }
+  });
+
+  app.delete("/api/purchase-orders/:id", async (req, res) => {
+    try {
+      await storage.deletePurchaseOrder(parseInt(req.params.id));
+      res.status(204).send();
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Get purchase orders for a specific caster (for batch linking)
+  app.get("/api/purchase-orders/by-caster/:casterId", async (req, res) => {
+    try {
+      const casterId = parseInt(req.params.casterId);
+      const pos = await storage.getPurchaseOrdersByCasterId(casterId);
+      
+      const allItems = await storage.getAllItems();
+      const posWithItems = await Promise.all(
+        pos.filter(po => po.status === 'confirmed').map(async (po) => {
+          const poItems = await storage.getPurchaseOrderItemsByPOId(po.id);
+          const line_items = poItems.map(poi => {
+            const item = allItems.find(i => i.id === poi.item_id);
+            return {
+              ...poi,
+              item_name: item?.name || '',
+            };
+          });
+          return { ...po, line_items };
+        })
+      );
+
+      res.json(posWithItems);
+    } catch (error: any) {
       res.status(500).json({ message: error.message });
     }
   });

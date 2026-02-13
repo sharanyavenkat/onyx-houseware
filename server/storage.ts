@@ -23,6 +23,10 @@ import {
   type InsertAccessory,
   type Caster,
   type InsertCaster,
+  type PurchaseOrder,
+  type InsertPurchaseOrder,
+  type PurchaseOrderItem,
+  type InsertPurchaseOrderItem,
   users,
   items,
   customers,
@@ -33,7 +37,9 @@ import {
   batches,
   invoices,
   accessories,
-  casters
+  casters,
+  purchaseOrders,
+  purchaseOrderItems,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -112,6 +118,20 @@ export interface IStorage {
   updateCaster(id: number, caster: Partial<InsertCaster>): Promise<Caster | undefined>;
   deleteCaster(id: number): Promise<void>;
   getCasterRejectionStats(casterId: number): Promise<{ totalReceived: number; totalRejected: number; rejectionRate: number; batchesWithRejections: Array<{ batchNumber: string; itemName: string; received: number; rejected: number; receivedDate: string }> }>;
+
+  getAllPurchaseOrders(): Promise<PurchaseOrder[]>;
+  getPurchaseOrderById(id: number): Promise<PurchaseOrder | undefined>;
+  getPurchaseOrdersByCasterId(casterId: number): Promise<PurchaseOrder[]>;
+  createPurchaseOrder(po: InsertPurchaseOrder): Promise<PurchaseOrder>;
+  updatePurchaseOrder(id: number, po: Partial<InsertPurchaseOrder>): Promise<PurchaseOrder | undefined>;
+  deletePurchaseOrder(id: number): Promise<void>;
+  getPurchaseOrderItemsByPOId(purchaseOrderId: number): Promise<PurchaseOrderItem[]>;
+  createPurchaseOrderItem(item: InsertPurchaseOrderItem): Promise<PurchaseOrderItem>;
+  updatePurchaseOrderItem(id: number, updates: Partial<InsertPurchaseOrderItem>): Promise<PurchaseOrderItem | undefined>;
+  deletePurchaseOrderItem(id: number): Promise<void>;
+  deletePurchaseOrderItemsByPOId(purchaseOrderId: number): Promise<void>;
+  recalculatePurchaseOrderReceived(purchaseOrderId: number): Promise<void>;
+  checkAndAutoCompletePurchaseOrder(purchaseOrderId: number): Promise<void>;
 }
 
 export class DbStorage implements IStorage {
@@ -1047,6 +1067,91 @@ export class DbStorage implements IStorage {
       rejectionRate,
       batchesWithRejections
     };
+  }
+  async getAllPurchaseOrders(): Promise<PurchaseOrder[]> {
+    return await db.select().from(purchaseOrders).orderBy(desc(purchaseOrders.order_date));
+  }
+
+  async getPurchaseOrderById(id: number): Promise<PurchaseOrder | undefined> {
+    const [po] = await db.select().from(purchaseOrders).where(eq(purchaseOrders.id, id));
+    return po;
+  }
+
+  async getPurchaseOrdersByCasterId(casterId: number): Promise<PurchaseOrder[]> {
+    return await db.select().from(purchaseOrders)
+      .where(eq(purchaseOrders.caster_id, casterId))
+      .orderBy(desc(purchaseOrders.order_date));
+  }
+
+  async createPurchaseOrder(po: InsertPurchaseOrder): Promise<PurchaseOrder> {
+    const [created] = await db.insert(purchaseOrders).values(po).returning();
+    return created;
+  }
+
+  async updatePurchaseOrder(id: number, po: Partial<InsertPurchaseOrder>): Promise<PurchaseOrder | undefined> {
+    const [updated] = await db.update(purchaseOrders).set(po).where(eq(purchaseOrders.id, id)).returning();
+    return updated;
+  }
+
+  async deletePurchaseOrder(id: number): Promise<void> {
+    await db.delete(purchaseOrders).where(eq(purchaseOrders.id, id));
+  }
+
+  async getPurchaseOrderItemsByPOId(purchaseOrderId: number): Promise<PurchaseOrderItem[]> {
+    return await db.select().from(purchaseOrderItems)
+      .where(eq(purchaseOrderItems.purchase_order_id, purchaseOrderId));
+  }
+
+  async createPurchaseOrderItem(item: InsertPurchaseOrderItem): Promise<PurchaseOrderItem> {
+    const [created] = await db.insert(purchaseOrderItems).values(item).returning();
+    return created;
+  }
+
+  async updatePurchaseOrderItem(id: number, updates: Partial<InsertPurchaseOrderItem>): Promise<PurchaseOrderItem | undefined> {
+    const [updated] = await db.update(purchaseOrderItems).set(updates).where(eq(purchaseOrderItems.id, id)).returning();
+    return updated;
+  }
+
+  async deletePurchaseOrderItem(id: number): Promise<void> {
+    await db.delete(purchaseOrderItems).where(eq(purchaseOrderItems.id, id));
+  }
+
+  async deletePurchaseOrderItemsByPOId(purchaseOrderId: number): Promise<void> {
+    await db.delete(purchaseOrderItems).where(eq(purchaseOrderItems.purchase_order_id, purchaseOrderId));
+  }
+
+  async recalculatePurchaseOrderReceived(purchaseOrderId: number): Promise<void> {
+    const poItems = await this.getPurchaseOrderItemsByPOId(purchaseOrderId);
+    const linkedBatches = await db.select().from(batches)
+      .where(eq(batches.purchase_order_id, purchaseOrderId));
+
+    for (const poItem of poItems) {
+      const received = linkedBatches
+        .filter(b => b.item_id === poItem.item_id)
+        .reduce((sum, b) => sum + b.quantity_produced, 0);
+      await db.update(purchaseOrderItems)
+        .set({ quantity_received: received })
+        .where(eq(purchaseOrderItems.id, poItem.id));
+    }
+  }
+
+  async checkAndAutoCompletePurchaseOrder(purchaseOrderId: number): Promise<void> {
+    const poItems = await this.getPurchaseOrderItemsByPOId(purchaseOrderId);
+    if (poItems.length === 0) return;
+
+    const allReceived = poItems.every(item => item.quantity_received >= item.quantity_ordered);
+    const po = await this.getPurchaseOrderById(purchaseOrderId);
+    if (!po) return;
+
+    if (allReceived && po.status === 'confirmed') {
+      await db.update(purchaseOrders)
+        .set({ status: 'completed' })
+        .where(eq(purchaseOrders.id, purchaseOrderId));
+    } else if (!allReceived && po.status === 'completed') {
+      await db.update(purchaseOrders)
+        .set({ status: 'confirmed' })
+        .where(eq(purchaseOrders.id, purchaseOrderId));
+    }
   }
 }
 
