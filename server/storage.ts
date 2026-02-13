@@ -1128,7 +1128,7 @@ export class DbStorage implements IStorage {
     for (const poItem of poItems) {
       const received = linkedBatches
         .filter(b => b.item_id === poItem.item_id)
-        .reduce((sum, b) => sum + b.quantity_produced, 0);
+        .reduce((sum, b) => sum + b.quantity_received, 0);
       await db.update(purchaseOrderItems)
         .set({ quantity_received: received })
         .where(eq(purchaseOrderItems.id, poItem.id));

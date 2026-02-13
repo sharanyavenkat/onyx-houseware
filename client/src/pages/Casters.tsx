@@ -147,21 +147,6 @@ export default function Casters() {
     }));
   }, [monthlyReport, casterMap]);
 
-  const poTotalsPerCasterItem = useMemo(() => {
-    const totals: Record<string, { ordered: number; received: number }> = {};
-    for (const po of purchaseOrders) {
-      if (po.status === 'confirmed' || po.status === 'completed') {
-        for (const item of po.line_items) {
-          const key = `${po.caster_id}-${item.item_id}`;
-          if (!totals[key]) totals[key] = { ordered: 0, received: 0 };
-          totals[key].ordered += item.quantity_ordered;
-          totals[key].received += item.quantity_received;
-        }
-      }
-    }
-    return totals;
-  }, [purchaseOrders]);
-
   const selectedMonthLabel = monthOptions.find(m => m.value === selectedMonth)?.label || selectedMonth;
 
   // Caster CRUD
@@ -378,92 +363,54 @@ export default function Casters() {
                           <thead className="bg-muted/20">
                             <tr>
                               <th className="text-left py-2 px-4 font-medium">Item</th>
-                              <th className="text-right py-2 px-4 font-medium">Ordered (PO)</th>
                               <th className="text-right py-2 px-4 font-medium">Qty Received</th>
                               <th className="text-right py-2 px-4 font-medium">Qty Rejected</th>
                               <th className="text-right py-2 px-4 font-medium">Final Qty</th>
-                              <th className="text-right py-2 px-4 font-medium">Remaining</th>
                               <th className="text-right py-2 px-4 font-medium">Batches</th>
                             </tr>
                           </thead>
                           <tbody>
-                            {reportItems.map(item => {
-                              const poKey = `${casterId}-${item.item_id}`;
-                              const poData = poTotalsPerCasterItem[poKey];
-                              const ordered = poData?.ordered || 0;
-                              const totalPoReceived = poData?.received || 0;
-                              const remaining = ordered > 0 ? Math.max(0, ordered - totalPoReceived) : 0;
-
-                              return (
-                                <tr key={item.item_id} className="border-t">
-                                  <td className="py-2 px-4 font-medium">{item.item_name}</td>
-                                  <td className="py-2 px-4 text-right font-mono">
-                                    {ordered > 0 ? ordered.toLocaleString() : '-'}
-                                  </td>
-                                  <td className="py-2 px-4 text-right font-mono">{item.qty_received.toLocaleString()}</td>
-                                  <td className={`py-2 px-4 text-right font-mono ${item.qty_rejected > 0 ? 'text-destructive font-medium' : ''}`}>
-                                    {item.qty_rejected.toLocaleString()}
-                                  </td>
-                                  <td className="py-2 px-4 text-right font-mono font-semibold">{item.qty_produced.toLocaleString()}</td>
-                                  <td className={`py-2 px-4 text-right font-mono ${remaining > 0 ? 'text-orange-600 dark:text-orange-400 font-medium' : ''}`}>
-                                    {ordered > 0 ? remaining.toLocaleString() : '-'}
-                                  </td>
-                                  <td className="py-2 px-4 text-right font-mono">{item.batch_count}</td>
-                                </tr>
-                              );
-                            })}
+                            {reportItems.map(item => (
+                              <tr key={item.item_id} className="border-t">
+                                <td className="py-2 px-4 font-medium">{item.item_name}</td>
+                                <td className="py-2 px-4 text-right font-mono">{item.qty_received.toLocaleString()}</td>
+                                <td className={`py-2 px-4 text-right font-mono ${item.qty_rejected > 0 ? 'text-destructive font-medium' : ''}`}>
+                                  {item.qty_rejected.toLocaleString()}
+                                </td>
+                                <td className="py-2 px-4 text-right font-mono font-semibold">{item.qty_produced.toLocaleString()}</td>
+                                <td className="py-2 px-4 text-right font-mono">{item.batch_count}</td>
+                              </tr>
+                            ))}
                           </tbody>
                         </table>
                       </div>
 
                       <div className="sm:hidden divide-y">
-                        {reportItems.map(item => {
-                          const poKey = `${casterId}-${item.item_id}`;
-                          const poData = poTotalsPerCasterItem[poKey];
-                          const ordered = poData?.ordered || 0;
-                          const totalPoReceived = poData?.received || 0;
-                          const remaining = ordered > 0 ? Math.max(0, ordered - totalPoReceived) : 0;
-
-                          return (
-                            <div key={item.item_id} className="px-4 py-3">
-                              <div className="font-medium mb-1">{item.item_name}</div>
-                              <div className="grid grid-cols-2 gap-2 text-sm">
-                                {ordered > 0 && (
-                                  <div>
-                                    <span className="text-muted-foreground text-xs">Ordered (PO)</span>
-                                    <div className="font-mono">{ordered.toLocaleString()}</div>
-                                  </div>
-                                )}
-                                <div>
-                                  <span className="text-muted-foreground text-xs">Received</span>
-                                  <div className="font-mono">{item.qty_received.toLocaleString()}</div>
-                                </div>
-                                <div>
-                                  <span className="text-muted-foreground text-xs">Rejected</span>
-                                  <div className={`font-mono ${item.qty_rejected > 0 ? 'text-destructive' : ''}`}>
-                                    {item.qty_rejected.toLocaleString()}
-                                  </div>
-                                </div>
-                                <div>
-                                  <span className="text-muted-foreground text-xs">Final Qty</span>
-                                  <div className="font-mono font-semibold">{item.qty_produced.toLocaleString()}</div>
-                                </div>
-                                {ordered > 0 && (
-                                  <div>
-                                    <span className="text-muted-foreground text-xs">Remaining</span>
-                                    <div className={`font-mono ${remaining > 0 ? 'text-orange-600 dark:text-orange-400' : ''}`}>
-                                      {remaining.toLocaleString()}
-                                    </div>
-                                  </div>
-                                )}
-                                <div>
-                                  <span className="text-muted-foreground text-xs">Batches</span>
-                                  <div className="font-mono">{item.batch_count}</div>
+                        {reportItems.map(item => (
+                          <div key={item.item_id} className="px-4 py-3">
+                            <div className="font-medium mb-1">{item.item_name}</div>
+                            <div className="grid grid-cols-2 gap-2 text-sm">
+                              <div>
+                                <span className="text-muted-foreground text-xs">Received</span>
+                                <div className="font-mono">{item.qty_received.toLocaleString()}</div>
+                              </div>
+                              <div>
+                                <span className="text-muted-foreground text-xs">Rejected</span>
+                                <div className={`font-mono ${item.qty_rejected > 0 ? 'text-destructive' : ''}`}>
+                                  {item.qty_rejected.toLocaleString()}
                                 </div>
                               </div>
+                              <div>
+                                <span className="text-muted-foreground text-xs">Final Qty</span>
+                                <div className="font-mono font-semibold">{item.qty_produced.toLocaleString()}</div>
+                              </div>
+                              <div>
+                                <span className="text-muted-foreground text-xs">Batches</span>
+                                <div className="font-mono">{item.batch_count}</div>
+                              </div>
                             </div>
-                          );
-                        })}
+                          </div>
+                        ))}
                       </div>
                     </div>
                   ))}
@@ -816,13 +763,13 @@ function PurchaseOrderModal({
         onOpenChange(open);
       }}
     >
-      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg" onOpenAutoFocus={() => resetFormForEdit()}>
+      <DialogContent onOpenAutoFocus={() => resetFormForEdit()}>
         <DialogHeader>
           <DialogTitle>{editingPO ? 'Edit Purchase Order' : 'New Purchase Order'}</DialogTitle>
         </DialogHeader>
         <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
+          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4 flex-1 overflow-y-auto pr-2">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <FormField
                 control={form.control}
                 name="po_number"
@@ -861,7 +808,7 @@ function PurchaseOrderModal({
               />
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <FormField
                 control={form.control}
                 name="order_date"
@@ -892,7 +839,7 @@ function PurchaseOrderModal({
             </div>
 
             <div className="space-y-3">
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between gap-2 flex-wrap">
                 <FormLabel>Items</FormLabel>
                 <Button type="button" variant="outline" size="sm" onClick={addLineItem} className="gap-1">
                   <Plus className="h-3 w-3" />
@@ -955,7 +902,6 @@ function PurchaseOrderModal({
                       variant="ghost"
                       size="icon"
                       onClick={() => removeLineItem(index)}
-                      className="mt-0"
                     >
                       <Trash2 className="h-4 w-4" />
                     </Button>
@@ -978,7 +924,7 @@ function PurchaseOrderModal({
               )}
             />
 
-            <div className="flex justify-end gap-3 pt-4">
+            <div className="flex justify-end gap-3 pt-4 border-t">
               <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
                 Cancel
               </Button>
