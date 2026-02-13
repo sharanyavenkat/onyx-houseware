@@ -1265,7 +1265,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete("/api/purchase-orders/:id", async (req, res) => {
     try {
-      await storage.deletePurchaseOrder(parseInt(req.params.id));
+      const poId = parseInt(req.params.id);
+      // Unlink any batches linked to this PO (set purchase_order_id to null)
+      const allBatches = await storage.getAllBatches();
+      const linkedBatches = allBatches.filter(b => b.purchase_order_id === poId);
+      for (const batch of linkedBatches) {
+        await storage.updateBatch(batch.id, { purchase_order_id: null });
+      }
+      await storage.deletePurchaseOrderItemsByPOId(poId);
+      await storage.deletePurchaseOrder(poId);
       res.status(204).send();
     } catch (error: any) {
       res.status(500).json({ message: error.message });

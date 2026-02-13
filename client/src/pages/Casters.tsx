@@ -83,7 +83,6 @@ const purchaseOrderFormSchema = z.object({
   po_number: z.string().min(1, "PO number is required"),
   caster_id: z.string().min(1, "Caster is required"),
   order_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Invalid date format"),
-  expected_delivery_date: z.string().optional(),
   notes: z.string().optional(),
   line_items: z.array(z.object({
     item_id: z.string().min(1, "Item is required"),
@@ -228,6 +227,8 @@ export default function Casters() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/purchase-orders'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/batches'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/batches/on-hand-stock'] });
       toast({ title: 'Purchase order deleted successfully' });
     },
     onError: (error: Error) => {
@@ -480,7 +481,6 @@ export default function Casters() {
             po_number: data.po_number,
             caster_id: parseInt(data.caster_id),
             order_date: data.order_date,
-            expected_delivery_date: data.expected_delivery_date || null,
             notes: data.notes || null,
             line_items: data.line_items.map(li => ({
               item_id: parseInt(li.item_id),
@@ -525,8 +525,10 @@ function PurchasesTab({
   onEdit: (po: POWithDetails) => void;
   onDelete: (po: POWithDetails) => void;
 }) {
-  const confirmedPOs = purchaseOrders.filter(po => po.status === 'confirmed');
-  const completedPOs = purchaseOrders.filter(po => po.status === 'completed');
+  const sortByDate = (a: POWithDetails, b: POWithDetails) => 
+    new Date(b.order_date).getTime() - new Date(a.order_date).getTime();
+  const confirmedPOs = purchaseOrders.filter(po => po.status === 'confirmed').sort(sortByDate);
+  const completedPOs = purchaseOrders.filter(po => po.status === 'completed').sort(sortByDate);
 
   return (
     <div className="space-y-4">
@@ -611,9 +613,6 @@ function POCard({
       <CardContent>
         <div className="flex flex-col sm:flex-row sm:items-center gap-2 mb-3 text-sm text-muted-foreground">
           <span>Ordered: {new Date(po.order_date).toLocaleDateString()}</span>
-          {po.expected_delivery_date && (
-            <span>Expected: {new Date(po.expected_delivery_date).toLocaleDateString()}</span>
-          )}
           <span className="font-medium text-foreground">
             {totalReceived.toLocaleString()} / {totalOrdered.toLocaleString()} received
             {totalRemaining > 0 && (
@@ -710,7 +709,6 @@ function PurchaseOrderModal({
       po_number: '',
       caster_id: '',
       order_date: new Date().toISOString().split('T')[0],
-      expected_delivery_date: '',
       notes: '',
       line_items: [{ item_id: '', quantity_ordered: '' }],
     },
@@ -724,7 +722,6 @@ function PurchaseOrderModal({
         po_number: editingPO.po_number,
         caster_id: editingPO.caster_id.toString(),
         order_date: editingPO.order_date,
-        expected_delivery_date: editingPO.expected_delivery_date || '',
         notes: editingPO.notes || '',
         line_items: editingPO.line_items.map(li => ({
           item_id: li.item_id.toString(),
@@ -736,7 +733,6 @@ function PurchaseOrderModal({
         po_number: '',
         caster_id: '',
         order_date: new Date().toISOString().split('T')[0],
-        expected_delivery_date: '',
         notes: '',
         line_items: [{ item_id: '', quantity_ordered: '' }],
       });
@@ -808,106 +804,92 @@ function PurchaseOrderModal({
               />
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <FormField
-                control={form.control}
-                name="order_date"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Order Date</FormLabel>
-                    <FormControl>
-                      <Input type="date" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <FormField
-                control={form.control}
-                name="expected_delivery_date"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Expected Delivery</FormLabel>
-                    <FormControl>
-                      <Input type="date" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            </div>
+            <FormField
+              control={form.control}
+              name="order_date"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Order Date</FormLabel>
+                  <FormControl>
+                    <Input type="date" {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
 
             <div className="space-y-3">
               <div className="flex items-center justify-between gap-2 flex-wrap">
-                <FormLabel>Items</FormLabel>
+                <FormLabel>Items & Quantities</FormLabel>
                 <Button type="button" variant="outline" size="sm" onClick={addLineItem} className="gap-1">
                   <Plus className="h-3 w-3" />
                   Add Item
                 </Button>
               </div>
 
-              {lineItems.map((_, index) => (
-                <div key={index} className="flex gap-2 items-start">
-                  <FormField
-                    control={form.control}
-                    name={`line_items.${index}.item_id`}
-                    render={({ field }) => (
-                      <FormItem className="flex-1">
-                        <Select value={field.value} onValueChange={field.onChange}>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {lineItems.map((_, index) => (
+                  <div key={index} className="flex gap-2 items-start">
+                    <FormField
+                      control={form.control}
+                      name={`line_items.${index}.item_id`}
+                      render={({ field }) => (
+                        <FormItem className="flex-1">
+                          <Select value={field.value} onValueChange={field.onChange}>
+                            <FormControl>
+                              <SelectTrigger>
+                                <SelectValue placeholder="Select item" />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              {items.filter(i => i.is_active).map(item => (
+                                <SelectItem key={item.id} value={item.id.toString()}>
+                                  {item.name} ({item.sku})
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    <FormField
+                      control={form.control}
+                      name={`line_items.${index}.quantity_ordered`}
+                      render={({ field }) => (
+                        <FormItem className="w-24">
                           <FormControl>
-                            <SelectTrigger>
-                              <SelectValue placeholder="Select item" />
-                            </SelectTrigger>
+                            <Input
+                              type="text"
+                              inputMode="numeric"
+                              pattern="[0-9]*"
+                              {...field}
+                              onChange={(e) => {
+                                const value = e.target.value.replace(/[^0-9]/g, '');
+                                field.onChange(value);
+                              }}
+                              placeholder="Qty"
+                            />
                           </FormControl>
-                          <SelectContent>
-                            {items.filter(i => i.is_active).map(item => (
-                              <SelectItem key={item.id} value={item.id.toString()}>
-                                {item.name} ({item.sku})
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
 
-                  <FormField
-                    control={form.control}
-                    name={`line_items.${index}.quantity_ordered`}
-                    render={({ field }) => (
-                      <FormItem className="w-28">
-                        <FormControl>
-                          <Input
-                            type="text"
-                            inputMode="numeric"
-                            pattern="[0-9]*"
-                            {...field}
-                            onChange={(e) => {
-                              const value = e.target.value.replace(/[^0-9]/g, '');
-                              field.onChange(value);
-                            }}
-                            placeholder="Qty"
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
+                    {lineItems.length > 1 && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => removeLineItem(index)}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
                     )}
-                  />
-
-                  {lineItems.length > 1 && (
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => removeLineItem(index)}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  )}
-                </div>
-              ))}
+                  </div>
+                ))}
+              </div>
             </div>
 
             <FormField
