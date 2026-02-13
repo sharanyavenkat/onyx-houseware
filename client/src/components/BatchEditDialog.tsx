@@ -25,7 +25,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import type { Batch, Caster } from "@shared/schema";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { useForm, useWatch } from "react-hook-form";
 import { useQuery } from "@tanstack/react-query";
 import { z } from "zod";
@@ -34,6 +34,7 @@ import { Trash2 } from "lucide-react";
 const batchEditSchema = z.object({
   batch_number: z.string().min(1, "Batch number is required"),
   caster_id: z.string().optional(),
+  purchase_order_id: z.string().optional(),
   received_date: z.string().min(1, "Received date is required"),
   quantity_received: z.string().min(1, "Received quantity is required"),
   quantity_rejected: z.string().optional(),
@@ -74,6 +75,7 @@ export default function BatchEditDialog({
     defaultValues: {
       batch_number: "",
       caster_id: "",
+      purchase_order_id: "",
       received_date: "",
       quantity_received: "0",
       quantity_rejected: "0",
@@ -82,6 +84,26 @@ export default function BatchEditDialog({
       notes: "",
     },
   });
+
+  const watchedCasterId = useWatch({ control: form.control, name: "caster_id" });
+
+  type POWithItems = { id: number; po_number: string; order_date: string; line_items: { item_id: number; item_name: string; quantity_ordered: number; quantity_received: number }[] };
+
+  const { data: casterPOs = [] } = useQuery<POWithItems[]>({
+    queryKey: ['/api/purchase-orders/by-caster', watchedCasterId],
+    queryFn: async () => {
+      if (!watchedCasterId || watchedCasterId === "none") return [];
+      const res = await fetch(`/api/purchase-orders/by-caster/${watchedCasterId}`, { credentials: 'include' });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: !!watchedCasterId && watchedCasterId !== "none",
+  });
+
+  const matchingPOs = useMemo(() => {
+    if (!batch) return casterPOs;
+    return casterPOs.filter(po => po.line_items.some(li => li.item_id === batch.item_id));
+  }, [casterPOs, batch]);
 
   const quantityReceived = useWatch({ control: form.control, name: "quantity_received" }) || "0";
   const quantityRejected = useWatch({ control: form.control, name: "quantity_rejected" }) || "0";
@@ -94,6 +116,7 @@ export default function BatchEditDialog({
       form.reset({
         batch_number: batch.batch_number,
         caster_id: batch.caster_id ? batch.caster_id.toString() : "",
+        purchase_order_id: batch.purchase_order_id ? batch.purchase_order_id.toString() : "",
         received_date: batch.received_date,
         quantity_received: batch.quantity_received?.toString() || "0",
         quantity_rejected: batch.quantity_rejected?.toString() || "0",
@@ -119,6 +142,7 @@ export default function BatchEditDialog({
     const payload = {
       batch_number: data.batch_number,
       caster_id: data.caster_id && data.caster_id !== "none" ? parseInt(data.caster_id) : null,
+      purchase_order_id: data.purchase_order_id ? parseInt(data.purchase_order_id) : null,
       received_date: data.received_date,
       quantity_received: parseInt(data.quantity_received) || 0,
       quantity_rejected: parseInt(data.quantity_rejected || "0") || 0,
@@ -187,6 +211,47 @@ export default function BatchEditDialog({
                     </FormItem>
                   )}
                 />
+
+                {(matchingPOs.length > 0 || batch?.purchase_order_id) && (
+                  <FormField
+                    control={form.control}
+                    name="purchase_order_id"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Purchase Order</FormLabel>
+                        <Select
+                          value={field.value || "none"}
+                          onValueChange={(value) => field.onChange(value === "none" ? "" : value)}
+                        >
+                          <FormControl>
+                            <SelectTrigger>
+                              <SelectValue placeholder="Link to purchase order" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            <SelectItem value="none">None</SelectItem>
+                            {matchingPOs.map((po) => {
+                              const poDate = new Date(po.order_date).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' });
+                              const relevantItem = batch
+                                ? po.line_items.find(li => li.item_id === batch.item_id)
+                                : null;
+                              const remaining = relevantItem
+                                ? Math.max(0, relevantItem.quantity_ordered - relevantItem.quantity_received)
+                                : null;
+                              return (
+                                <SelectItem key={po.id} value={po.id.toString()}>
+                                  {po.po_number} - {poDate}
+                                  {remaining !== null && ` (${remaining} remaining)`}
+                                </SelectItem>
+                              );
+                            })}
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                )}
 
                 <FormField
                   control={form.control}

@@ -84,7 +84,7 @@ export default function BatchFormModal({
   const watchedCasterId = useWatch({ control: form.control, name: "caster_id" });
   const watchedItemId = useWatch({ control: form.control, name: "item_id" });
   
-  type POWithItems = { id: number; po_number: string; line_items: { item_id: number; item_name: string; quantity_ordered: number; quantity_received: number }[] };
+  type POWithItems = { id: number; po_number: string; order_date: string; expected_delivery_date: string | null; status: string; line_items: { item_id: number; item_name: string; quantity_ordered: number; quantity_received: number }[] };
   
   const { data: casterPOs = [] } = useQuery<POWithItems[]>({
     queryKey: ['/api/purchase-orders/by-caster', watchedCasterId],
@@ -98,9 +98,10 @@ export default function BatchFormModal({
   });
 
   const matchingPOs = useMemo(() => {
-    if (!watchedItemId) return casterPOs;
+    const confirmed = casterPOs.filter(po => po.status === 'confirmed');
+    if (!watchedItemId) return confirmed;
     const itemId = parseInt(watchedItemId);
-    return casterPOs.filter(po => po.line_items.some(li => li.item_id === itemId));
+    return confirmed.filter(po => po.line_items.some(li => li.item_id === itemId));
   }, [casterPOs, watchedItemId]);
 
   const quantityReceived = useWatch({ control: form.control, name: "quantity_received" }) || "";
@@ -258,7 +259,7 @@ export default function BatchFormModal({
                 name="purchase_order_id"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Purchase Order (Optional)</FormLabel>
+                    <FormLabel>Purchase Order</FormLabel>
                     <Select
                       value={field.value || "none"}
                       onValueChange={(value) => field.onChange(value === "none" ? "" : value)}
@@ -269,8 +270,9 @@ export default function BatchFormModal({
                         </SelectTrigger>
                       </FormControl>
                       <SelectContent>
-                        <SelectItem value="none">No purchase order</SelectItem>
+                        <SelectItem value="none">None</SelectItem>
                         {matchingPOs.map((po) => {
+                          const poDate = new Date(po.order_date).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' });
                           const relevantItem = watchedItemId
                             ? po.line_items.find(li => li.item_id === parseInt(watchedItemId))
                             : null;
@@ -279,7 +281,7 @@ export default function BatchFormModal({
                             : null;
                           return (
                             <SelectItem key={po.id} value={po.id.toString()}>
-                              {po.po_number}
+                              {po.po_number} - {poDate}
                               {remaining !== null && ` (${remaining} remaining)`}
                             </SelectItem>
                           );

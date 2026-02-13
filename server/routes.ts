@@ -1280,7 +1280,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       const allItems = await storage.getAllItems();
       const posWithItems = await Promise.all(
-        pos.filter(po => po.status === 'confirmed').map(async (po) => {
+        pos.filter(po => po.status === 'confirmed' || po.status === 'completed').map(async (po) => {
           const poItems = await storage.getPurchaseOrderItemsByPOId(po.id);
           const line_items = poItems.map(poi => {
             const item = allItems.find(i => i.id === poi.item_id);
