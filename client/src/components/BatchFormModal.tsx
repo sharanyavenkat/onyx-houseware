@@ -95,6 +95,7 @@ export default function BatchFormModal({
       return res.json();
     },
     enabled: !!watchedCasterId,
+    staleTime: 0,
   });
 
   const matchingPOs = useMemo(() => {
@@ -232,7 +233,10 @@ export default function BatchFormModal({
                   <FormLabel>Caster (Optional)</FormLabel>
                   <Select
                     value={field.value || "none"}
-                    onValueChange={(value) => field.onChange(value === "none" ? "" : value)}
+                    onValueChange={(value) => {
+                      field.onChange(value === "none" ? "" : value);
+                      form.setValue("purchase_order_id", "");
+                    }}
                   >
                     <FormControl>
                       <SelectTrigger data-testid="select-batch-caster">
@@ -273,16 +277,9 @@ export default function BatchFormModal({
                         <SelectItem value="none">None</SelectItem>
                         {matchingPOs.map((po) => {
                           const poDate = new Date(po.order_date).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' });
-                          const relevantItem = watchedItemId
-                            ? po.line_items.find(li => li.item_id === parseInt(watchedItemId))
-                            : null;
-                          const remaining = relevantItem
-                            ? Math.max(0, relevantItem.quantity_ordered - relevantItem.quantity_received)
-                            : null;
                           return (
                             <SelectItem key={po.id} value={po.id.toString()}>
                               {po.po_number} - {poDate}
-                              {remaining !== null && ` (${remaining} remaining)`}
                             </SelectItem>
                           );
                         })}

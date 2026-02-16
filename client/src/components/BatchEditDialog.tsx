@@ -98,6 +98,7 @@ export default function BatchEditDialog({
       return res.json();
     },
     enabled: !!watchedCasterId && watchedCasterId !== "none",
+    staleTime: 0,
   });
 
   const matchingPOs = useMemo(() => {
@@ -232,16 +233,9 @@ export default function BatchEditDialog({
                             <SelectItem value="none">None</SelectItem>
                             {matchingPOs.map((po) => {
                               const poDate = new Date(po.order_date).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' });
-                              const relevantItem = batch
-                                ? po.line_items.find(li => li.item_id === batch.item_id)
-                                : null;
-                              const remaining = relevantItem
-                                ? Math.max(0, relevantItem.quantity_ordered - relevantItem.quantity_received)
-                                : null;
                               return (
                                 <SelectItem key={po.id} value={po.id.toString()}>
                                   {po.po_number} - {poDate}
-                                  {remaining !== null && ` (${remaining} remaining)`}
                                 </SelectItem>
                               );
                             })}

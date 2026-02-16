@@ -37,7 +37,7 @@ import { useLocation } from 'wouter';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { Plus, Trash2, Package, CalendarDays, FileText } from 'lucide-react';
+import { Plus, X, Pencil, Trash2, Package, CalendarDays, FileText } from 'lucide-react';
 import type { Caster, Item, PurchaseOrder, PurchaseOrderItem } from '@shared/schema';
 
 const casterFields = [
@@ -298,20 +298,20 @@ export default function Casters() {
 
   return (
     <div data-testid="page-casters">
-      <Tabs defaultValue="monthly-report" className="w-full">
+      <Tabs defaultValue="purchases" className="w-full">
         <TabsList className="w-full justify-start flex-wrap gap-1">
-          <TabsTrigger value="monthly-report" className="gap-1.5">
-            <CalendarDays className="h-4 w-4" />
-            <span className="hidden sm:inline">Monthly Report</span>
-            <span className="sm:hidden">Report</span>
+          <TabsTrigger value="casters" className="gap-1.5">
+            <Package className="h-4 w-4" />
+            Casters
           </TabsTrigger>
           <TabsTrigger value="purchases" className="gap-1.5">
             <FileText className="h-4 w-4" />
             Purchases
           </TabsTrigger>
-          <TabsTrigger value="casters" className="gap-1.5">
-            <Package className="h-4 w-4" />
-            Casters
+          <TabsTrigger value="monthly-report" className="gap-1.5">
+            <CalendarDays className="h-4 w-4" />
+            <span className="hidden sm:inline">Monthly Report</span>
+            <span className="sm:hidden">Report</span>
           </TabsTrigger>
         </TabsList>
 
@@ -601,8 +601,10 @@ function POCard({
             <span className="text-sm text-muted-foreground">{po.caster_name}</span>
             {canMutate && (
               <div className="flex gap-1">
-                <Button variant="ghost" size="sm" onClick={() => onEdit(po)}>Edit</Button>
-                <Button variant="ghost" size="sm" onClick={() => onDelete(po)} className="text-destructive">
+                <Button variant="ghost" size="icon" onClick={() => onEdit(po)}>
+                  <Pencil className="h-4 w-4" />
+                </Button>
+                <Button variant="ghost" size="icon" onClick={() => onDelete(po)} className="text-destructive">
                   <Trash2 className="h-4 w-4" />
                 </Button>
               </div>
@@ -751,6 +753,13 @@ function PurchaseOrderModal({
     }
   };
 
+  const getAvailableItems = (currentIndex: number) => {
+    const selectedItemIds = lineItems
+      .map((li, idx) => (idx !== currentIndex ? li.item_id : null))
+      .filter((id) => id !== null && id !== '');
+    return items.filter(i => i.is_active && !selectedItemIds.includes(i.id.toString()));
+  };
+
   return (
     <Dialog 
       open={isOpen} 
@@ -818,16 +827,24 @@ function PurchaseOrderModal({
               )}
             />
 
-            <div className="space-y-3">
-              <div className="flex items-center justify-between gap-2 flex-wrap">
-                <FormLabel>Items & Quantities</FormLabel>
+            <div className="border-t pt-4">
+              <div className="flex items-center justify-between mb-3">
+                <FormLabel className="text-base font-semibold">Items & Quantities</FormLabel>
                 <Button type="button" variant="outline" size="sm" onClick={addLineItem} className="gap-1">
-                  <Plus className="h-3 w-3" />
+                  <Plus className="h-4 w-4 mr-1" />
                   Add Item
                 </Button>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="space-y-2 max-w-md">
+                {lineItems.length > 0 && (
+                  <div className="flex gap-2 items-center px-2 pb-1 text-xs font-medium text-muted-foreground">
+                    <div className="flex-1">Item</div>
+                    <div className="w-24">Quantity</div>
+                    <div className="w-9"></div>
+                  </div>
+                )}
+
                 {lineItems.map((_, index) => (
                   <div key={index} className="flex gap-2 items-start">
                     <FormField
@@ -842,7 +859,7 @@ function PurchaseOrderModal({
                               </SelectTrigger>
                             </FormControl>
                             <SelectContent>
-                              {items.filter(i => i.is_active).map(item => (
+                              {getAvailableItems(index).map(item => (
                                 <SelectItem key={item.id} value={item.id.toString()}>
                                   {item.name} ({item.sku})
                                 </SelectItem>
@@ -877,18 +894,22 @@ function PurchaseOrderModal({
                       )}
                     />
 
-                    {lineItems.length > 1 && (
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => removeLineItem(index)}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    )}
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => removeLineItem(index)}
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
                   </div>
                 ))}
+
+                {lineItems.length === 0 && (
+                  <p className="text-sm text-muted-foreground text-center py-4">
+                    No items added yet. Click "Add Item" to add products.
+                  </p>
+                )}
               </div>
             </div>
 
