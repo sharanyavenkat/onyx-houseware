@@ -626,6 +626,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         allOrders.map(async (order) => {
           const customer = customers.find(c => c.id === order.customer_id);
           const orderItemsData = await storage.getOrderItemsByOrderId(order.id);
+          const orderShipments = await storage.getShipmentsByOrderId(order.id);
+          const total_shipped = orderShipments.reduce((sum, s) => sum + s.quantity_shipped, 0);
           
           const line_items = orderItemsData.map(oi => {
             const item = items.find(i => i.id === oi.item_id);
@@ -641,6 +643,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           return {
             ...order,
             customer_name: customer?.company_name || '',
+            total_shipped,
             line_items
           };
         })

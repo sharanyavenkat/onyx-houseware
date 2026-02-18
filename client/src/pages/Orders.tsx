@@ -29,9 +29,9 @@ const orderColumns = [
     hideOnMobile: true,
   },
   {
-    key: "fulfillment_date",
-    label: "Fulfillment Date",
-    render: (value: string) => (value ? formatDate(value) : "-"),
+    key: "total_shipped",
+    label: "Total Shipped",
+    render: (value: number) => value || 0,
     hideOnMobile: true,
   },
   {
