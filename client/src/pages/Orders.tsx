@@ -29,12 +29,6 @@ const orderColumns = [
     hideOnMobile: true,
   },
   {
-    key: "total_shipped",
-    label: "Total Shipped",
-    render: (value: number) => value || 0,
-    hideOnMobile: true,
-  },
-  {
     key: "items_count",
     label: "Items",
     render: (_: any, row: any) => row.line_items?.length || 0,
@@ -48,6 +42,12 @@ const orderColumns = [
         (sum: number, item: any) => sum + item.quantity,
         0
       ) || 0,
+    hideOnMobile: true,
+  },
+  {
+    key: "total_shipped",
+    label: "Total Shipped",
+    render: (value: number) => value || 0,
     hideOnMobile: true,
   },
   {
