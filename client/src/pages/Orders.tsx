@@ -74,7 +74,7 @@ const orderColumns = [
       const variants: Record<string, any> = {
         draft: "secondary",
         confirmed: "default",
-        fulfilled: "default",
+        fulfilled: "outline",
         cancelled: "destructive",
       };
       return <Badge variant={variants[value] || "secondary"}>{value}</Badge>;
