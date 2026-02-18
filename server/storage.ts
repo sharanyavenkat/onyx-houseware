@@ -78,6 +78,7 @@ export interface IStorage {
   deleteIndentsByItemId(itemId: number): Promise<void>;
 
   getShipmentsByOrderId(orderId: number): Promise<Shipment[]>;
+  getShipmentById(id: number): Promise<Shipment | undefined>;
   getShipmentsByOrderItemId(orderItemId: number): Promise<Shipment[]>;
   createShipment(shipment: InsertShipment): Promise<Shipment>;
   updateShipment(id: number, shipment: Partial<InsertShipment>): Promise<Shipment | undefined>;
@@ -339,6 +340,11 @@ export class DbStorage implements IStorage {
 
   async getShipmentsByOrderId(orderId: number): Promise<Shipment[]> {
     return await db.select().from(shipments).where(eq(shipments.order_id, orderId));
+  }
+
+  async getShipmentById(id: number): Promise<Shipment | undefined> {
+    const [shipment] = await db.select().from(shipments).where(eq(shipments.id, id));
+    return shipment;
   }
 
   async getShipmentsByOrderItemId(orderItemId: number): Promise<Shipment[]> {

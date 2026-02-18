@@ -43,6 +43,14 @@ const batchFormSchema = z.object({
   quantity_produced: z.string().min(1, "Final quantity is required"),
   quality_status: z.enum(["Good", "Acceptable", "Rejected"]),
   notes: z.string().optional(),
+}).refine((data) => {
+  if (data.caster_id && data.caster_id !== "" && data.caster_id !== "none") {
+    return data.purchase_order_id && data.purchase_order_id !== "" && data.purchase_order_id !== "none";
+  }
+  return true;
+}, {
+  message: "Purchase order is required when a caster is selected",
+  path: ["purchase_order_id"],
 });
 
 type BatchFormData = z.infer<typeof batchFormSchema>;
@@ -257,34 +265,38 @@ export default function BatchFormModal({
               )}
             />
 
-            {matchingPOs.length > 0 && (
+            {watchedCasterId && watchedCasterId !== "" && watchedCasterId !== "none" && (
               <FormField
                 control={form.control}
                 name="purchase_order_id"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Purchase Order</FormLabel>
-                    <Select
-                      value={field.value || "none"}
-                      onValueChange={(value) => field.onChange(value === "none" ? "" : value)}
-                    >
-                      <FormControl>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Link to purchase order" />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        <SelectItem value="none">None</SelectItem>
-                        {matchingPOs.map((po) => {
-                          const poDate = new Date(po.order_date).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' });
-                          return (
-                            <SelectItem key={po.id} value={po.id.toString()}>
-                              {po.po_number} - {poDate}
-                            </SelectItem>
-                          );
-                        })}
-                      </SelectContent>
-                    </Select>
+                    <FormLabel>Purchase Order *</FormLabel>
+                    {matchingPOs.length > 0 ? (
+                      <Select
+                        value={field.value || "none"}
+                        onValueChange={(value) => field.onChange(value === "none" ? "" : value)}
+                      >
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select purchase order" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="none">None</SelectItem>
+                          {matchingPOs.map((po) => {
+                            const poDate = new Date(po.order_date).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' });
+                            return (
+                              <SelectItem key={po.id} value={po.id.toString()}>
+                                {po.po_number} - {poDate}
+                              </SelectItem>
+                            );
+                          })}
+                        </SelectContent>
+                      </Select>
+                    ) : (
+                      <p className="text-sm text-muted-foreground">No confirmed purchase orders found for this caster. Please create one first.</p>
+                    )}
                     <FormMessage />
                   </FormItem>
                 )}

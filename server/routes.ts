@@ -879,10 +879,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  async function updateOrderFulfillmentStatus(orderId: number) {
+    const order = await storage.getOrderById(orderId);
+    if (!order || order.status === 'cancelled' || order.status === 'draft') return;
+    const orderItemsData = await storage.getOrderItemsByOrderId(orderId);
+    const totalPcs = orderItemsData.reduce((sum, oi) => sum + oi.quantity, 0);
+    const allShipments = await storage.getShipmentsByOrderId(orderId);
+    const totalShipped = allShipments.reduce((sum, s) => sum + s.quantity_shipped, 0);
+    if (totalPcs > 0 && totalShipped >= totalPcs && order.status !== 'fulfilled') {
+      await storage.updateOrder(orderId, { status: 'fulfilled', fulfillment_date: new Date().toISOString().split('T')[0] });
+    } else if (totalShipped < totalPcs && order.status === 'fulfilled') {
+      await storage.updateOrder(orderId, { status: 'confirmed', fulfillment_date: null });
+    }
+  }
+
   app.post("/api/shipments", async (req, res) => {
     try {
       const validatedData = insertShipmentSchema.parse(req.body);
       const shipment = await storage.createShipment(validatedData);
+      await updateOrderFulfillmentStatus(validatedData.order_id);
       res.status(201).json(shipment);
     } catch (error: any) {
       res.status(400).json({ message: error.message });
@@ -896,6 +911,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!shipment) {
         return res.status(404).json({ message: "Shipment not found" });
       }
+      await updateOrderFulfillmentStatus(shipment.order_id);
       res.json(shipment);
     } catch (error: any) {
       res.status(400).json({ message: error.message });
@@ -904,7 +920,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete("/api/shipments/:id", async (req, res) => {
     try {
-      await storage.deleteShipment(parseInt(req.params.id));
+      const shipmentId = parseInt(req.params.id);
+      const shipment = await storage.getShipmentById(shipmentId);
+      const orderId = shipment?.order_id;
+      await storage.deleteShipment(shipmentId);
+      if (orderId) {
+        await updateOrderFulfillmentStatus(orderId);
+      }
       res.status(204).send();
     } catch (error: any) {
       res.status(500).json({ message: error.message });
