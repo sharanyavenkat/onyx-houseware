@@ -37,18 +37,252 @@ import { useLocation } from 'wouter';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { Plus, X, Pencil, Trash2, Package, CalendarDays, FileText } from 'lucide-react';
-import type { Caster, Item, PurchaseOrder, PurchaseOrderItem } from '@shared/schema';
+import { Plus, X, Pencil, Trash2, Package, CalendarDays, FileText, Scale } from 'lucide-react';
+import type { Caster, Item, PurchaseOrder, PurchaseOrderItem, IngotDispatch, Die, Rework } from '@shared/schema';
 
 const casterFields = [
-  { name: 'name', label: 'Caster Name', type: 'text' as const, required: true, placeholder: 'Enter caster name' },
+  { name: 'name', label: 'Vendor Name', type: 'text' as const, required: true, placeholder: 'Enter vendor name' },
+  {
+    name: 'vendor_type',
+    label: 'Vendor Type',
+    type: 'select' as const,
+    required: true,
+    options: [
+      { value: 'caster', label: 'Caster' },
+      { value: 'handle_vendor', label: 'Handle Vendor' },
+      { value: 'coater', label: 'Coater' },
+      { value: 'packer', label: 'Packer' },
+      { value: 'material_supplier', label: 'Material Supplier' },
+      { value: 'other', label: 'Other' },
+    ],
+  },
+  { name: 'contact_person', label: 'Contact Person', type: 'text' as const, placeholder: 'Who you deal with day to day' },
+  { name: 'phone', label: 'Phone', type: 'text' as const, placeholder: 'Contact phone number' },
+  { name: 'email', label: 'Email', type: 'email' as const, placeholder: 'Contact email' },
   { name: 'address', label: 'Address', type: 'textarea' as const, placeholder: 'Complete address...' },
+  { name: 'lead_time_days', label: 'Typical Lead Time (days)', type: 'number' as const, placeholder: 'e.g., 15' },
+  { name: 'payment_terms', label: 'Payment Terms', type: 'text' as const, placeholder: 'e.g., 30 days from delivery' },
+  { name: 'default_wastage_ingot_pct', label: 'Default Wastage % (Ingot)', type: 'number' as const, placeholder: 'Leave blank to use company default (6%)' },
+  { name: 'default_wastage_scrap_pct', label: 'Default Wastage % (Scrap)', type: 'number' as const, placeholder: 'Leave blank to use company default (8%)' },
+  {
+    name: 'status',
+    label: 'Status',
+    type: 'select' as const,
+    required: true,
+    options: [
+      { value: 'active', label: 'Active' },
+      { value: 'inactive', label: 'Inactive' },
+    ],
+  },
   { name: 'notes', label: 'Notes', type: 'textarea' as const, placeholder: 'Additional notes...' },
 ];
 
+const vendorTypeLabels: Record<string, string> = {
+  caster: 'Caster',
+  handle_vendor: 'Handle Vendor',
+  coater: 'Coater',
+  packer: 'Packer',
+  material_supplier: 'Material Supplier',
+  other: 'Other',
+};
+
 const casterColumns = [
-  { key: 'name', label: 'Caster Name', isPrimary: true },
-  { key: 'address', label: 'Address', hideOnMobile: true },
+  { key: 'name', label: 'Vendor Name', isPrimary: true },
+  {
+    key: 'vendor_type',
+    label: 'Type',
+    render: (value: string) => <Badge variant="outline">{vendorTypeLabels[value] || value}</Badge>,
+  },
+  { key: 'contact_person', label: 'Contact', hideOnMobile: true },
+  { key: 'lead_time_days', label: 'Lead Time (days)', hideOnMobile: true },
+  {
+    key: 'status',
+    label: 'Status',
+    render: (value: string) => (
+      <Badge variant={value === 'active' ? 'default' : 'secondary'}>
+        {value === 'active' ? 'Active' : 'Inactive'}
+      </Badge>
+    ),
+  },
+];
+
+type IngotDispatchWithCaster = IngotDispatch & { caster_name: string };
+
+type IngotReconciliation = {
+  totalIngotKgSent: number;
+  totalScrapKgSent: number;
+  totalMetalKgSent: number;
+  totalFinishedWeightKgReceived: number;
+  expectedMetalConsumedKg: number | null;
+  varianceKg: number | null;
+  variancePercent: number | null;
+  actualPieceCount: number;
+  itemsMissingWeight: Array<{ itemId: number; itemName: string }>;
+  rework: {
+    totalReworkKgSent: number;
+    piecesSent: number;
+    piecesReplaced: number;
+    piecesPending: number;
+  };
+};
+
+const ingotFieldsFor = (casters: Caster[]) => [
+  {
+    name: 'caster_id',
+    label: 'Caster',
+    type: 'select' as const,
+    required: true,
+    options: casters.map(c => ({ value: c.id.toString(), label: c.name })),
+  },
+  { name: 'dispatch_date', label: 'Dispatch Date', type: 'date' as const, required: true },
+  {
+    name: 'material_type',
+    label: 'Material Type',
+    type: 'select' as const,
+    required: true,
+    options: [
+      { value: 'ingot', label: 'Ingot' },
+      { value: 'scrap', label: 'Scrap' },
+      { value: 'rework', label: 'Rework (metal only, see Reworks tab for pieces)' },
+    ],
+  },
+  { name: 'alloy_grade', label: 'Alloy Grade', type: 'text' as const, placeholder: 'e.g., LM6, LM24' },
+  { name: 'quantity_kg', label: 'Quantity (kg)', type: 'number' as const, required: true, placeholder: 'e.g., 500' },
+  { name: 'notes', label: 'Notes', type: 'textarea' as const, placeholder: 'Additional notes...' },
+];
+
+const ingotColumns = [
+  { key: 'dispatch_date', label: 'Date', isPrimary: true },
+  { key: 'caster_name', label: 'Caster' },
+  {
+    key: 'material_type',
+    label: 'Type',
+    render: (value: string) => (
+      <Badge variant={value === 'scrap' ? 'secondary' : value === 'rework' ? 'outline' : 'default'}>
+        {value === 'scrap' ? 'Scrap' : value === 'rework' ? 'Rework' : 'Ingot'}
+      </Badge>
+    ),
+  },
+  { key: 'alloy_grade', label: 'Alloy', hideOnMobile: true },
+  {
+    key: 'quantity_kg',
+    label: 'Quantity (kg)',
+    render: (value: number) => value?.toLocaleString(undefined, { maximumFractionDigits: 1 }),
+  },
+];
+
+// --- Dies ---
+type DieWithNames = Die & { caster_name: string; item_name: string };
+
+const dieFieldsFor = (casters: Caster[], items: Item[]) => [
+  {
+    name: 'caster_id',
+    label: 'Held By (Vendor)',
+    type: 'select' as const,
+    required: true,
+    options: casters.map(c => ({ value: c.id.toString(), label: c.name })),
+  },
+  {
+    name: 'item_id',
+    label: 'Produces (SKU)',
+    type: 'select' as const,
+    required: true,
+    options: items.filter(i => !i.is_kit).map(i => ({ value: i.id.toString(), label: `${i.name} (${i.sku})` })),
+  },
+  {
+    name: 'mould_type',
+    label: 'Mould Type',
+    type: 'select' as const,
+    required: true,
+    options: [
+      { value: 'casting', label: 'Casting Die' },
+      { value: 'handle', label: 'Handle Mould' },
+    ],
+  },
+  { name: 'shot_count', label: 'Shot Count', type: 'number' as const, placeholder: 'Total shots since new/last reworked' },
+  { name: 'last_rework_date', label: 'Last Rework Date', type: 'date' as const },
+  {
+    name: 'status',
+    label: 'Status',
+    type: 'select' as const,
+    required: true,
+    options: [
+      { value: 'active', label: 'Active' },
+      { value: 'retired', label: 'Retired' },
+    ],
+  },
+  { name: 'notes', label: 'Notes', type: 'textarea' as const },
+];
+
+const dieColumns = [
+  { key: 'item_name', label: 'SKU', isPrimary: true },
+  { key: 'caster_name', label: 'Held By' },
+  {
+    key: 'mould_type',
+    label: 'Type',
+    render: (value: string) => <Badge variant="outline">{value === 'handle' ? 'Handle Mould' : 'Casting Die'}</Badge>,
+  },
+  { key: 'shot_count', label: 'Shot Count', hideOnMobile: true },
+  {
+    key: 'status',
+    label: 'Status',
+    render: (value: string) => (
+      <Badge variant={value === 'active' ? 'default' : 'secondary'}>{value === 'active' ? 'Active' : 'Retired'}</Badge>
+    ),
+  },
+];
+
+// --- Reworks ---
+type ReworkWithNames = Rework & { caster_name: string; item_name: string };
+
+const reworkFieldsFor = (casters: Caster[], items: Item[]) => [
+  {
+    name: 'caster_id',
+    label: 'Caster',
+    type: 'select' as const,
+    required: true,
+    options: casters.map(c => ({ value: c.id.toString(), label: c.name })),
+  },
+  {
+    name: 'item_id',
+    label: 'SKU',
+    type: 'select' as const,
+    required: true,
+    options: items.filter(i => !i.is_kit).map(i => ({ value: i.id.toString(), label: `${i.name} (${i.sku})` })),
+  },
+  { name: 'quantity_defective', label: 'Quantity Defective (Sent Back)', type: 'number' as const, required: true },
+  { name: 'sent_date', label: 'Sent Date', type: 'date' as const, required: true },
+  { name: 'quantity_replaced', label: 'Quantity Replaced So Far', type: 'number' as const },
+  { name: 'replacement_received_date', label: 'Replacement Received Date', type: 'date' as const },
+  {
+    name: 'status',
+    label: 'Status',
+    type: 'select' as const,
+    required: true,
+    options: [
+      { value: 'pending', label: 'Pending' },
+      { value: 'partial', label: 'Partially Replaced' },
+      { value: 'received', label: 'Fully Replaced' },
+    ],
+  },
+  { name: 'notes', label: 'Notes (e.g. defect type — blowholes etc.)', type: 'textarea' as const },
+];
+
+const reworkColumns = [
+  { key: 'sent_date', label: 'Sent Date', isPrimary: true },
+  { key: 'caster_name', label: 'Caster' },
+  { key: 'item_name', label: 'SKU', hideOnMobile: true },
+  { key: 'quantity_defective', label: 'Defective Qty' },
+  { key: 'quantity_replaced', label: 'Replaced Qty' },
+  {
+    key: 'status',
+    label: 'Status',
+    render: (value: string) => (
+      <Badge variant={value === 'received' ? 'default' : value === 'partial' ? 'secondary' : 'destructive'}>
+        {value === 'received' ? 'Fully Replaced' : value === 'partial' ? 'Partial' : 'Pending'}
+      </Badge>
+    ),
+  },
 ];
 
 type ReportItem = {
@@ -101,6 +335,19 @@ export default function Casters() {
   const [editingPO, setEditingPO] = useState<POWithDetails | null>(null);
   const [isPODeleteConfirmOpen, setIsPODeleteConfirmOpen] = useState(false);
   const [poToDelete, setPOToDelete] = useState<POWithDetails | null>(null);
+  const [isIngotModalOpen, setIsIngotModalOpen] = useState(false);
+  const [editingIngot, setEditingIngot] = useState<IngotDispatchWithCaster | null>(null);
+  const [isIngotDeleteConfirmOpen, setIsIngotDeleteConfirmOpen] = useState(false);
+  const [ingotToDelete, setIngotToDelete] = useState<IngotDispatchWithCaster | null>(null);
+  const [reconciliationCasterId, setReconciliationCasterId] = useState<string>('');
+  const [isDieModalOpen, setIsDieModalOpen] = useState(false);
+  const [editingDie, setEditingDie] = useState<DieWithNames | null>(null);
+  const [isDieDeleteConfirmOpen, setIsDieDeleteConfirmOpen] = useState(false);
+  const [dieToDelete, setDieToDelete] = useState<DieWithNames | null>(null);
+  const [isReworkModalOpen, setIsReworkModalOpen] = useState(false);
+  const [editingRework, setEditingRework] = useState<ReworkWithNames | null>(null);
+  const [isReworkDeleteConfirmOpen, setIsReworkDeleteConfirmOpen] = useState(false);
+  const [reworkToDelete, setReworkToDelete] = useState<ReworkWithNames | null>(null);
   const { toast } = useToast();
   const { canMutate } = useAuth();
 
@@ -119,6 +366,28 @@ export default function Casters() {
 
   const { data: purchaseOrders = [] } = useQuery<POWithDetails[]>({
     queryKey: ['/api/purchase-orders'],
+  });
+
+  const { data: ingotDispatches = [] } = useQuery<IngotDispatchWithCaster[]>({
+    queryKey: ['/api/ingot-dispatches'],
+  });
+
+  const { data: ingotReconciliation, isLoading: reconciliationLoading } = useQuery<IngotReconciliation>({
+    queryKey: ['/api/casters', reconciliationCasterId, 'ingot-reconciliation'],
+    queryFn: async () => {
+      const res = await fetch(`/api/casters/${reconciliationCasterId}/ingot-reconciliation`, { credentials: 'include' });
+      if (!res.ok) throw new Error('Failed to fetch reconciliation');
+      return res.json();
+    },
+    enabled: !!reconciliationCasterId,
+  });
+
+  const { data: allDies = [] } = useQuery<DieWithNames[]>({
+    queryKey: ['/api/dies'],
+  });
+
+  const { data: allReworks = [] } = useQuery<ReworkWithNames[]>({
+    queryKey: ['/api/reworks'],
   });
 
   const { data: monthlyReport = {}, isLoading: reportLoading } = useQuery<MonthlyReport>({
@@ -236,6 +505,184 @@ export default function Casters() {
     },
   });
 
+  // Ingot dispatch CRUD
+  const createIngotMutation = useMutation({
+    mutationFn: async (data: any) => {
+      return await apiRequest('POST', '/api/ingot-dispatches', data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/ingot-dispatches'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/casters'] });
+      toast({ title: 'Ingot dispatch recorded successfully' });
+      setIsIngotModalOpen(false);
+    },
+    onError: (error: Error) => {
+      toast({ title: 'Error recording ingot dispatch', description: error.message, variant: 'destructive' });
+    },
+  });
+
+  const updateIngotMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: number; data: any }) => {
+      return await apiRequest('PATCH', `/api/ingot-dispatches/${id}`, data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/ingot-dispatches'] });
+      toast({ title: 'Ingot dispatch updated successfully' });
+      setIsIngotModalOpen(false);
+      setEditingIngot(null);
+    },
+    onError: (error: Error) => {
+      toast({ title: 'Error updating ingot dispatch', description: error.message, variant: 'destructive' });
+    },
+  });
+
+  const deleteIngotMutation = useMutation({
+    mutationFn: async (id: number) => {
+      return await apiRequest('DELETE', `/api/ingot-dispatches/${id}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/ingot-dispatches'] });
+      toast({ title: 'Ingot dispatch deleted successfully' });
+    },
+    onError: (error: Error) => {
+      toast({ title: 'Error deleting ingot dispatch', description: error.message, variant: 'destructive' });
+    },
+  });
+
+  const handleAddIngot = () => {
+    setEditingIngot(null);
+    setIsIngotModalOpen(true);
+  };
+
+  const handleEditIngot = (ingot: IngotDispatchWithCaster) => {
+    setEditingIngot(ingot);
+    setIsIngotModalOpen(true);
+  };
+
+  const handleDeleteIngot = (ingot: IngotDispatchWithCaster) => {
+    setIngotToDelete(ingot);
+    setIsIngotDeleteConfirmOpen(true);
+  };
+
+  const confirmDeleteIngot = () => {
+    if (ingotToDelete) {
+      deleteIngotMutation.mutate(ingotToDelete.id);
+      setIsIngotDeleteConfirmOpen(false);
+      setIngotToDelete(null);
+    }
+  };
+
+  const handleSubmitIngot = (data: any) => {
+    const processedData = {
+      ...data,
+      caster_id: parseInt(data.caster_id),
+      quantity_kg: parseFloat(data.quantity_kg),
+    };
+    if (editingIngot) {
+      updateIngotMutation.mutate({ id: editingIngot.id, data: processedData });
+    } else {
+      createIngotMutation.mutate(processedData);
+    }
+  };
+
+  // Die CRUD
+  const createDieMutation = useMutation({
+    mutationFn: async (data: any) => apiRequest('POST', '/api/dies', data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/dies'] });
+      toast({ title: 'Die recorded successfully' });
+      setIsDieModalOpen(false);
+    },
+    onError: (error: Error) => toast({ title: 'Error recording die', description: error.message, variant: 'destructive' }),
+  });
+  const updateDieMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: number; data: any }) => apiRequest('PATCH', `/api/dies/${id}`, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/dies'] });
+      toast({ title: 'Die updated successfully' });
+      setIsDieModalOpen(false);
+      setEditingDie(null);
+    },
+    onError: (error: Error) => toast({ title: 'Error updating die', description: error.message, variant: 'destructive' }),
+  });
+  const deleteDieMutation = useMutation({
+    mutationFn: async (id: number) => apiRequest('DELETE', `/api/dies/${id}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/dies'] });
+      toast({ title: 'Die deleted successfully' });
+    },
+    onError: (error: Error) => toast({ title: 'Error deleting die', description: error.message, variant: 'destructive' }),
+  });
+  const handleAddDie = () => { setEditingDie(null); setIsDieModalOpen(true); };
+  const handleEditDie = (d: DieWithNames) => { setEditingDie(d); setIsDieModalOpen(true); };
+  const handleDeleteDie = (d: DieWithNames) => { setDieToDelete(d); setIsDieDeleteConfirmOpen(true); };
+  const confirmDeleteDie = () => {
+    if (dieToDelete) { deleteDieMutation.mutate(dieToDelete.id); setIsDieDeleteConfirmOpen(false); setDieToDelete(null); }
+  };
+  const handleSubmitDie = (data: any) => {
+    const processedData = {
+      ...data,
+      caster_id: parseInt(data.caster_id),
+      item_id: parseInt(data.item_id),
+      shot_count: data.shot_count ? parseInt(data.shot_count) : 0,
+    };
+    if (editingDie) {
+      updateDieMutation.mutate({ id: editingDie.id, data: processedData });
+    } else {
+      createDieMutation.mutate(processedData);
+    }
+  };
+
+  // Rework CRUD
+  const createReworkMutation = useMutation({
+    mutationFn: async (data: any) => apiRequest('POST', '/api/reworks', data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/reworks'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/casters'] });
+      toast({ title: 'Rework recorded successfully' });
+      setIsReworkModalOpen(false);
+    },
+    onError: (error: Error) => toast({ title: 'Error recording rework', description: error.message, variant: 'destructive' }),
+  });
+  const updateReworkMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: number; data: any }) => apiRequest('PATCH', `/api/reworks/${id}`, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/reworks'] });
+      toast({ title: 'Rework updated successfully' });
+      setIsReworkModalOpen(false);
+      setEditingRework(null);
+    },
+    onError: (error: Error) => toast({ title: 'Error updating rework', description: error.message, variant: 'destructive' }),
+  });
+  const deleteReworkMutation = useMutation({
+    mutationFn: async (id: number) => apiRequest('DELETE', `/api/reworks/${id}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/reworks'] });
+      toast({ title: 'Rework deleted successfully' });
+    },
+    onError: (error: Error) => toast({ title: 'Error deleting rework', description: error.message, variant: 'destructive' }),
+  });
+  const handleAddRework = () => { setEditingRework(null); setIsReworkModalOpen(true); };
+  const handleEditRework = (r: ReworkWithNames) => { setEditingRework(r); setIsReworkModalOpen(true); };
+  const handleDeleteRework = (r: ReworkWithNames) => { setReworkToDelete(r); setIsReworkDeleteConfirmOpen(true); };
+  const confirmDeleteRework = () => {
+    if (reworkToDelete) { deleteReworkMutation.mutate(reworkToDelete.id); setIsReworkDeleteConfirmOpen(false); setReworkToDelete(null); }
+  };
+  const handleSubmitRework = (data: any) => {
+    const processedData = {
+      ...data,
+      caster_id: parseInt(data.caster_id),
+      item_id: parseInt(data.item_id),
+      quantity_defective: parseInt(data.quantity_defective),
+      quantity_replaced: data.quantity_replaced ? parseInt(data.quantity_replaced) : 0,
+    };
+    if (editingRework) {
+      updateReworkMutation.mutate({ id: editingRework.id, data: processedData });
+    } else {
+      createReworkMutation.mutate(processedData);
+    }
+  };
+
   const handleAdd = () => {
     setEditingCaster(null);
     setIsModalOpen(true);
@@ -262,10 +709,16 @@ export default function Casters() {
   const [, setLocation] = useLocation();
 
   const handleSubmit = (data: any) => {
+    const processedData = {
+      ...data,
+      lead_time_days: data.lead_time_days ? parseInt(data.lead_time_days) : null,
+      default_wastage_ingot_pct: data.default_wastage_ingot_pct ? parseFloat(data.default_wastage_ingot_pct) : null,
+      default_wastage_scrap_pct: data.default_wastage_scrap_pct ? parseFloat(data.default_wastage_scrap_pct) : null,
+    };
     if (editingCaster) {
-      updateMutation.mutate({ id: editingCaster.id, data });
+      updateMutation.mutate({ id: editingCaster.id, data: processedData });
     } else {
-      createMutation.mutate(data);
+      createMutation.mutate(processedData);
     }
   };
 
@@ -312,6 +765,18 @@ export default function Casters() {
             <CalendarDays className="h-4 w-4" />
             <span className="hidden sm:inline">Monthly Report</span>
             <span className="sm:hidden">Report</span>
+          </TabsTrigger>
+          <TabsTrigger value="ingots" className="gap-1.5">
+            <Scale className="h-4 w-4" />
+            Ingots
+          </TabsTrigger>
+          <TabsTrigger value="dies" className="gap-1.5">
+            <Package className="h-4 w-4" />
+            Dies
+          </TabsTrigger>
+          <TabsTrigger value="reworks" className="gap-1.5">
+            <FileText className="h-4 w-4" />
+            Reworks
           </TabsTrigger>
         </TabsList>
 
@@ -446,6 +911,164 @@ export default function Casters() {
             canMutate={canMutate}
           />
         </TabsContent>
+
+        <TabsContent value="ingots">
+          <div className="space-y-6">
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg">Vendor Material Reconciliation</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <Select value={reconciliationCasterId} onValueChange={setReconciliationCasterId}>
+                  <SelectTrigger className="w-full sm:w-64" data-testid="select-reconciliation-caster">
+                    <SelectValue placeholder="Select a caster to check" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {casters.map(c => (
+                      <SelectItem key={c.id} value={c.id.toString()}>{c.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+
+                {!reconciliationCasterId ? (
+                  <p className="text-sm text-muted-foreground">
+                    Pick a caster to compare metal dispatched against the wastage-adjusted metal that should have been consumed to produce what was received back.
+                  </p>
+                ) : reconciliationLoading ? (
+                  <div className="text-sm text-muted-foreground">Calculating...</div>
+                ) : ingotReconciliation ? (
+                  <div className="space-y-4">
+                    <div>
+                      <div className="text-xs font-medium text-muted-foreground mb-2">Metal sent vs. wastage-adjusted expected consumption</div>
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 mb-3">
+                        <div>
+                          <div className="text-xs text-muted-foreground">Ingot Sent</div>
+                          <div className="font-mono font-semibold">
+                            {ingotReconciliation.totalIngotKgSent.toLocaleString(undefined, { maximumFractionDigits: 1 })} kg
+                          </div>
+                        </div>
+                        <div>
+                          <div className="text-xs text-muted-foreground">Scrap Sent</div>
+                          <div className="font-mono font-semibold">
+                            {ingotReconciliation.totalScrapKgSent.toLocaleString(undefined, { maximumFractionDigits: 1 })} kg
+                          </div>
+                        </div>
+                        <div>
+                          <div className="text-xs text-muted-foreground">Total Metal Sent</div>
+                          <div className="font-mono font-semibold">
+                            {ingotReconciliation.totalMetalKgSent.toLocaleString(undefined, { maximumFractionDigits: 1 })} kg
+                          </div>
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                        <div>
+                          <div className="text-xs text-muted-foreground">Finished Weight Received</div>
+                          <div className="font-mono font-semibold">
+                            {ingotReconciliation.totalFinishedWeightKgReceived.toLocaleString(undefined, { maximumFractionDigits: 1 })} kg
+                          </div>
+                        </div>
+                        <div>
+                          <div className="text-xs text-muted-foreground">Expected Metal Consumed</div>
+                          <div className="font-mono font-semibold">
+                            {ingotReconciliation.expectedMetalConsumedKg === null
+                              ? '—'
+                              : `${ingotReconciliation.expectedMetalConsumedKg.toLocaleString(undefined, { maximumFractionDigits: 1 })} kg`}
+                          </div>
+                        </div>
+                        <div>
+                          <div className="text-xs text-muted-foreground">Variance</div>
+                          <div className="font-mono font-semibold">
+                            {ingotReconciliation.varianceKg === null
+                              ? '—'
+                              : `${ingotReconciliation.varianceKg.toLocaleString(undefined, { maximumFractionDigits: 1 })} kg`}
+                          </div>
+                        </div>
+                        <div>
+                          <div className="text-xs text-muted-foreground">Variance %</div>
+                          <div className="font-mono font-semibold">
+                            {ingotReconciliation.variancePercent === null
+                              ? '—'
+                              : `${ingotReconciliation.variancePercent.toFixed(1)}%`}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div>
+                      <div className="text-xs font-medium text-muted-foreground mb-2">Rework (excluded from balance above — free 1:1 replacement)</div>
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                        <div>
+                          <div className="text-xs text-muted-foreground">Rework Metal Sent</div>
+                          <div className="font-mono font-semibold">
+                            {ingotReconciliation.rework.totalReworkKgSent.toLocaleString(undefined, { maximumFractionDigits: 1 })} kg
+                          </div>
+                        </div>
+                        <div>
+                          <div className="text-xs text-muted-foreground">Pieces Sent Back</div>
+                          <div className="font-mono font-semibold">{ingotReconciliation.rework.piecesSent.toLocaleString()}</div>
+                        </div>
+                        <div>
+                          <div className="text-xs text-muted-foreground">Pieces Replaced</div>
+                          <div className="font-mono font-semibold">{ingotReconciliation.rework.piecesReplaced.toLocaleString()}</div>
+                        </div>
+                        <div>
+                          <div className="text-xs text-muted-foreground">Pending</div>
+                          <div className="font-mono font-semibold">{ingotReconciliation.rework.piecesPending.toLocaleString()}</div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <p className="text-xs text-muted-foreground">
+                      "Expected Metal Consumed" is each batch's finished weight divided by that SKU's resolved wastage rate at this caster (SKU override → vendor default → company default 6%/8%) — not a blended average across SKUs. Treat variance as a signal to investigate, not a hard defect number.
+                    </p>
+                    {ingotReconciliation.itemsMissingWeight.length > 0 && (
+                      <div className="text-xs text-amber-600 dark:text-amber-500">
+                        Missing "Finished Weight (kg)" on: {ingotReconciliation.itemsMissingWeight.map(i => i.itemName).join(', ')} — add it on the Items page to include these in the calculation.
+                      </div>
+                    )}
+                  </div>
+                ) : null}
+              </CardContent>
+            </Card>
+
+            <DataTable
+              columns={ingotColumns}
+              data={ingotDispatches}
+              title="Ingot Dispatches"
+              addButtonLabel="Record Ingot Dispatch"
+              onAdd={handleAddIngot}
+              onEdit={handleEditIngot}
+              onDelete={handleDeleteIngot}
+              canMutate={canMutate}
+            />
+          </div>
+        </TabsContent>
+
+        <TabsContent value="dies">
+          <DataTable
+            columns={dieColumns}
+            data={allDies}
+            title="Dies & Moulds"
+            addButtonLabel="Add Die"
+            onAdd={handleAddDie}
+            onEdit={handleEditDie}
+            onDelete={handleDeleteDie}
+            canMutate={canMutate}
+          />
+        </TabsContent>
+
+        <TabsContent value="reworks">
+          <DataTable
+            columns={reworkColumns}
+            data={allReworks}
+            title="Reworks (1:1 Replacements)"
+            addButtonLabel="Record Rework"
+            onAdd={handleAddRework}
+            onEdit={handleEditRework}
+            onDelete={handleDeleteRework}
+            canMutate={canMutate}
+          />
+        </TabsContent>
       </Tabs>
       
       <FormModal
@@ -457,7 +1080,7 @@ export default function Casters() {
         onSubmit={handleSubmit}
         title={editingCaster ? 'Edit Caster' : 'Add New Caster'}
         fields={casterFields}
-        initialData={editingCaster || {}}
+        initialData={editingCaster || { status: 'active', vendor_type: 'caster' }}
         submitLabel={editingCaster ? 'Update Caster' : 'Add Caster'}
       />
 
@@ -476,6 +1099,7 @@ export default function Casters() {
         editingPO={editingPO}
         casters={casters}
         items={items}
+        dies={allDies}
         onSubmit={(data) => {
           const payload = {
             po_number: data.po_number,
@@ -502,6 +1126,76 @@ export default function Casters() {
         onConfirm={confirmDeletePO}
         title="Delete Purchase Order"
         description={`Are you sure you want to delete purchase order "${poToDelete?.po_number}"? This action cannot be undone.`}
+        confirmText="Delete"
+      />
+
+      <FormModal
+        isOpen={isIngotModalOpen}
+        onClose={() => {
+          setIsIngotModalOpen(false);
+          setEditingIngot(null);
+        }}
+        onSubmit={handleSubmitIngot}
+        title={editingIngot ? 'Edit Ingot Dispatch' : 'Record Ingot Dispatch'}
+        fields={ingotFieldsFor(casters)}
+        initialData={
+          editingIngot
+            ? { ...editingIngot, caster_id: editingIngot.caster_id.toString() }
+            : { dispatch_date: new Date().toISOString().split('T')[0], material_type: 'ingot' }
+        }
+        submitLabel={editingIngot ? 'Update Dispatch' : 'Record Dispatch'}
+      />
+
+      <ConfirmDialog
+        open={isIngotDeleteConfirmOpen}
+        onOpenChange={setIsIngotDeleteConfirmOpen}
+        onConfirm={confirmDeleteIngot}
+        title="Delete Ingot Dispatch"
+        description="Are you sure you want to delete this ingot dispatch record? This action cannot be undone."
+        confirmText="Delete"
+      />
+
+      <FormModal
+        isOpen={isDieModalOpen}
+        onClose={() => { setIsDieModalOpen(false); setEditingDie(null); }}
+        onSubmit={handleSubmitDie}
+        title={editingDie ? 'Edit Die' : 'Add Die'}
+        fields={dieFieldsFor(casters, items)}
+        initialData={
+          editingDie
+            ? { ...editingDie, caster_id: editingDie.caster_id.toString(), item_id: editingDie.item_id.toString() }
+            : { mould_type: 'casting', status: 'active', shot_count: '0' }
+        }
+        submitLabel={editingDie ? 'Update Die' : 'Add Die'}
+      />
+      <ConfirmDialog
+        open={isDieDeleteConfirmOpen}
+        onOpenChange={setIsDieDeleteConfirmOpen}
+        onConfirm={confirmDeleteDie}
+        title="Delete Die"
+        description="Are you sure you want to delete this die record? This action cannot be undone."
+        confirmText="Delete"
+      />
+
+      <FormModal
+        isOpen={isReworkModalOpen}
+        onClose={() => { setIsReworkModalOpen(false); setEditingRework(null); }}
+        onSubmit={handleSubmitRework}
+        title={editingRework ? 'Edit Rework' : 'Record Rework'}
+        fields={reworkFieldsFor(casters, items)}
+        initialData={
+          editingRework
+            ? { ...editingRework, caster_id: editingRework.caster_id.toString(), item_id: editingRework.item_id.toString() }
+            : { sent_date: new Date().toISOString().split('T')[0], status: 'pending', quantity_replaced: '0' }
+        }
+        submitLabel={editingRework ? 'Update Rework' : 'Record Rework'}
+      />
+      <ConfirmDialog
+        open={isReworkDeleteConfirmOpen}
+        onOpenChange={setIsReworkDeleteConfirmOpen}
+        onConfirm={confirmDeleteRework}
+        title="Delete Rework"
+        description="Are you sure you want to delete this rework record? This action cannot be undone."
         confirmText="Delete"
       />
     </div>
@@ -694,6 +1388,7 @@ function PurchaseOrderModal({
   editingPO,
   casters,
   items,
+  dies,
   onSubmit,
   isPending,
 }: {
@@ -702,9 +1397,14 @@ function PurchaseOrderModal({
   editingPO: POWithDetails | null;
   casters: Caster[];
   items: Item[];
+  dies: DieWithNames[];
   onSubmit: (data: POFormData) => void;
   isPending: boolean;
 }) {
+  // Defaults to showing only SKUs this caster has an active casting die for —
+  // falls back to all items if die records are incomplete for this caster.
+  const [showAllItems, setShowAllItems] = useState(false);
+
   const form = useForm<POFormData>({
     resolver: zodResolver(purchaseOrderFormSchema),
     defaultValues: {
@@ -717,6 +1417,7 @@ function PurchaseOrderModal({
   });
 
   const lineItems = form.watch('line_items');
+  const selectedCasterId = form.watch('caster_id');
 
   const resetFormForEdit = () => {
     if (editingPO) {
@@ -757,8 +1458,29 @@ function PurchaseOrderModal({
     const selectedItemIds = lineItems
       .map((li, idx) => (idx !== currentIndex ? li.item_id : null))
       .filter((id) => id !== null && id !== '');
-    return items.filter(i => i.is_active && !selectedItemIds.includes(i.id.toString()));
+    let candidates = items.filter(i => i.is_active && !selectedItemIds.includes(i.id.toString()));
+
+    if (!showAllItems && selectedCasterId) {
+      const casterDieItemIds = new Set(
+        dies
+          .filter(d => d.caster_id === parseInt(selectedCasterId) && d.mould_type === 'casting' && d.status === 'active')
+          .map(d => d.item_id)
+      );
+      // Only narrow the list if this caster actually has die records — an
+      // empty set here almost always means dies haven't been entered yet for
+      // them, not that they can't cast anything, so we fall back to showing
+      // everything rather than presenting an empty/misleading dropdown.
+      if (casterDieItemIds.size > 0) {
+        candidates = candidates.filter(i => casterDieItemIds.has(i.id));
+      }
+    }
+
+    return candidates;
   };
+
+  const selectedCasterHasDies = !!selectedCasterId && dies.some(
+    d => d.caster_id === parseInt(selectedCasterId) && d.mould_type === 'casting' && d.status === 'active'
+  );
 
   return (
     <Dialog 
@@ -835,6 +1557,18 @@ function PurchaseOrderModal({
                   Add Item
                 </Button>
               </div>
+
+              {selectedCasterId && (
+                <p className="text-xs text-muted-foreground mb-2">
+                  {showAllItems ? (
+                    <>Showing all items. <button type="button" className="underline" onClick={() => setShowAllItems(false)}>Show only this caster's dies</button></>
+                  ) : selectedCasterHasDies ? (
+                    <>Showing only SKUs this caster has an active die for. <button type="button" className="underline" onClick={() => setShowAllItems(true)}>Show all items</button></>
+                  ) : (
+                    <>No die records found for this caster yet, showing all items.</>
+                  )}
+                </p>
+              )}
 
               <div className="space-y-2 max-w-md">
                 {lineItems.length > 0 && (

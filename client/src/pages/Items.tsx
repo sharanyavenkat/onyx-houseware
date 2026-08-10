@@ -46,6 +46,12 @@ const itemFields = [
     required: true,
   },
   {
+    name: "unit_weight_kg",
+    label: "Finished Weight (kg)",
+    type: "number" as const,
+    placeholder: "e.g., 0.85 (used to reconcile ingot sent vs. castings received)",
+  },
+  {
     name: "is_active",
     label: "Status",
     type: "select" as const,
@@ -192,6 +198,7 @@ export default function Items() {
       is_active: data.is_active === "true",
       price: parseFloat(data.price),
       desired_safety_stock: parseInt(data.desired_safety_stock),
+      unit_weight_kg: data.unit_weight_kg ? parseFloat(data.unit_weight_kg) : null,
     };
 
     if (editingItem) {
@@ -232,6 +239,7 @@ export default function Items() {
                 is_active: editingItem.is_active ? "true" : "false",
                 price: editingItem.price || "0",
                 desired_safety_stock: editingItem.desired_safety_stock || "0",
+                unit_weight_kg: editingItem.unit_weight_kg ?? "",
               }
             : { is_active: "true" }
         }

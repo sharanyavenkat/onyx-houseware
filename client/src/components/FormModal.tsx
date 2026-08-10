@@ -21,7 +21,7 @@ import { useEffect, useRef, useState } from "react";
 interface FormField {
   name: string;
   label: string;
-  type: "text" | "number" | "email" | "textarea" | "select";
+  type: "text" | "number" | "email" | "textarea" | "select" | "date";
   required?: boolean;
   options?: { value: string; label: string }[];
   placeholder?: string;

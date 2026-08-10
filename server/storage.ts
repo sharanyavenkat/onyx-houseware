@@ -27,6 +27,18 @@ import {
   type InsertPurchaseOrder,
   type PurchaseOrderItem,
   type InsertPurchaseOrderItem,
+  type IngotDispatch,
+  type InsertIngotDispatch,
+  type SkuWastageOverride,
+  type InsertSkuWastageOverride,
+  type Die,
+  type InsertDie,
+  type Rework,
+  type InsertRework,
+  type VendorMetalStatement,
+  type InsertVendorMetalStatement,
+  type BomComponent,
+  type InsertBomComponent,
   users,
   items,
   customers,
@@ -40,6 +52,12 @@ import {
   casters,
   purchaseOrders,
   purchaseOrderItems,
+  ingotDispatches,
+  skuWastageOverrides,
+  dies,
+  reworks,
+  vendorMetalStatements,
+  bomComponents,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -104,6 +122,20 @@ export interface IStorage {
   updateBatchRejection(id: number, newRejected: number, quality_status?: string, notes?: string): Promise<Batch>;
   adjustBatchQuantities(batchNumber: string, adjustments: { shipped?: number, rejected?: number }): Promise<Batch>;
   getPendingOrdersByItem(): Promise<Record<number, number>>;
+  // Sum of (quantity_ordered - quantity_received) across open (non-completed,
+  // non-cancelled) purchase orders, grouped by item — used as the default
+  // "expected receipts" in Indent instead of manual entry.
+  getOpenPurchaseOrderQtyByItem(): Promise<Record<number, number>>;
+  // For the dashboard "Vendors Requiring Attention" card: flags casters with
+  // a high rejection rate this month, or a metal balance closing_balance_kg
+  // that's grown beyond a threshold (metal outstanding without castings back).
+  getVendorAttentionSummary(): Promise<Array<{
+    casterId: number;
+    casterName: string;
+    rejectionRatePct: number | null;
+    metalBalanceKg: number | null;
+    flagReason: string;
+  }>>;
   getOnHandStockByItemWithQuality(includeAcceptable: boolean): Promise<Record<number, number>>;
   getRejectedQuantitiesByItem(): Promise<Record<number, number>>;
 
@@ -133,6 +165,83 @@ export interface IStorage {
   deletePurchaseOrderItemsByPOId(purchaseOrderId: number): Promise<void>;
   recalculatePurchaseOrderReceived(purchaseOrderId: number): Promise<void>;
   checkAndAutoCompletePurchaseOrder(purchaseOrderId: number): Promise<void>;
+
+  getAllIngotDispatches(): Promise<IngotDispatch[]>;
+  getIngotDispatchById(id: number): Promise<IngotDispatch | undefined>;
+  getIngotDispatchesByCasterId(casterId: number): Promise<IngotDispatch[]>;
+  createIngotDispatch(dispatch: InsertIngotDispatch): Promise<IngotDispatch>;
+  updateIngotDispatch(id: number, dispatch: Partial<InsertIngotDispatch>): Promise<IngotDispatch | undefined>;
+  deleteIngotDispatch(id: number): Promise<void>;
+
+  // Wastage: resolves the effective wastage % for a caster+item+material_type,
+  // checking sku_wastage_overrides first (exact material_type, then null=both),
+  // then the caster's own default, then the company-wide fallback (6% ingot / 8% scrap).
+  resolveWastagePct(casterId: number, itemId: number, materialType: "ingot" | "scrap"): Promise<number>;
+  getAllSkuWastageOverrides(): Promise<SkuWastageOverride[]>;
+  createSkuWastageOverride(o: InsertSkuWastageOverride): Promise<SkuWastageOverride>;
+  updateSkuWastageOverride(id: number, o: Partial<InsertSkuWastageOverride>): Promise<SkuWastageOverride | undefined>;
+  deleteSkuWastageOverride(id: number): Promise<void>;
+
+  getIngotReconciliationByCaster(casterId: number): Promise<{
+    totalIngotKgSent: number;
+    totalScrapKgSent: number;
+    totalMetalKgSent: number;
+    totalFinishedWeightKgReceived: number;
+    expectedMetalConsumedKg: number | null;
+    varianceKg: number | null;
+    variancePercent: number | null;
+    actualPieceCount: number;
+    itemsMissingWeight: Array<{ itemId: number; itemName: string }>;
+    rework: {
+      totalReworkKgSent: number;
+      piecesSent: number;
+      piecesReplaced: number;
+      piecesPending: number;
+    };
+  }>;
+
+  getAllDies(): Promise<Die[]>;
+  getDieById(id: number): Promise<Die | undefined>;
+  getDiesByCasterId(casterId: number): Promise<Die[]>;
+  createDie(die: InsertDie): Promise<Die>;
+  updateDie(id: number, die: Partial<InsertDie>): Promise<Die | undefined>;
+  deleteDie(id: number): Promise<void>;
+
+  getAllReworks(): Promise<Rework[]>;
+  getReworkById(id: number): Promise<Rework | undefined>;
+  getReworksByCasterId(casterId: number): Promise<Rework[]>;
+  createRework(rework: InsertRework): Promise<Rework>;
+  updateRework(id: number, rework: Partial<InsertRework>): Promise<Rework | undefined>;
+  deleteRework(id: number): Promise<void>;
+
+  getAllVendorMetalStatements(): Promise<VendorMetalStatement[]>;
+  getVendorMetalStatementsByCasterId(casterId: number): Promise<VendorMetalStatement[]>;
+  createVendorMetalStatement(s: InsertVendorMetalStatement): Promise<VendorMetalStatement>;
+  updateVendorMetalStatement(id: number, s: Partial<InsertVendorMetalStatement>): Promise<VendorMetalStatement | undefined>;
+  deleteVendorMetalStatement(id: number): Promise<void>;
+  // Computes Onyx's side of the statement for a caster as of the end of periodMonth
+  // ('YYYY-MM'): cumulative dispatched-to-date, wastage-adjusted expected consumption,
+  // actual finished weight received-to-date, and the resulting running balance.
+  calculateMetalStatementForPeriod(casterId: number, periodMonth: string): Promise<{
+    openingBalanceKg: number;
+    dispatchedKg: number;
+    expectedMetalConsumedKg: number;
+    actualFinishedWeightKg: number;
+    closingBalanceKg: number;
+  }>;
+
+  getAllBomComponents(): Promise<BomComponent[]>;
+  getBomComponentsByParentId(parentItemId: number): Promise<BomComponent[]>;
+  createBomComponent(c: InsertBomComponent): Promise<BomComponent>;
+  updateBomComponent(id: number, c: Partial<InsertBomComponent>): Promise<BomComponent | undefined>;
+  deleteBomComponent(id: number): Promise<void>;
+  deleteBomComponentsByParentId(parentItemId: number): Promise<void>;
+  // For a kit item, ships qty kits' worth of components: FIFO-deducts from each
+  // component item's batches, decrements accessory stock for accessory components.
+  shipKitComponents(parentItemId: number, quantityKits: number, shipmentDate: string): Promise<{
+    itemDeductions: Array<{ itemId: number; itemName: string; quantityDeducted: number }>;
+    accessoryDeductions: Array<{ accessoryId: number; accessoryName: string; quantityDeducted: number }>;
+  }>;
 }
 
 export class DbStorage implements IStorage {
@@ -816,10 +925,13 @@ export class DbStorage implements IStorage {
       throw error;
     }
 
-    return await db.transaction(async (tx) => {
+    return db.transaction((tx) => {
       // Lock the row and get current state using transaction handle
-      const [batch] = await tx.select().from(batches)
-        .where(eq(batches.batch_number, batchNumber));
+      // NOTE: this callback must stay synchronous (no async/await) — better-sqlite3
+      // transactions execute as a single synchronous unit and throw
+      // "Transaction function cannot return a promise" if the callback is async.
+      const batch = tx.select().from(batches)
+        .where(eq(batches.batch_number, batchNumber)).get();
 
       if (!batch) {
         const error: any = new Error(`Batch ${batchNumber} not found`);
@@ -878,7 +990,7 @@ export class DbStorage implements IStorage {
       }
 
       // Update batch with new calculated values and auto-compute depleted flag
-      const [updated] = await tx.update(batches)
+      const updated = tx.update(batches)
         .set({
           quantity_produced: newProduced,
           quantity_rejected: newRejected,
@@ -886,7 +998,8 @@ export class DbStorage implements IStorage {
           is_depleted: newRemaining === 0
         })
         .where(eq(batches.batch_number, batchNumber))
-        .returning();
+        .returning()
+        .get();
 
       return updated;
     });
@@ -945,6 +1058,93 @@ export class DbStorage implements IStorage {
     });
     
     return pending;
+  }
+
+  async getOpenPurchaseOrderQtyByItem(): Promise<Record<number, number>> {
+    const openPOs = await db.select().from(purchaseOrders).where(
+      sql`${purchaseOrders.status} NOT IN ('completed', 'cancelled')`
+    );
+    const openPOIds = new Set(openPOs.map(po => po.id));
+    if (openPOIds.size === 0) return {};
+
+    const allPOItems = await db.select().from(purchaseOrderItems);
+    const result: Record<number, number> = {};
+    for (const poi of allPOItems) {
+      if (!openPOIds.has(poi.purchase_order_id)) continue;
+      const outstanding = poi.quantity_ordered - poi.quantity_received;
+      if (outstanding > 0) {
+        result[poi.item_id] = (result[poi.item_id] || 0) + outstanding;
+      }
+    }
+    return result;
+  }
+
+  /**
+   * Flags a caster when either: (a) their overall rejection rate across all
+   * batches is 10%+ (worth a conversation), or (b) their running metal
+   * balance (from getIngotReconciliationByCaster) shows a positive variance
+   * beyond a small tolerance — i.e. more metal sent than wastage-adjusted
+   * consumption accounts for, meaning castings are overdue.
+   */
+  async getVendorAttentionSummary(): Promise<Array<{
+    casterId: number;
+    casterName: string;
+    rejectionRatePct: number | null;
+    metalBalanceKg: number | null;
+    flagReason: string;
+  }>> {
+    const allCasters = await this.getAllCasters();
+    const flagged: Array<{
+      casterId: number;
+      casterName: string;
+      rejectionRatePct: number | null;
+      metalBalanceKg: number | null;
+      flagReason: string;
+    }> = [];
+
+    for (const caster of allCasters) {
+      const reasons: string[] = [];
+      let rejectionRatePct: number | null = null;
+      let metalBalanceKg: number | null = null;
+
+      const casterBatches = await db.select().from(batches).where(eq(batches.caster_id, caster.id));
+      if (casterBatches.length > 0) {
+        const totalReceived = casterBatches.reduce((sum, b) => sum + b.quantity_received, 0);
+        const totalRejected = casterBatches.reduce((sum, b) => sum + b.quantity_rejected, 0);
+        if (totalReceived > 0) {
+          rejectionRatePct = (totalRejected / totalReceived) * 100;
+          if (rejectionRatePct >= 10) {
+            reasons.push(`${rejectionRatePct.toFixed(1)}% rejection rate`);
+          }
+        }
+      }
+
+      const dispatches = await this.getIngotDispatchesByCasterId(caster.id);
+      if (dispatches.some(d => d.material_type !== 'rework')) {
+        const recon = await this.getIngotReconciliationByCaster(caster.id);
+        if (recon.varianceKg !== null) {
+          metalBalanceKg = recon.varianceKg;
+          // Flag when the caster is holding more than ~50kg (or 5% of metal
+          // sent, whichever is larger) beyond what their production accounts for
+          const tolerance = Math.max(50, recon.totalMetalKgSent * 0.05);
+          if (recon.varianceKg > tolerance) {
+            reasons.push(`${recon.varianceKg.toFixed(0)}kg metal balance outstanding`);
+          }
+        }
+      }
+
+      if (reasons.length > 0) {
+        flagged.push({
+          casterId: caster.id,
+          casterName: caster.name,
+          rejectionRatePct,
+          metalBalanceKg,
+          flagReason: reasons.join('; '),
+        });
+      }
+    }
+
+    return flagged.sort((a, b) => (b.metalBalanceKg ?? 0) - (a.metalBalanceKg ?? 0));
   }
 
   async getOnHandStockByItemWithQuality(includeAcceptable: boolean): Promise<Record<number, number>> {
@@ -1158,6 +1358,414 @@ export class DbStorage implements IStorage {
         .set({ status: 'confirmed' })
         .where(eq(purchaseOrders.id, purchaseOrderId));
     }
+  }
+
+  async getAllIngotDispatches(): Promise<IngotDispatch[]> {
+    return await db.select().from(ingotDispatches).orderBy(desc(ingotDispatches.dispatch_date));
+  }
+
+  async getIngotDispatchById(id: number): Promise<IngotDispatch | undefined> {
+    const [dispatch] = await db.select().from(ingotDispatches).where(eq(ingotDispatches.id, id));
+    return dispatch;
+  }
+
+  async getIngotDispatchesByCasterId(casterId: number): Promise<IngotDispatch[]> {
+    return await db.select().from(ingotDispatches)
+      .where(eq(ingotDispatches.caster_id, casterId))
+      .orderBy(desc(ingotDispatches.dispatch_date));
+  }
+
+  async createIngotDispatch(dispatch: InsertIngotDispatch): Promise<IngotDispatch> {
+    const [created] = await db.insert(ingotDispatches).values(dispatch).returning();
+    return created;
+  }
+
+  async updateIngotDispatch(id: number, dispatch: Partial<InsertIngotDispatch>): Promise<IngotDispatch | undefined> {
+    const [updated] = await db.update(ingotDispatches).set(dispatch).where(eq(ingotDispatches.id, id)).returning();
+    return updated;
+  }
+
+  async deleteIngotDispatch(id: number): Promise<void> {
+    await db.delete(ingotDispatches).where(eq(ingotDispatches.id, id));
+  }
+
+  /**
+   * Resolves effective wastage % for a caster+item+material_type:
+   * 1. SKU override for this exact material_type
+   * 2. SKU override with material_type = null (applies to both)
+   * 3. Caster's own default for this material_type
+   * 4. Company-wide fallback: 6% ingot, 8% scrap
+   */
+  async resolveWastagePct(casterId: number, itemId: number, materialType: "ingot" | "scrap"): Promise<number> {
+    const overrides = await db.select().from(skuWastageOverrides)
+      .where(and(eq(skuWastageOverrides.caster_id, casterId), eq(skuWastageOverrides.item_id, itemId)));
+
+    const exact = overrides.find(o => o.material_type === materialType);
+    if (exact) return exact.wastage_pct;
+
+    const both = overrides.find(o => o.material_type === null);
+    if (both) return both.wastage_pct;
+
+    const [caster] = await db.select().from(casters).where(eq(casters.id, casterId));
+    if (caster) {
+      const vendorDefault = materialType === "ingot" ? caster.default_wastage_ingot_pct : caster.default_wastage_scrap_pct;
+      if (vendorDefault !== null && vendorDefault !== undefined) return vendorDefault;
+    }
+
+    return materialType === "ingot" ? 6 : 8;
+  }
+
+  async getAllSkuWastageOverrides(): Promise<SkuWastageOverride[]> {
+    return await db.select().from(skuWastageOverrides);
+  }
+
+  async createSkuWastageOverride(o: InsertSkuWastageOverride): Promise<SkuWastageOverride> {
+    const [created] = await db.insert(skuWastageOverrides).values(o).returning();
+    return created;
+  }
+
+  async updateSkuWastageOverride(id: number, o: Partial<InsertSkuWastageOverride>): Promise<SkuWastageOverride | undefined> {
+    const [updated] = await db.update(skuWastageOverrides).set(o).where(eq(skuWastageOverrides.id, id)).returning();
+    return updated;
+  }
+
+  async deleteSkuWastageOverride(id: number): Promise<void> {
+    await db.delete(skuWastageOverrides).where(eq(skuWastageOverrides.id, id));
+  }
+
+  /**
+   * Compares metal dispatched to a caster against the wastage-adjusted metal
+   * that SHOULD have been consumed to produce what was actually received —
+   * i.e. for each batch, (pieces x SKU weight) / (1 - resolved wastage %),
+   * summed and compared to total ingot+scrap sent. This uses each SKU's own
+   * exact weight (no blended averaging across different SKUs) and each
+   * caster+SKU's own resolved wastage rate.
+   *
+   * Rework replacement batches are excluded — they're free 1:1 swaps that
+   * don't draw on the dispatched metal balance — and reported separately.
+   * Wastage rate used per batch is the resolved "ingot" rate, since caster
+   * dispatches aren't split by material type per batch (documented assumption).
+   */
+  async getIngotReconciliationByCaster(casterId: number): Promise<{
+    totalIngotKgSent: number;
+    totalScrapKgSent: number;
+    totalMetalKgSent: number;
+    totalFinishedWeightKgReceived: number;
+    expectedMetalConsumedKg: number | null;
+    varianceKg: number | null;
+    variancePercent: number | null;
+    actualPieceCount: number;
+    itemsMissingWeight: Array<{ itemId: number; itemName: string }>;
+    rework: {
+      totalReworkKgSent: number;
+      piecesSent: number;
+      piecesReplaced: number;
+      piecesPending: number;
+    };
+  }> {
+    const dispatches = await this.getIngotDispatchesByCasterId(casterId);
+    const totalIngotKgSent = dispatches
+      .filter(d => d.material_type === 'ingot')
+      .reduce((sum, d) => sum + d.quantity_kg, 0);
+    const totalScrapKgSent = dispatches
+      .filter(d => d.material_type === 'scrap')
+      .reduce((sum, d) => sum + d.quantity_kg, 0);
+    const totalReworkKgSent = dispatches
+      .filter(d => d.material_type === 'rework')
+      .reduce((sum, d) => sum + d.quantity_kg, 0);
+    const totalMetalKgSent = totalIngotKgSent + totalScrapKgSent;
+
+    const casterReworks = await this.getReworksByCasterId(casterId);
+    const replacementBatchIds = new Set(
+      casterReworks.filter(r => r.replacement_batch_id !== null).map(r => r.replacement_batch_id as number)
+    );
+
+    const casterBatches = (await db.select().from(batches).where(eq(batches.caster_id, casterId)))
+      .filter(b => !replacementBatchIds.has(b.id));
+    const allItems = await db.select().from(items);
+    const itemMap = new Map(allItems.map(i => [i.id, i]));
+
+    let totalFinishedWeightKgReceived = 0;
+    let expectedMetalConsumedKg = 0;
+    let hasWeighableBatch = false;
+    let actualPieceCount = 0;
+    const missingItemIds = new Set<number>();
+
+    for (const batch of casterBatches) {
+      actualPieceCount += batch.quantity_produced;
+      const item = itemMap.get(batch.item_id);
+      if (!item || item.unit_weight_kg === null || item.unit_weight_kg === undefined) {
+        if (item) missingItemIds.add(item.id);
+        continue;
+      }
+      const batchWeightKg = batch.quantity_produced * item.unit_weight_kg;
+      totalFinishedWeightKgReceived += batchWeightKg;
+
+      const wastagePct = await this.resolveWastagePct(casterId, item.id, "ingot");
+      expectedMetalConsumedKg += batchWeightKg / (1 - wastagePct / 100);
+      hasWeighableBatch = true;
+    }
+
+    const itemsMissingWeight = Array.from(missingItemIds).map(id => ({
+      itemId: id,
+      itemName: itemMap.get(id)?.name || `Item #${id}`,
+    }));
+
+    const varianceKg = hasWeighableBatch ? totalMetalKgSent - expectedMetalConsumedKg : null;
+    const variancePercent = varianceKg !== null && totalMetalKgSent > 0 ? (varianceKg / totalMetalKgSent) * 100 : null;
+
+    const piecesSent = casterReworks.reduce((sum, r) => sum + r.quantity_defective, 0);
+    const piecesReplaced = casterReworks.reduce((sum, r) => sum + r.quantity_replaced, 0);
+
+    return {
+      totalIngotKgSent,
+      totalScrapKgSent,
+      totalMetalKgSent,
+      totalFinishedWeightKgReceived,
+      expectedMetalConsumedKg: hasWeighableBatch ? expectedMetalConsumedKg : null,
+      varianceKg,
+      variancePercent,
+      actualPieceCount,
+      itemsMissingWeight,
+      rework: {
+        totalReworkKgSent,
+        piecesSent,
+        piecesReplaced,
+        piecesPending: piecesSent - piecesReplaced,
+      },
+    };
+  }
+
+  // --- Dies ---
+  async getAllDies(): Promise<Die[]> {
+    return await db.select().from(dies);
+  }
+  async getDieById(id: number): Promise<Die | undefined> {
+    const [d] = await db.select().from(dies).where(eq(dies.id, id));
+    return d;
+  }
+  async getDiesByCasterId(casterId: number): Promise<Die[]> {
+    return await db.select().from(dies).where(eq(dies.caster_id, casterId));
+  }
+  async createDie(die: InsertDie): Promise<Die> {
+    const [created] = await db.insert(dies).values(die).returning();
+    return created;
+  }
+  async updateDie(id: number, die: Partial<InsertDie>): Promise<Die | undefined> {
+    const [updated] = await db.update(dies).set(die).where(eq(dies.id, id)).returning();
+    return updated;
+  }
+  async deleteDie(id: number): Promise<void> {
+    await db.delete(dies).where(eq(dies.id, id));
+  }
+
+  // --- Reworks ---
+  async getAllReworks(): Promise<Rework[]> {
+    return await db.select().from(reworks).orderBy(desc(reworks.sent_date));
+  }
+  async getReworkById(id: number): Promise<Rework | undefined> {
+    const [r] = await db.select().from(reworks).where(eq(reworks.id, id));
+    return r;
+  }
+  async getReworksByCasterId(casterId: number): Promise<Rework[]> {
+    return await db.select().from(reworks).where(eq(reworks.caster_id, casterId)).orderBy(desc(reworks.sent_date));
+  }
+  async createRework(rework: InsertRework): Promise<Rework> {
+    const [created] = await db.insert(reworks).values(rework).returning();
+    return created;
+  }
+  async updateRework(id: number, rework: Partial<InsertRework>): Promise<Rework | undefined> {
+    const [updated] = await db.update(reworks).set(rework).where(eq(reworks.id, id)).returning();
+    return updated;
+  }
+  async deleteRework(id: number): Promise<void> {
+    await db.delete(reworks).where(eq(reworks.id, id));
+  }
+
+  // --- Vendor metal statements ---
+  async getAllVendorMetalStatements(): Promise<VendorMetalStatement[]> {
+    return await db.select().from(vendorMetalStatements).orderBy(desc(vendorMetalStatements.period_month));
+  }
+  async getVendorMetalStatementsByCasterId(casterId: number): Promise<VendorMetalStatement[]> {
+    return await db.select().from(vendorMetalStatements)
+      .where(eq(vendorMetalStatements.caster_id, casterId))
+      .orderBy(desc(vendorMetalStatements.period_month));
+  }
+  async createVendorMetalStatement(s: InsertVendorMetalStatement): Promise<VendorMetalStatement> {
+    const [created] = await db.insert(vendorMetalStatements).values(s).returning();
+    return created;
+  }
+  async updateVendorMetalStatement(id: number, s: Partial<InsertVendorMetalStatement>): Promise<VendorMetalStatement | undefined> {
+    const [updated] = await db.update(vendorMetalStatements).set(s).where(eq(vendorMetalStatements.id, id)).returning();
+    return updated;
+  }
+  async deleteVendorMetalStatement(id: number): Promise<void> {
+    await db.delete(vendorMetalStatements).where(eq(vendorMetalStatements.id, id));
+  }
+
+  async calculateMetalStatementForPeriod(casterId: number, periodMonth: string): Promise<{
+    openingBalanceKg: number;
+    dispatchedKg: number;
+    expectedMetalConsumedKg: number;
+    actualFinishedWeightKg: number;
+    closingBalanceKg: number;
+  }> {
+    // "As of end of periodMonth" cutoff — first day of the FOLLOWING month
+    const [year, month] = periodMonth.split("-").map(Number);
+    const periodEndExclusive = month === 12 ? `${year + 1}-01-01` : `${year}-${String(month + 1).padStart(2, "0")}-01`;
+    const periodStart = `${periodMonth}-01`;
+
+    const balanceAsOf = async (cutoffExclusive: string) => {
+      const dispatches = (await this.getIngotDispatchesByCasterId(casterId))
+        .filter(d => d.material_type !== 'rework' && d.dispatch_date < cutoffExclusive);
+      const dispatchedKg = dispatches.reduce((sum, d) => sum + d.quantity_kg, 0);
+
+      const casterReworks = await this.getReworksByCasterId(casterId);
+      const replacementBatchIds = new Set(
+        casterReworks.filter(r => r.replacement_batch_id !== null).map(r => r.replacement_batch_id as number)
+      );
+
+      const casterBatches = (await db.select().from(batches).where(eq(batches.caster_id, casterId)))
+        .filter(b => !replacementBatchIds.has(b.id) && b.received_date < cutoffExclusive);
+      const allItems = await db.select().from(items);
+      const itemMap = new Map(allItems.map(i => [i.id, i]));
+
+      let actualFinishedWeightKg = 0;
+      let expectedMetalConsumedKg = 0;
+      for (const batch of casterBatches) {
+        const item = itemMap.get(batch.item_id);
+        if (!item || item.unit_weight_kg === null || item.unit_weight_kg === undefined) continue;
+        const weightKg = batch.quantity_produced * item.unit_weight_kg;
+        actualFinishedWeightKg += weightKg;
+        const wastagePct = await this.resolveWastagePct(casterId, item.id, "ingot");
+        expectedMetalConsumedKg += weightKg / (1 - wastagePct / 100);
+      }
+
+      // Balance = metal dispatched minus the wastage-adjusted metal-equivalent
+      // of what's actually been produced so far — NOT minus raw finished
+      // weight, since wastage naturally makes finished weight < metal sent
+      // even when nothing is actually outstanding.
+      return {
+        dispatchedKg,
+        actualFinishedWeightKg,
+        expectedMetalConsumedKg,
+        balanceKg: dispatchedKg - expectedMetalConsumedKg,
+      };
+    };
+
+    const opening = await balanceAsOf(periodStart);
+    const closing = await balanceAsOf(periodEndExclusive);
+
+    return {
+      openingBalanceKg: opening.balanceKg,
+      dispatchedKg: closing.dispatchedKg - opening.dispatchedKg,
+      expectedMetalConsumedKg: closing.expectedMetalConsumedKg - opening.expectedMetalConsumedKg,
+      actualFinishedWeightKg: closing.actualFinishedWeightKg - opening.actualFinishedWeightKg,
+      closingBalanceKg: closing.balanceKg,
+    };
+  }
+
+  // --- BOM components ---
+  async getAllBomComponents(): Promise<BomComponent[]> {
+    return await db.select().from(bomComponents);
+  }
+  async getBomComponentsByParentId(parentItemId: number): Promise<BomComponent[]> {
+    return await db.select().from(bomComponents).where(eq(bomComponents.parent_item_id, parentItemId));
+  }
+  async createBomComponent(c: InsertBomComponent): Promise<BomComponent> {
+    const [created] = await db.insert(bomComponents).values(c).returning();
+    return created;
+  }
+  async updateBomComponent(id: number, c: Partial<InsertBomComponent>): Promise<BomComponent | undefined> {
+    const [updated] = await db.update(bomComponents).set(c).where(eq(bomComponents.id, id)).returning();
+    return updated;
+  }
+  async deleteBomComponent(id: number): Promise<void> {
+    await db.delete(bomComponents).where(eq(bomComponents.id, id));
+  }
+  async deleteBomComponentsByParentId(parentItemId: number): Promise<void> {
+    await db.delete(bomComponents).where(eq(bomComponents.parent_item_id, parentItemId));
+  }
+
+  /**
+   * Ships quantityKits worth of a kit item by decomposing its BOM: for each
+   * item-type component, FIFO-deducts from that component's active batches
+   * (oldest received_date first, same pattern as adjustBatchQuantities);
+   * for each accessory-type component, decrements accessories.stock_on_hand.
+   * Throws if any component doesn't have enough stock, before making any
+   * changes (checked in a first pass) so partial deductions can't happen.
+   */
+  async shipKitComponents(parentItemId: number, quantityKits: number, shipmentDate: string): Promise<{
+    itemDeductions: Array<{ itemId: number; itemName: string; quantityDeducted: number }>;
+    accessoryDeductions: Array<{ accessoryId: number; accessoryName: string; quantityDeducted: number }>;
+  }> {
+    const components = await this.getBomComponentsByParentId(parentItemId);
+    if (components.length === 0) {
+      throw new Error(`No BOM defined for kit item #${parentItemId}`);
+    }
+
+    const allItems = await db.select().from(items);
+    const itemMap = new Map(allItems.map(i => [i.id, i]));
+    const allAccessories = await db.select().from(accessories);
+    const accessoryMap = new Map(allAccessories.map(a => [a.id, a]));
+
+    // First pass: verify enough stock exists for every component
+    for (const c of components) {
+      const needed = c.qty_per_kit * quantityKits;
+      if (c.component_type === "item" && c.component_item_id) {
+        const activeBatches = await this.getActiveBatchesByItemId(c.component_item_id);
+        const available = activeBatches.reduce((sum, b) => sum + b.quantity_remaining, 0);
+        if (available < needed) {
+          const name = itemMap.get(c.component_item_id)?.name || `Item #${c.component_item_id}`;
+          throw new Error(`Not enough stock of "${name}" to assemble ${quantityKits} kit(s): need ${needed}, have ${available}`);
+        }
+      } else if (c.component_type === "accessory" && c.component_accessory_id) {
+        const acc = accessoryMap.get(c.component_accessory_id);
+        if (!acc || acc.stock_on_hand < needed) {
+          const name = acc?.name || `Accessory #${c.component_accessory_id}`;
+          throw new Error(`Not enough stock of "${name}" to assemble ${quantityKits} kit(s): need ${needed}, have ${acc?.stock_on_hand ?? 0}`);
+        }
+      }
+    }
+
+    const itemDeductions: Array<{ itemId: number; itemName: string; quantityDeducted: number }> = [];
+    const accessoryDeductions: Array<{ accessoryId: number; accessoryName: string; quantityDeducted: number }> = [];
+
+    // Second pass: actually deduct
+    for (const c of components) {
+      const needed = c.qty_per_kit * quantityKits;
+      if (c.component_type === "item" && c.component_item_id) {
+        let remaining = needed;
+        const activeBatches = (await this.getActiveBatchesByItemId(c.component_item_id))
+          .sort((a, b) => a.received_date.localeCompare(b.received_date)); // FIFO
+        for (const batch of activeBatches) {
+          if (remaining <= 0) break;
+          const take = Math.min(remaining, batch.quantity_remaining);
+          if (take <= 0) continue;
+          await this.adjustBatchQuantities(batch.batch_number, { shipped: take });
+          remaining -= take;
+        }
+        itemDeductions.push({
+          itemId: c.component_item_id,
+          itemName: itemMap.get(c.component_item_id)?.name || `Item #${c.component_item_id}`,
+          quantityDeducted: needed,
+        });
+      } else if (c.component_type === "accessory" && c.component_accessory_id) {
+        const acc = accessoryMap.get(c.component_accessory_id);
+        if (acc) {
+          await db.update(accessories)
+            .set({ stock_on_hand: acc.stock_on_hand - needed })
+            .where(eq(accessories.id, acc.id));
+          accessoryDeductions.push({
+            accessoryId: acc.id,
+            accessoryName: acc.name,
+            quantityDeducted: needed,
+          });
+        }
+      }
+    }
+
+    return { itemDeductions, accessoryDeductions };
   }
 }
 

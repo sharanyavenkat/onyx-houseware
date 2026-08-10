@@ -3,7 +3,7 @@ import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { verifyPassword } from "./auth";
 import { requireAuth, requireAdmin } from "./middleware";
-import { insertItemSchema, insertCustomerSchema, insertOrderSchema, insertOrderItemSchema, insertIndentSchema, insertShipmentSchema, insertBatchSchema, updateBatchSchema, insertInvoiceSchema, insertAccessorySchema, insertCasterSchema, insertPurchaseOrderSchema, insertPurchaseOrderItemSchema } from "@shared/schema";
+import { insertItemSchema, insertCustomerSchema, insertOrderSchema, insertOrderItemSchema, insertIndentSchema, insertShipmentSchema, insertBatchSchema, updateBatchSchema, insertInvoiceSchema, insertAccessorySchema, insertCasterSchema, insertPurchaseOrderSchema, insertPurchaseOrderItemSchema, insertIngotDispatchSchema, insertSkuWastageOverrideSchema, insertDieSchema, insertReworkSchema, insertVendorMetalStatementSchema, insertBomComponentSchema } from "@shared/schema";
 import { db } from "./db/client";
 import { batches } from "@shared/schema";
 import { eq } from "drizzle-orm";
@@ -191,6 +191,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const pendingOrders = await storage.getPendingOrdersByItem();
       res.json(pendingOrders);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Open-PO-derived expected receipts per item, used as the Indent default
+  app.get("/api/purchase-orders/open-qty-by-item", async (req, res) => {
+    try {
+      res.json(await storage.getOpenPurchaseOrderQtyByItem());
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Vendor attention summary for the dashboard card
+  app.get("/api/casters/attention-summary", async (req, res) => {
+    try {
+      res.json(await storage.getVendorAttentionSummary());
     } catch (error: any) {
       res.status(500).json({ message: error.message });
     }
@@ -1329,6 +1347,322 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(posWithItems);
     } catch (error: any) {
       res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Ingot dispatch routes (raw material sent from Onyx to a caster)
+  app.get("/api/ingot-dispatches", async (req, res) => {
+    try {
+      const dispatches = await storage.getAllIngotDispatches();
+      const allCasters = await storage.getAllCasters();
+      const casterMap = new Map(allCasters.map(c => [c.id, c.name]));
+
+      const withCasterName = dispatches.map(d => ({
+        ...d,
+        caster_name: casterMap.get(d.caster_id) || '',
+      }));
+
+      res.json(withCasterName);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.get("/api/ingot-dispatches/by-caster/:casterId", async (req, res) => {
+    try {
+      const casterId = parseInt(req.params.casterId);
+      const dispatches = await storage.getIngotDispatchesByCasterId(casterId);
+      res.json(dispatches);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/ingot-dispatches", async (req, res) => {
+    try {
+      const validatedData = insertIngotDispatchSchema.parse(req.body);
+      const dispatch = await storage.createIngotDispatch(validatedData);
+      res.status(201).json(dispatch);
+    } catch (error: any) {
+      if (error.name === 'ZodError') {
+        return res.status(400).json({ message: error.message });
+      }
+      res.status(400).json({ message: error.message });
+    }
+  });
+
+  app.patch("/api/ingot-dispatches/:id", async (req, res) => {
+    try {
+      const validatedData = insertIngotDispatchSchema.partial().parse(req.body);
+      const dispatch = await storage.updateIngotDispatch(parseInt(req.params.id), validatedData);
+      if (!dispatch) {
+        return res.status(404).json({ message: "Ingot dispatch not found" });
+      }
+      res.json(dispatch);
+    } catch (error: any) {
+      if (error.name === 'ZodError') {
+        return res.status(400).json({ message: error.message });
+      }
+      res.status(400).json({ message: error.message });
+    }
+  });
+
+  app.delete("/api/ingot-dispatches/:id", async (req, res) => {
+    try {
+      await storage.deleteIngotDispatch(parseInt(req.params.id));
+      res.status(204).send();
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Vendor material reconciliation: ingot sent vs. finished casting weight received
+  app.get("/api/casters/:id/ingot-reconciliation", async (req, res) => {
+    try {
+      const casterId = parseInt(req.params.id);
+      const caster = await storage.getCasterById(casterId);
+      if (!caster) {
+        return res.status(404).json({ message: "Caster not found" });
+      }
+      const reconciliation = await storage.getIngotReconciliationByCaster(casterId);
+      res.json(reconciliation);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // SKU wastage override routes
+  app.get("/api/sku-wastage-overrides", async (req, res) => {
+    try {
+      res.json(await storage.getAllSkuWastageOverrides());
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+  app.post("/api/sku-wastage-overrides", async (req, res) => {
+    try {
+      const validated = insertSkuWastageOverrideSchema.parse(req.body);
+      res.status(201).json(await storage.createSkuWastageOverride(validated));
+    } catch (error: any) {
+      res.status(400).json({ message: error.message });
+    }
+  });
+  app.patch("/api/sku-wastage-overrides/:id", async (req, res) => {
+    try {
+      const validated = insertSkuWastageOverrideSchema.partial().parse(req.body);
+      const updated = await storage.updateSkuWastageOverride(parseInt(req.params.id), validated);
+      if (!updated) return res.status(404).json({ message: "Override not found" });
+      res.json(updated);
+    } catch (error: any) {
+      res.status(400).json({ message: error.message });
+    }
+  });
+  app.delete("/api/sku-wastage-overrides/:id", async (req, res) => {
+    try {
+      await storage.deleteSkuWastageOverride(parseInt(req.params.id));
+      res.status(204).send();
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Dies routes
+  app.get("/api/dies", async (req, res) => {
+    try {
+      const allDies = await storage.getAllDies();
+      const allCasters = await storage.getAllCasters();
+      const allItems = await storage.getAllItems();
+      const casterMap = new Map(allCasters.map(c => [c.id, c.name]));
+      const itemMap = new Map(allItems.map(i => [i.id, i.name]));
+      res.json(allDies.map(d => ({
+        ...d,
+        caster_name: casterMap.get(d.caster_id) || '',
+        item_name: itemMap.get(d.item_id) || '',
+      })));
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+  app.get("/api/dies/by-caster/:casterId", async (req, res) => {
+    try {
+      res.json(await storage.getDiesByCasterId(parseInt(req.params.casterId)));
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+  app.post("/api/dies", async (req, res) => {
+    try {
+      const validated = insertDieSchema.parse(req.body);
+      res.status(201).json(await storage.createDie(validated));
+    } catch (error: any) {
+      res.status(400).json({ message: error.message });
+    }
+  });
+  app.patch("/api/dies/:id", async (req, res) => {
+    try {
+      const validated = insertDieSchema.partial().parse(req.body);
+      const updated = await storage.updateDie(parseInt(req.params.id), validated);
+      if (!updated) return res.status(404).json({ message: "Die not found" });
+      res.json(updated);
+    } catch (error: any) {
+      res.status(400).json({ message: error.message });
+    }
+  });
+  app.delete("/api/dies/:id", async (req, res) => {
+    try {
+      await storage.deleteDie(parseInt(req.params.id));
+      res.status(204).send();
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Reworks routes
+  app.get("/api/reworks", async (req, res) => {
+    try {
+      const allReworks = await storage.getAllReworks();
+      const allCasters = await storage.getAllCasters();
+      const allItems = await storage.getAllItems();
+      const casterMap = new Map(allCasters.map(c => [c.id, c.name]));
+      const itemMap = new Map(allItems.map(i => [i.id, i.name]));
+      res.json(allReworks.map(r => ({
+        ...r,
+        caster_name: casterMap.get(r.caster_id) || '',
+        item_name: itemMap.get(r.item_id) || '',
+      })));
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+  app.post("/api/reworks", async (req, res) => {
+    try {
+      const validated = insertReworkSchema.parse(req.body);
+      res.status(201).json(await storage.createRework(validated));
+    } catch (error: any) {
+      res.status(400).json({ message: error.message });
+    }
+  });
+  app.patch("/api/reworks/:id", async (req, res) => {
+    try {
+      const validated = insertReworkSchema.partial().parse(req.body);
+      const updated = await storage.updateRework(parseInt(req.params.id), validated);
+      if (!updated) return res.status(404).json({ message: "Rework not found" });
+      res.json(updated);
+    } catch (error: any) {
+      res.status(400).json({ message: error.message });
+    }
+  });
+  app.delete("/api/reworks/:id", async (req, res) => {
+    try {
+      await storage.deleteRework(parseInt(req.params.id));
+      res.status(204).send();
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Vendor metal statement routes
+  app.get("/api/vendor-metal-statements", async (req, res) => {
+    try {
+      res.json(await storage.getAllVendorMetalStatements());
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+  app.get("/api/vendor-metal-statements/by-caster/:casterId", async (req, res) => {
+    try {
+      res.json(await storage.getVendorMetalStatementsByCasterId(parseInt(req.params.casterId)));
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+  // Computes Onyx's calculated figures for a caster+month, before saving as a statement
+  app.get("/api/casters/:id/metal-statement-calc", async (req, res) => {
+    try {
+      const casterId = parseInt(req.params.id);
+      const periodMonth = String(req.query.month || '');
+      if (!/^\d{4}-\d{2}$/.test(periodMonth)) {
+        return res.status(400).json({ message: "month query param must be in YYYY-MM format" });
+      }
+      res.json(await storage.calculateMetalStatementForPeriod(casterId, periodMonth));
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+  app.post("/api/vendor-metal-statements", async (req, res) => {
+    try {
+      const validated = insertVendorMetalStatementSchema.parse(req.body);
+      res.status(201).json(await storage.createVendorMetalStatement(validated));
+    } catch (error: any) {
+      res.status(400).json({ message: error.message });
+    }
+  });
+  app.patch("/api/vendor-metal-statements/:id", async (req, res) => {
+    try {
+      const validated = insertVendorMetalStatementSchema.partial().parse(req.body);
+      const updated = await storage.updateVendorMetalStatement(parseInt(req.params.id), validated);
+      if (!updated) return res.status(404).json({ message: "Statement not found" });
+      res.json(updated);
+    } catch (error: any) {
+      res.status(400).json({ message: error.message });
+    }
+  });
+  app.delete("/api/vendor-metal-statements/:id", async (req, res) => {
+    try {
+      await storage.deleteVendorMetalStatement(parseInt(req.params.id));
+      res.status(204).send();
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // BOM component routes (kit contents)
+  app.get("/api/bom-components/by-parent/:parentItemId", async (req, res) => {
+    try {
+      res.json(await storage.getBomComponentsByParentId(parseInt(req.params.parentItemId)));
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+  app.post("/api/bom-components", async (req, res) => {
+    try {
+      const validated = insertBomComponentSchema.parse(req.body);
+      res.status(201).json(await storage.createBomComponent(validated));
+    } catch (error: any) {
+      res.status(400).json({ message: error.message });
+    }
+  });
+  app.patch("/api/bom-components/:id", async (req, res) => {
+    try {
+      const validated = insertBomComponentSchema.partial().parse(req.body);
+      const updated = await storage.updateBomComponent(parseInt(req.params.id), validated);
+      if (!updated) return res.status(404).json({ message: "Component not found" });
+      res.json(updated);
+    } catch (error: any) {
+      res.status(400).json({ message: error.message });
+    }
+  });
+  app.delete("/api/bom-components/:id", async (req, res) => {
+    try {
+      await storage.deleteBomComponent(parseInt(req.params.id));
+      res.status(204).send();
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Ship a kit: decomposes the BOM and deducts from component batches/accessories
+  app.post("/api/items/:id/ship-kit", async (req, res) => {
+    try {
+      const parentItemId = parseInt(req.params.id);
+      const { quantity, shipment_date } = req.body;
+      if (!quantity || quantity <= 0) {
+        return res.status(400).json({ message: "quantity must be a positive number" });
+      }
+      const result = await storage.shipKitComponents(parentItemId, quantity, shipment_date || new Date().toISOString().split('T')[0]);
+      res.json(result);
+    } catch (error: any) {
+      res.status(400).json({ message: error.message });
     }
   });
 
