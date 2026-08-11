@@ -28,7 +28,7 @@ import {
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { queryClient, apiRequest } from '@/lib/queryClient';
 import { useAuth } from '@/hooks/use-auth';
@@ -38,7 +38,7 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { Plus, X, Pencil, Trash2, Package, CalendarDays, FileText, Scale } from 'lucide-react';
-import type { Caster, Item, PurchaseOrder, PurchaseOrderItem, IngotDispatch, Die, Rework } from '@shared/schema';
+import type { Caster, Item, PurchaseOrder, PurchaseOrderItem, IngotDispatch, Die, Rework, VendorMetalStatement } from '@shared/schema';
 
 const casterFields = [
   { name: 'name', label: 'Vendor Name', type: 'text' as const, required: true, placeholder: 'Enter vendor name' },
@@ -285,6 +285,34 @@ const reworkColumns = [
   },
 ];
 
+// --- Vendor Metal Statements ---
+type StatementWithCasterName = VendorMetalStatement & { caster_name: string };
+
+const statementColumns = [
+  { key: 'period_month', label: 'Month', isPrimary: true },
+  { key: 'caster_name', label: 'Caster' },
+  {
+    key: 'closing_balance_kg',
+    label: 'Our Closing Balance',
+    render: (value: number) => `${value.toFixed(0)} kg`,
+  },
+  {
+    key: 'vendor_reported_remaining_kg',
+    label: "Vendor's Reported Balance",
+    hideOnMobile: true,
+    render: (value: number | null) => value === null ? '—' : `${value.toFixed(0)} kg`,
+  },
+  {
+    key: 'status',
+    label: 'Status',
+    render: (value: string) => (
+      <Badge variant={value === 'acknowledged' ? 'default' : value === 'sent' ? 'secondary' : 'outline'}>
+        {value === 'acknowledged' ? 'Acknowledged' : value === 'sent' ? 'Sent' : 'Draft'}
+      </Badge>
+    ),
+  },
+];
+
 type ReportItem = {
   item_id: number;
   item_name: string;
@@ -348,6 +376,10 @@ export default function Casters() {
   const [editingRework, setEditingRework] = useState<ReworkWithNames | null>(null);
   const [isReworkDeleteConfirmOpen, setIsReworkDeleteConfirmOpen] = useState(false);
   const [reworkToDelete, setReworkToDelete] = useState<ReworkWithNames | null>(null);
+  const [isStatementModalOpen, setIsStatementModalOpen] = useState(false);
+  const [editingStatement, setEditingStatement] = useState<StatementWithCasterName | null>(null);
+  const [isStatementDeleteConfirmOpen, setIsStatementDeleteConfirmOpen] = useState(false);
+  const [statementToDelete, setStatementToDelete] = useState<StatementWithCasterName | null>(null);
   const { toast } = useToast();
   const { canMutate } = useAuth();
 
@@ -381,6 +413,15 @@ export default function Casters() {
     },
     enabled: !!reconciliationCasterId,
   });
+
+  const { data: rawStatements = [] } = useQuery<VendorMetalStatement[]>({
+    queryKey: ['/api/vendor-metal-statements'],
+  });
+  const casterNameMap = useMemo(() => new Map(casters.map(c => [c.id, c.name])), [casters]);
+  const allStatements: StatementWithCasterName[] = useMemo(
+    () => rawStatements.map(s => ({ ...s, caster_name: casterNameMap.get(s.caster_id) || '' })),
+    [rawStatements, casterNameMap]
+  );
 
   const { data: allDies = [] } = useQuery<DieWithNames[]>({
     queryKey: ['/api/dies'],
@@ -688,6 +729,48 @@ export default function Casters() {
     setIsModalOpen(true);
   };
 
+  // Vendor metal statement CRUD
+  const createStatementMutation = useMutation({
+    mutationFn: async (data: any) => apiRequest('POST', '/api/vendor-metal-statements', data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/vendor-metal-statements'] });
+      toast({ title: 'Statement saved successfully' });
+      setIsStatementModalOpen(false);
+    },
+    onError: (error: Error) => toast({ title: 'Error saving statement', description: error.message, variant: 'destructive' }),
+  });
+  const updateStatementMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: number; data: any }) => apiRequest('PATCH', `/api/vendor-metal-statements/${id}`, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/vendor-metal-statements'] });
+      toast({ title: 'Statement updated successfully' });
+      setIsStatementModalOpen(false);
+      setEditingStatement(null);
+    },
+    onError: (error: Error) => toast({ title: 'Error updating statement', description: error.message, variant: 'destructive' }),
+  });
+  const deleteStatementMutation = useMutation({
+    mutationFn: async (id: number) => apiRequest('DELETE', `/api/vendor-metal-statements/${id}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/vendor-metal-statements'] });
+      toast({ title: 'Statement deleted successfully' });
+    },
+    onError: (error: Error) => toast({ title: 'Error deleting statement', description: error.message, variant: 'destructive' }),
+  });
+  const handleAddStatement = () => { setEditingStatement(null); setIsStatementModalOpen(true); };
+  const handleEditStatement = (s: StatementWithCasterName) => { setEditingStatement(s); setIsStatementModalOpen(true); };
+  const handleDeleteStatement = (s: StatementWithCasterName) => { setStatementToDelete(s); setIsStatementDeleteConfirmOpen(true); };
+  const confirmDeleteStatement = () => {
+    if (statementToDelete) { deleteStatementMutation.mutate(statementToDelete.id); setIsStatementDeleteConfirmOpen(false); setStatementToDelete(null); }
+  };
+  const handleSubmitStatement = (data: any) => {
+    if (editingStatement) {
+      updateStatementMutation.mutate({ id: editingStatement.id, data });
+    } else {
+      createStatementMutation.mutate(data);
+    }
+  };
+
   const handleEdit = (caster: Caster) => {
     setEditingCaster(caster);
     setIsModalOpen(true);
@@ -777,6 +860,10 @@ export default function Casters() {
           <TabsTrigger value="reworks" className="gap-1.5">
             <FileText className="h-4 w-4" />
             Reworks
+          </TabsTrigger>
+          <TabsTrigger value="statements" className="gap-1.5">
+            <CalendarDays className="h-4 w-4" />
+            Statements
           </TabsTrigger>
         </TabsList>
 
@@ -1069,6 +1156,19 @@ export default function Casters() {
             canMutate={canMutate}
           />
         </TabsContent>
+
+        <TabsContent value="statements">
+          <DataTable
+            columns={statementColumns}
+            data={allStatements}
+            title="Monthly Metal Statements"
+            addButtonLabel="New Statement"
+            onAdd={handleAddStatement}
+            onEdit={handleEditStatement}
+            onDelete={handleDeleteStatement}
+            canMutate={canMutate}
+          />
+        </TabsContent>
       </Tabs>
       
       <FormModal
@@ -1196,6 +1296,23 @@ export default function Casters() {
         onConfirm={confirmDeleteRework}
         title="Delete Rework"
         description="Are you sure you want to delete this rework record? This action cannot be undone."
+        confirmText="Delete"
+      />
+
+      <StatementModal
+        isOpen={isStatementModalOpen}
+        onOpenChange={setIsStatementModalOpen}
+        editingStatement={editingStatement}
+        casters={casters}
+        onSubmit={handleSubmitStatement}
+        isPending={createStatementMutation.isPending || updateStatementMutation.isPending}
+      />
+      <ConfirmDialog
+        open={isStatementDeleteConfirmOpen}
+        onOpenChange={setIsStatementDeleteConfirmOpen}
+        onConfirm={confirmDeleteStatement}
+        title="Delete Statement"
+        description="Are you sure you want to delete this statement? This action cannot be undone."
         confirmText="Delete"
       />
     </div>
@@ -1671,6 +1788,223 @@ function PurchaseOrderModal({
             </div>
           </form>
         </Form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function StatementModal({
+  isOpen,
+  onOpenChange,
+  editingStatement,
+  casters,
+  onSubmit,
+  isPending,
+}: {
+  isOpen: boolean;
+  onOpenChange: (open: boolean) => void;
+  editingStatement: StatementWithCasterName | null;
+  casters: Caster[];
+  onSubmit: (data: any) => void;
+  isPending: boolean;
+}) {
+  const now = new Date();
+  const defaultMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+
+  const [casterId, setCasterId] = useState('');
+  const [periodMonth, setPeriodMonth] = useState(defaultMonth);
+  const [calculated, setCalculated] = useState<{
+    openingBalanceKg: number;
+    dispatchedKg: number;
+    expectedMetalConsumedKg: number;
+    actualFinishedWeightKg: number;
+    closingBalanceKg: number;
+  } | null>(null);
+  const [calculating, setCalculating] = useState(false);
+  const [calcError, setCalcError] = useState<string | null>(null);
+
+  const [vendorReportedProduced, setVendorReportedProduced] = useState('');
+  const [vendorReportedReceived, setVendorReportedReceived] = useState('');
+  const [vendorReportedRemaining, setVendorReportedRemaining] = useState('');
+  const [status, setStatus] = useState('draft');
+  const [sentDate, setSentDate] = useState('');
+  const [ackDate, setAckDate] = useState('');
+  const [notes, setNotes] = useState('');
+
+  // Reset/populate form whenever the modal opens, for either a fresh
+  // statement or editing an existing one
+  useEffect(() => {
+    if (!isOpen) return;
+    if (editingStatement) {
+      setCasterId(editingStatement.caster_id.toString());
+      setPeriodMonth(editingStatement.period_month);
+      setCalculated({
+        openingBalanceKg: editingStatement.opening_balance_kg,
+        dispatchedKg: editingStatement.dispatched_kg,
+        expectedMetalConsumedKg: editingStatement.expected_received_kg,
+        actualFinishedWeightKg: editingStatement.actual_received_kg,
+        closingBalanceKg: editingStatement.closing_balance_kg,
+      });
+      setVendorReportedProduced(editingStatement.vendor_reported_produced_kg?.toString() || '');
+      setVendorReportedReceived(editingStatement.vendor_reported_received_kg?.toString() || '');
+      setVendorReportedRemaining(editingStatement.vendor_reported_remaining_kg?.toString() || '');
+      setStatus(editingStatement.status);
+      setSentDate(editingStatement.sent_date || '');
+      setAckDate(editingStatement.ack_date || '');
+      setNotes(editingStatement.notes || '');
+    } else {
+      setCasterId('');
+      setPeriodMonth(defaultMonth);
+      setCalculated(null);
+      setVendorReportedProduced('');
+      setVendorReportedReceived('');
+      setVendorReportedRemaining('');
+      setStatus('draft');
+      setSentDate('');
+      setAckDate('');
+      setNotes('');
+    }
+    setCalcError(null);
+  }, [isOpen, editingStatement]);
+
+  const handleCalculate = async () => {
+    if (!casterId || !periodMonth) return;
+    setCalculating(true);
+    setCalcError(null);
+    try {
+      const res = await fetch(`/api/casters/${casterId}/metal-statement-calc?month=${periodMonth}`, { credentials: 'include' });
+      if (!res.ok) throw new Error('Failed to calculate — check the caster and month are valid');
+      const data = await res.json();
+      setCalculated(data);
+    } catch (err: any) {
+      setCalcError(err.message || 'Calculation failed');
+    } finally {
+      setCalculating(false);
+    }
+  };
+
+  const handleSave = () => {
+    if (!calculated || !casterId || !periodMonth) return;
+    onSubmit({
+      caster_id: parseInt(casterId),
+      period_month: periodMonth,
+      opening_balance_kg: calculated.openingBalanceKg,
+      dispatched_kg: calculated.dispatchedKg,
+      expected_received_kg: calculated.expectedMetalConsumedKg,
+      actual_received_kg: calculated.actualFinishedWeightKg,
+      closing_balance_kg: calculated.closingBalanceKg,
+      vendor_reported_produced_kg: vendorReportedProduced ? parseFloat(vendorReportedProduced) : null,
+      vendor_reported_received_kg: vendorReportedReceived ? parseFloat(vendorReportedReceived) : null,
+      vendor_reported_remaining_kg: vendorReportedRemaining ? parseFloat(vendorReportedRemaining) : null,
+      status,
+      sent_date: sentDate || null,
+      ack_date: ackDate || null,
+      notes: notes || null,
+    });
+  };
+
+  return (
+    <Dialog open={isOpen} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>{editingStatement ? 'Edit Statement' : 'New Monthly Statement'}</DialogTitle>
+        </DialogHeader>
+
+        <div className="space-y-4">
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-sm font-medium mb-1 block">Caster</label>
+              <Select value={casterId} onValueChange={setCasterId} disabled={!!editingStatement}>
+                <SelectTrigger><SelectValue placeholder="Select caster" /></SelectTrigger>
+                <SelectContent>
+                  {casters.map(c => (
+                    <SelectItem key={c.id} value={c.id.toString()}>{c.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <label className="text-sm font-medium mb-1 block">Month</label>
+              <Input type="month" value={periodMonth} onChange={e => setPeriodMonth(e.target.value)} disabled={!!editingStatement} />
+            </div>
+          </div>
+
+          {!editingStatement && (
+            <Button type="button" variant="outline" size="sm" onClick={handleCalculate} disabled={!casterId || !periodMonth || calculating}>
+              {calculating ? 'Calculating...' : 'Calculate'}
+            </Button>
+          )}
+          {calcError && <p className="text-sm text-destructive">{calcError}</p>}
+
+          {calculated && (
+            <div className="rounded-md border p-3 space-y-2 bg-muted/30">
+              <p className="text-xs font-medium text-muted-foreground">Onyx's calculated figures (for this month)</p>
+              <div className="grid grid-cols-2 gap-2 text-sm">
+                <div>Opening balance: <span className="font-mono">{calculated.openingBalanceKg.toFixed(0)} kg</span></div>
+                <div>Dispatched: <span className="font-mono">{calculated.dispatchedKg.toFixed(0)} kg</span></div>
+                <div>Metal consumed (expected): <span className="font-mono">{calculated.expectedMetalConsumedKg.toFixed(0)} kg</span></div>
+                <div>Finished weight received: <span className="font-mono">{calculated.actualFinishedWeightKg.toFixed(0)} kg</span></div>
+                <div className="col-span-2 font-medium">Closing balance: <span className="font-mono">{calculated.closingBalanceKg.toFixed(0)} kg</span></div>
+              </div>
+            </div>
+          )}
+
+          {calculated && (
+            <>
+              <div>
+                <p className="text-xs font-medium text-muted-foreground mb-2">Vendor's own reported figures (optional — only if this caster sends their own report)</p>
+                <div className="grid grid-cols-3 gap-2">
+                  <div>
+                    <label className="text-xs mb-1 block">Produced (kg)</label>
+                    <Input type="number" value={vendorReportedProduced} onChange={e => setVendorReportedProduced(e.target.value)} />
+                  </div>
+                  <div>
+                    <label className="text-xs mb-1 block">Received (kg)</label>
+                    <Input type="number" value={vendorReportedReceived} onChange={e => setVendorReportedReceived(e.target.value)} />
+                  </div>
+                  <div>
+                    <label className="text-xs mb-1 block">Remaining (kg)</label>
+                    <Input type="number" value={vendorReportedRemaining} onChange={e => setVendorReportedRemaining(e.target.value)} />
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <label className="text-sm font-medium mb-1 block">Status</label>
+                  <Select value={status} onValueChange={setStatus}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="draft">Draft</SelectItem>
+                      <SelectItem value="sent">Sent</SelectItem>
+                      <SelectItem value="acknowledged">Acknowledged</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <label className="text-sm font-medium mb-1 block">Sent Date</label>
+                  <Input type="date" value={sentDate} onChange={e => setSentDate(e.target.value)} />
+                </div>
+                <div>
+                  <label className="text-sm font-medium mb-1 block">Ack. Date</label>
+                  <Input type="date" value={ackDate} onChange={e => setAckDate(e.target.value)} />
+                </div>
+              </div>
+
+              <div>
+                <label className="text-sm font-medium mb-1 block">Notes</label>
+                <Textarea value={notes} onChange={e => setNotes(e.target.value)} placeholder="Any discrepancy notes, etc." />
+              </div>
+            </>
+          )}
+
+          <div className="flex justify-end gap-3 pt-4 border-t">
+            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+            <Button type="button" onClick={handleSave} disabled={!calculated || isPending}>
+              {isPending ? 'Saving...' : editingStatement ? 'Update Statement' : 'Save Statement'}
+            </Button>
+          </div>
+        </div>
       </DialogContent>
     </Dialog>
   );
