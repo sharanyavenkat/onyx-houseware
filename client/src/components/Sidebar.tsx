@@ -36,7 +36,7 @@ const menuItems = [
   { icon: Package, label: "Items", href: "/items" },
   { icon: Wrench, label: "Accessories", href: "/accessories" },
   { icon: Users, label: "Customers", href: "/customers" },
-  { icon: Factory, label: "Casters", href: "/casters" },
+  { icon: Factory, label: "Vendors", href: "/casters" },
 ];
 
 function NavigationContent({ 

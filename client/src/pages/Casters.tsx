@@ -129,7 +129,7 @@ type IngotReconciliation = {
 const ingotFieldsFor = (casters: Caster[]) => [
   {
     name: 'caster_id',
-    label: 'Caster',
+    label: 'Vendor',
     type: 'select' as const,
     required: true,
     options: casters.map(c => ({ value: c.id.toString(), label: c.name })),
@@ -237,7 +237,7 @@ type ReworkWithNames = Rework & { caster_name: string; item_name: string };
 const reworkFieldsFor = (casters: Caster[], items: Item[]) => [
   {
     name: 'caster_id',
-    label: 'Caster',
+    label: 'Vendor',
     type: 'select' as const,
     required: true,
     options: casters.map(c => ({ value: c.id.toString(), label: c.name })),
@@ -470,14 +470,14 @@ export default function Casters() {
 
   const selectedMonthLabel = monthOptions.find(m => m.value === selectedMonth)?.label || selectedMonth;
 
-  // Caster CRUD
+  // Vendor CRUD
   const createMutation = useMutation({
     mutationFn: async (data: any) => {
       return await apiRequest('POST', '/api/casters', data);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/casters'] });
-      toast({ title: 'Caster created successfully' });
+      toast({ title: 'Vendor created successfully' });
       setIsModalOpen(false);
     },
     onError: (error: Error) => {
@@ -491,7 +491,7 @@ export default function Casters() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/casters'] });
-      toast({ title: 'Caster updated successfully' });
+      toast({ title: 'Vendor updated successfully' });
       setIsModalOpen(false);
       setEditingCaster(null);
     },
@@ -506,7 +506,7 @@ export default function Casters() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/casters'] });
-      toast({ title: 'Caster deleted successfully' });
+      toast({ title: 'Vendor deleted successfully' });
     },
     onError: (error: Error) => {
       toast({ title: 'Error deleting caster', description: error.message, variant: 'destructive' });
@@ -850,7 +850,7 @@ export default function Casters() {
         <TabsList className="w-full justify-start flex-wrap gap-1">
           <TabsTrigger value="casters" className="gap-1.5">
             <Package className="h-4 w-4" />
-            Casters
+            Vendors
           </TabsTrigger>
           <TabsTrigger value="purchases" className="gap-1.5">
             <FileText className="h-4 w-4" />
@@ -1001,8 +1001,8 @@ export default function Casters() {
           <DataTable 
             columns={casterColumns}
             data={casters}
-            title="Casters"
-            addButtonLabel="Add Caster"
+            title="Vendors"
+            addButtonLabel="Add Vendor"
             onAdd={handleAdd}
             onEdit={handleEdit}
             onDelete={handleDelete}
@@ -1186,17 +1186,17 @@ export default function Casters() {
           setEditingCaster(null);
         }}
         onSubmit={handleSubmit}
-        title={editingCaster ? 'Edit Caster' : 'Add New Caster'}
+        title={editingCaster ? 'Edit Vendor' : 'Add New Vendor'}
         fields={casterFields}
         initialData={editingCaster || { status: 'active', vendor_type: 'caster' }}
-        submitLabel={editingCaster ? 'Update Caster' : 'Add Caster'}
+        submitLabel={editingCaster ? 'Update Vendor' : 'Add Vendor'}
       />
 
       <ConfirmDialog
         open={isConfirmOpen}
         onOpenChange={setIsConfirmOpen}
         onConfirm={confirmDelete}
-        title="Delete Caster"
+        title="Delete Vendor"
         description={`Are you sure you want to delete "${casterToDelete?.name}"? This action cannot be undone.`}
         confirmText="Delete"
       />
@@ -1641,7 +1641,7 @@ function PurchaseOrderModal({
                 name="caster_id"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Caster</FormLabel>
+                    <FormLabel>Vendor</FormLabel>
                     <Select value={field.value} onValueChange={field.onChange}>
                       <FormControl>
                         <SelectTrigger>
@@ -1923,7 +1923,7 @@ function StatementModal({
         <div className="space-y-4">
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="text-sm font-medium mb-1 block">Caster</label>
+              <label className="text-sm font-medium mb-1 block">Vendor</label>
               <Select value={casterId} onValueChange={setCasterId} disabled={!!editingStatement}>
                 <SelectTrigger><SelectValue placeholder="Select caster" /></SelectTrigger>
                 <SelectContent>
