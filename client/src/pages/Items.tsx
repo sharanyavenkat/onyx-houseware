@@ -47,9 +47,9 @@ const itemFields = [
   },
   {
     name: "unit_weight_kg",
-    label: "Finished Weight (kg)",
-    type: "number" as const,
-    placeholder: "e.g., 0.85 (used to reconcile ingot sent vs. castings received)",
+    label: "Finished Weight",
+    type: "weight" as const,
+    placeholder: "Used to reconcile ingot sent vs. castings received",
   },
   {
     name: "is_active",

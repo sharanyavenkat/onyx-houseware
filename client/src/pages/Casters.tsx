@@ -143,7 +143,6 @@ const ingotFieldsFor = (casters: Caster[]) => [
     options: [
       { value: 'ingot', label: 'Ingot' },
       { value: 'scrap', label: 'Scrap' },
-      { value: 'rework', label: 'Rework (metal only, see Reworks tab for pieces)' },
     ],
   },
   { name: 'alloy_grade', label: 'Alloy Grade', type: 'text' as const, placeholder: 'e.g., LM6, LM24' },
@@ -328,6 +327,19 @@ type POWithDetails = PurchaseOrder & {
   caster_name: string;
   line_items: (PurchaseOrderItem & { item_name: string; sku: string })[];
 };
+
+// Displays a kg value in whichever unit reads naturally — grams under 1kg,
+// kg at 1kg and up — with no forced rounding (weight feeds pricing, so full
+// precision is preserved; toFixed(6) here only trims floating-point noise,
+// not the actual value).
+function formatWeightKg(kg: number | null | undefined): string {
+  if (kg === null || kg === undefined || isNaN(kg)) return '—';
+  const abs = Math.abs(kg);
+  if (abs < 1) {
+    return `${parseFloat((kg * 1000).toFixed(6))} g`;
+  }
+  return `${parseFloat(kg.toFixed(6))} kg`;
+}
 
 function getMonthOptions() {
   const options: { value: string; label: string }[] = [];
@@ -1031,19 +1043,19 @@ export default function Casters() {
                         <div>
                           <div className="text-xs text-muted-foreground">Ingot Sent</div>
                           <div className="font-mono font-semibold">
-                            {ingotReconciliation.totalIngotKgSent.toLocaleString(undefined, { maximumFractionDigits: 1 })} kg
+                            {formatWeightKg(ingotReconciliation.totalIngotKgSent)}
                           </div>
                         </div>
                         <div>
                           <div className="text-xs text-muted-foreground">Scrap Sent</div>
                           <div className="font-mono font-semibold">
-                            {ingotReconciliation.totalScrapKgSent.toLocaleString(undefined, { maximumFractionDigits: 1 })} kg
+                            {formatWeightKg(ingotReconciliation.totalScrapKgSent)}
                           </div>
                         </div>
                         <div>
                           <div className="text-xs text-muted-foreground">Total Metal Sent</div>
                           <div className="font-mono font-semibold">
-                            {ingotReconciliation.totalMetalKgSent.toLocaleString(undefined, { maximumFractionDigits: 1 })} kg
+                            {formatWeightKg(ingotReconciliation.totalMetalKgSent)}
                           </div>
                         </div>
                       </div>
@@ -1051,23 +1063,19 @@ export default function Casters() {
                         <div>
                           <div className="text-xs text-muted-foreground">Finished Weight Received</div>
                           <div className="font-mono font-semibold">
-                            {ingotReconciliation.totalFinishedWeightKgReceived.toLocaleString(undefined, { maximumFractionDigits: 1 })} kg
+                            {formatWeightKg(ingotReconciliation.totalFinishedWeightKgReceived)}
                           </div>
                         </div>
                         <div>
                           <div className="text-xs text-muted-foreground">Expected Metal Consumed</div>
                           <div className="font-mono font-semibold">
-                            {ingotReconciliation.expectedMetalConsumedKg === null
-                              ? '—'
-                              : `${ingotReconciliation.expectedMetalConsumedKg.toLocaleString(undefined, { maximumFractionDigits: 1 })} kg`}
+                            {formatWeightKg(ingotReconciliation.expectedMetalConsumedKg)}
                           </div>
                         </div>
                         <div>
                           <div className="text-xs text-muted-foreground">Variance</div>
                           <div className="font-mono font-semibold">
-                            {ingotReconciliation.varianceKg === null
-                              ? '—'
-                              : `${ingotReconciliation.varianceKg.toLocaleString(undefined, { maximumFractionDigits: 1 })} kg`}
+                            {formatWeightKg(ingotReconciliation.varianceKg)}
                           </div>
                         </div>
                         <div>
@@ -1087,7 +1095,7 @@ export default function Casters() {
                         <div>
                           <div className="text-xs text-muted-foreground">Rework Metal Sent</div>
                           <div className="font-mono font-semibold">
-                            {ingotReconciliation.rework.totalReworkKgSent.toLocaleString(undefined, { maximumFractionDigits: 1 })} kg
+                            {formatWeightKg(ingotReconciliation.rework.totalReworkKgSent)}
                           </div>
                         </div>
                         <div>
@@ -1110,7 +1118,7 @@ export default function Casters() {
                     </p>
                     {ingotReconciliation.itemsMissingWeight.length > 0 && (
                       <div className="text-xs text-amber-600 dark:text-amber-500">
-                        Missing "Finished Weight (kg)" on: {ingotReconciliation.itemsMissingWeight.map(i => i.itemName).join(', ')} — add it on the Items page to include these in the calculation.
+                        Missing "Finished Weight" on: {ingotReconciliation.itemsMissingWeight.map(i => i.itemName).join(', ')} — add it on the Items page to include these in the calculation.
                       </div>
                     )}
                   </div>
@@ -1819,6 +1827,7 @@ function StatementModal({
     expectedMetalConsumedKg: number;
     actualFinishedWeightKg: number;
     closingBalanceKg: number;
+    itemsMissingWeight: Array<{ itemId: number; itemName: string }>;
   } | null>(null);
   const [calculating, setCalculating] = useState(false);
   const [calcError, setCalcError] = useState<string | null>(null);
@@ -1844,6 +1853,7 @@ function StatementModal({
         expectedMetalConsumedKg: editingStatement.expected_received_kg,
         actualFinishedWeightKg: editingStatement.actual_received_kg,
         closingBalanceKg: editingStatement.closing_balance_kg,
+        itemsMissingWeight: [], // not re-derived for a saved statement; hit Calculate again if you need a fresh check
       });
       setVendorReportedProduced(editingStatement.vendor_reported_produced_kg?.toString() || '');
       setVendorReportedReceived(editingStatement.vendor_reported_received_kg?.toString() || '');
@@ -1940,12 +1950,17 @@ function StatementModal({
             <div className="rounded-md border p-3 space-y-2 bg-muted/30">
               <p className="text-xs font-medium text-muted-foreground">Onyx's calculated figures (for this month)</p>
               <div className="grid grid-cols-2 gap-2 text-sm">
-                <div>Opening balance: <span className="font-mono">{calculated.openingBalanceKg.toFixed(0)} kg</span></div>
-                <div>Dispatched: <span className="font-mono">{calculated.dispatchedKg.toFixed(0)} kg</span></div>
-                <div>Metal consumed (expected): <span className="font-mono">{calculated.expectedMetalConsumedKg.toFixed(0)} kg</span></div>
-                <div>Finished weight received: <span className="font-mono">{calculated.actualFinishedWeightKg.toFixed(0)} kg</span></div>
-                <div className="col-span-2 font-medium">Closing balance: <span className="font-mono">{calculated.closingBalanceKg.toFixed(0)} kg</span></div>
+                <div>Opening balance: <span className="font-mono">{formatWeightKg(calculated.openingBalanceKg)}</span></div>
+                <div>Dispatched: <span className="font-mono">{formatWeightKg(calculated.dispatchedKg)}</span></div>
+                <div>Metal consumed (expected): <span className="font-mono">{formatWeightKg(calculated.expectedMetalConsumedKg)}</span></div>
+                <div>Finished weight received: <span className="font-mono">{formatWeightKg(calculated.actualFinishedWeightKg)}</span></div>
+                <div className="col-span-2 font-medium">Closing balance: <span className="font-mono">{formatWeightKg(calculated.closingBalanceKg)}</span></div>
               </div>
+              {calculated.itemsMissingWeight.length > 0 && (
+                <p className="text-xs text-amber-600 dark:text-amber-500 pt-1">
+                  Missing "Finished Weight" on: {calculated.itemsMissingWeight.map(i => i.itemName).join(', ')} — these SKUs are excluded from the figures above until you add it on the Items page.
+                </p>
+              )}
             </div>
           )}
 

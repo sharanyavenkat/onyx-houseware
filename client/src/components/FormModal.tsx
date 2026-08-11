@@ -18,10 +18,66 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { useEffect, useRef, useState } from "react";
 
+// Compound weight input: lets someone type in grams or kg, but always stores
+// the canonical value in kg (full precision, no rounding — weight feeds
+// pricing/metal calculations elsewhere). Switching the unit just changes how
+// the same underlying kg value is displayed, it never re-scales the data.
+function WeightInput({
+  valueKg,
+  onChangeKg,
+  error,
+  fieldName,
+}: {
+  valueKg: string;
+  onChangeKg: (kg: string) => void;
+  error?: boolean;
+  fieldName: string;
+}) {
+  const [unit, setUnit] = useState<"g" | "kg">(() => {
+    const kg = parseFloat(valueKg);
+    return !isNaN(kg) && kg >= 1 ? "kg" : "g";
+  });
+
+  const kgNum = parseFloat(valueKg);
+  const displayAmount = isNaN(kgNum) ? "" : String(unit === "g" ? kgNum * 1000 : kgNum);
+
+  const handleAmountChange = (raw: string) => {
+    if (raw === "") {
+      onChangeKg("");
+      return;
+    }
+    const num = parseFloat(raw);
+    if (isNaN(num)) return;
+    onChangeKg(String(unit === "g" ? num / 1000 : num));
+  };
+
+  return (
+    <div className="flex gap-2">
+      <Input
+        type="number"
+        step="any"
+        value={displayAmount}
+        onChange={(e) => handleAmountChange(e.target.value)}
+        className={error ? "border-destructive" : ""}
+        data-testid={`input-${fieldName}`}
+      />
+      <Select value={unit} onValueChange={(v) => setUnit(v as "g" | "kg")}>
+        <SelectTrigger className="w-20" data-testid={`select-${fieldName}-unit`}>
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="g">g</SelectItem>
+          <SelectItem value="kg">kg</SelectItem>
+        </SelectContent>
+      </Select>
+    </div>
+  );
+}
+
 interface FormField {
   name: string;
   label: string;
-  type: "text" | "number" | "email" | "textarea" | "select" | "date";
+  type: "text" | "number" | "email" | "textarea" | "select" | "date" | "weight";
   required?: boolean;
   options?: { value: string; label: string }[];
   placeholder?: string;
@@ -134,6 +190,16 @@ export default function FormModal({
               ))}
             </SelectContent>
           </Select>
+        );
+
+      case "weight":
+        return (
+          <WeightInput
+            valueKg={value}
+            onChangeKg={(kg) => handleInputChange(field.name, kg)}
+            error={!!error}
+            fieldName={field.name}
+          />
         );
 
       default:

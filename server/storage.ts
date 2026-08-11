@@ -228,6 +228,7 @@ export interface IStorage {
     expectedMetalConsumedKg: number;
     actualFinishedWeightKg: number;
     closingBalanceKg: number;
+    itemsMissingWeight: Array<{ itemId: number; itemName: string }>;
   }>;
 
   getAllBomComponents(): Promise<BomComponent[]>;
@@ -1470,9 +1471,6 @@ export class DbStorage implements IStorage {
     const totalScrapKgSent = dispatches
       .filter(d => d.material_type === 'scrap')
       .reduce((sum, d) => sum + d.quantity_kg, 0);
-    const totalReworkKgSent = dispatches
-      .filter(d => d.material_type === 'rework')
-      .reduce((sum, d) => sum + d.quantity_kg, 0);
     const totalMetalKgSent = totalIngotKgSent + totalScrapKgSent;
 
     const casterReworks = await this.getReworksByCasterId(casterId);
@@ -1484,6 +1482,15 @@ export class DbStorage implements IStorage {
       .filter(b => !replacementBatchIds.has(b.id));
     const allItems = await db.select().from(items);
     const itemMap = new Map(allItems.map(i => [i.id, i]));
+
+    // Rework metal is derived from defective-piece weight (quantity_defective x
+    // that SKU's own weight), not a separately-entered dispatch — one source
+    // of truth instead of two logs that can silently disagree.
+    const totalReworkKgSent = casterReworks.reduce((sum, r) => {
+      const item = itemMap.get(r.item_id);
+      if (!item || item.unit_weight_kg === null || item.unit_weight_kg === undefined) return sum;
+      return sum + r.quantity_defective * item.unit_weight_kg;
+    }, 0);
 
     let totalFinishedWeightKgReceived = 0;
     let expectedMetalConsumedKg = 0;
@@ -1609,6 +1616,7 @@ export class DbStorage implements IStorage {
     expectedMetalConsumedKg: number;
     actualFinishedWeightKg: number;
     closingBalanceKg: number;
+    itemsMissingWeight: Array<{ itemId: number; itemName: string }>;
   }> {
     // "As of end of periodMonth" cutoff — first day of the FOLLOWING month
     const [year, month] = periodMonth.split("-").map(Number);
@@ -1632,14 +1640,23 @@ export class DbStorage implements IStorage {
 
       let actualFinishedWeightKg = 0;
       let expectedMetalConsumedKg = 0;
+      const missingItemIds = new Set<number>();
       for (const batch of casterBatches) {
         const item = itemMap.get(batch.item_id);
-        if (!item || item.unit_weight_kg === null || item.unit_weight_kg === undefined) continue;
+        if (!item || item.unit_weight_kg === null || item.unit_weight_kg === undefined) {
+          if (item) missingItemIds.add(item.id);
+          continue;
+        }
         const weightKg = batch.quantity_produced * item.unit_weight_kg;
         actualFinishedWeightKg += weightKg;
         const wastagePct = await this.resolveWastagePct(casterId, item.id, "ingot");
         expectedMetalConsumedKg += weightKg / (1 - wastagePct / 100);
       }
+
+      const itemsMissingWeight = Array.from(missingItemIds).map(id => ({
+        itemId: id,
+        itemName: itemMap.get(id)?.name || `Item #${id}`,
+      }));
 
       // Balance = metal dispatched minus the wastage-adjusted metal-equivalent
       // of what's actually been produced so far — NOT minus raw finished
@@ -1650,6 +1667,7 @@ export class DbStorage implements IStorage {
         actualFinishedWeightKg,
         expectedMetalConsumedKg,
         balanceKg: dispatchedKg - expectedMetalConsumedKg,
+        itemsMissingWeight,
       };
     };
 
@@ -1662,6 +1680,8 @@ export class DbStorage implements IStorage {
       expectedMetalConsumedKg: closing.expectedMetalConsumedKg - opening.expectedMetalConsumedKg,
       actualFinishedWeightKg: closing.actualFinishedWeightKg - opening.actualFinishedWeightKg,
       closingBalanceKg: closing.balanceKg,
+      // Missing-weight items as of period end — the more complete picture
+      itemsMissingWeight: closing.itemsMissingWeight,
     };
   }
 
