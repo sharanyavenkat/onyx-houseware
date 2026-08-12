@@ -202,7 +202,7 @@ export default function Batches() {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All Items</SelectItem>
-              {items.map((item) => (
+              {items.filter((item) => !item.is_kit).map((item) => (
                 <SelectItem key={item.id} value={item.id.toString()}>
                   {item.name}
                 </SelectItem>

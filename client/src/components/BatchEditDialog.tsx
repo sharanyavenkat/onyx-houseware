@@ -66,9 +66,12 @@ export default function BatchEditDialog({
 }: BatchEditDialogProps) {
   const isManualOverrideRef = useRef(false);
 
-  const { data: casters = [] } = useQuery<Caster[]>({
+  const { data: allCasters = [] } = useQuery<Caster[]>({
     queryKey: ['/api/casters'],
   });
+  // Batches are specifically castings received — only actual casting
+  // vendors belong here, not handle vendors/coaters/material suppliers.
+  const casters = useMemo(() => allCasters.filter((c) => c.vendor_type === 'caster'), [allCasters]);
 
   const form = useForm<BatchEditData>({
     resolver: zodResolver(batchEditSchema),

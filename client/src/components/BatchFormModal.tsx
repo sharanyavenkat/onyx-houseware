@@ -69,9 +69,12 @@ export default function BatchFormModal({
   const { toast } = useToast();
   const isManualOverrideRef = useRef(false);
 
-  const { data: casters = [] } = useQuery<Caster[]>({
+  const { data: allCasters = [] } = useQuery<Caster[]>({
     queryKey: ['/api/casters'],
   });
+  // Batches are specifically castings received — only actual casting
+  // vendors belong here, not handle vendors/coaters/material suppliers.
+  const casters = useMemo(() => allCasters.filter((c) => c.vendor_type === 'caster'), [allCasters]);
 
   const form = useForm<BatchFormData>({
     resolver: zodResolver(batchFormSchema),
@@ -220,7 +223,7 @@ export default function BatchFormModal({
                     </FormControl>
                     <SelectContent>
                       {items
-                        .filter((item) => item.is_active)
+                        .filter((item) => item.is_active && !item.is_kit)
                         .map((item) => (
                           <SelectItem key={item.id} value={item.id.toString()}>
                             {item.name} ({item.sku})
