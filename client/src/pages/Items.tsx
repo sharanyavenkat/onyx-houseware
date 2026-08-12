@@ -1,5 +1,7 @@
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import {
   Dialog,
   DialogContent,
@@ -20,7 +22,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { Item, Accessory, BomComponent } from "@shared/schema";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useState, useMemo, useEffect } from "react";
-import { Plus, Trash2 } from "lucide-react";
+import { Plus, Trash2, ChevronDown, ChevronRight, Search } from "lucide-react";
 import ConfirmDialog from "../components/ConfirmDialog";
 import DataTable from "../components/DataTable";
 import FormModal from "../components/FormModal";
@@ -48,13 +50,6 @@ const itemFields = [
     placeholder: "e.g., 280mm, 12 pits, Standard",
   },
   {
-    name: "price",
-    label: "Price (₹)",
-    type: "number" as const,
-    required: true,
-    placeholder: "",
-  },
-  {
     name: "desired_safety_stock",
     label: "Desired Safety Stock",
     type: "number" as const,
@@ -66,6 +61,17 @@ const itemFields = [
     label: "Finished Weight",
     type: "weight" as const,
     placeholder: "Used to reconcile ingot sent vs. castings received",
+  },
+  {
+    name: "finish",
+    label: "Finish",
+    type: "select" as const,
+    options: [
+      { value: "none", label: "N/A" },
+      { value: "bare", label: "Bare Casting" },
+      { value: "nonstick", label: "Non-Stick Coated" },
+      { value: "ceramic", label: "Ceramic Coated" },
+    ],
   },
   {
     name: "is_kit",
@@ -99,13 +105,6 @@ const getItemColumns = (onManageBom: (item: Item) => void) => [
   { key: "name", label: "Product Name", isPrimary: true },
   { key: "sku", label: "SKU" },
   { key: "size_specification", label: "Size/Spec" },
-  {
-    key: "price",
-    label: "Price",
-    render: (value: string) =>
-      value ? `₹${parseFloat(value).toFixed(2)}` : "-",
-  },
-  { key: "desired_safety_stock", label: "Desired Safety Stock", hideOnMobile: true },
   {
     key: "is_kit",
     label: "Type",
@@ -164,6 +163,48 @@ export default function Items() {
       return a.name.localeCompare(b.name);
     });
   }, [items]);
+
+  const [searchTerm, setSearchTerm] = useState("");
+  const searchedItems = useMemo(() => {
+    if (!searchTerm.trim()) return sortedItems;
+    const q = searchTerm.toLowerCase();
+    return sortedItems.filter(
+      (i) => i.name.toLowerCase().includes(q) || i.sku.toLowerCase().includes(q)
+    );
+  }, [sortedItems, searchTerm]);
+
+  // Group by kit vs. casting finish — this is how the catalog is actually
+  // organized (bare/nonstick/ceramic castings, plus kits/combos), so browsing
+  // by group beats one long flat list once you have more than a handful of SKUs.
+  const GROUP_ORDER = ["kit", "bare", "nonstick", "ceramic", "ungrouped"] as const;
+  const GROUP_LABELS: Record<(typeof GROUP_ORDER)[number], string> = {
+    kit: "Kits / Combos",
+    bare: "Bare Castings",
+    nonstick: "Non-Stick Coated",
+    ceramic: "Ceramic Coated",
+    ungrouped: "Ungrouped",
+  };
+  const groupedItems = useMemo(() => {
+    const groups: Record<string, Item[]> = { kit: [], bare: [], nonstick: [], ceramic: [], ungrouped: [] };
+    for (const item of searchedItems) {
+      if (item.is_kit) groups.kit.push(item);
+      else if (item.finish === "bare" || item.finish === "nonstick" || item.finish === "ceramic") groups[item.finish].push(item);
+      else groups.ungrouped.push(item);
+    }
+    return groups;
+  }, [searchedItems]);
+
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(
+    new Set(["kit", "bare", "nonstick", "ceramic", "ungrouped"])
+  );
+  const toggleGroup = (key: string) => {
+    setExpandedGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
 
   const createMutation = useMutation({
     mutationFn: async (data: any) => {
@@ -248,10 +289,14 @@ export default function Items() {
       ...data,
       is_active: data.is_active === "true",
       is_kit: isKit,
-      price: parseFloat(data.price),
+      // Price isn't tracked here (handled separately, changes with raw
+      // material cost) — no longer a form field, just preserve whatever
+      // was there on edit, or default to 0 on create.
+      price: editingItem ? editingItem.price : 0,
       desired_safety_stock: parseInt(data.desired_safety_stock),
       // Kits are never cast themselves — no weight of their own to reconcile
       unit_weight_kg: isKit ? null : (data.unit_weight_kg ? parseFloat(data.unit_weight_kg) : null),
+      finish: isKit ? null : (data.finish === "none" ? null : data.finish),
     };
 
     if (editingItem) {
@@ -263,16 +308,72 @@ export default function Items() {
 
   return (
     <div className="space-y-6" data-testid="page-items">
-      <DataTable
-        columns={getItemColumns(setBomEditorItem)}
-        data={sortedItems}
-        title="Items"
-        addButtonLabel="Add Item"
-        onAdd={handleAdd}
-        onEdit={handleEdit}
-        onDelete={handleDelete}
-        canMutate={canMutate}
-      />
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+        <h1 className="text-xl sm:text-2xl font-semibold">Items</h1>
+        {canMutate && (
+          <Button onClick={handleAdd} className="w-full sm:w-auto">
+            <Plus className="h-4 w-4 mr-2" />
+            Add Item
+          </Button>
+        )}
+      </div>
+
+      <div className="relative w-full sm:max-w-sm">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+        <Input
+          placeholder="Search by name or SKU..."
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+          className="pl-9"
+        />
+      </div>
+
+      <div className="space-y-3">
+        {GROUP_ORDER.map((groupKey) => {
+          const groupItems = groupedItems[groupKey];
+          if (groupItems.length === 0) return null;
+          const isOpen = expandedGroups.has(groupKey);
+          return (
+            <Collapsible key={groupKey} open={isOpen} onOpenChange={() => toggleGroup(groupKey)}>
+              <Card>
+                <CollapsibleTrigger asChild>
+                  <button type="button" className="w-full text-left">
+                    <CardHeader className="flex flex-row items-center justify-between py-4">
+                      <CardTitle className="text-base">
+                        {GROUP_LABELS[groupKey]}
+                        <span className="text-sm font-normal text-muted-foreground ml-2">
+                          ({groupItems.length})
+                        </span>
+                      </CardTitle>
+                      {isOpen ? (
+                        <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                      ) : (
+                        <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                      )}
+                    </CardHeader>
+                  </button>
+                </CollapsibleTrigger>
+                <CollapsibleContent>
+                  <CardContent className="pt-0">
+                    <DataTable
+                      columns={getItemColumns(setBomEditorItem)}
+                      data={groupItems}
+                      title=""
+                      searchable={false}
+                      onEdit={handleEdit}
+                      onDelete={handleDelete}
+                      canMutate={canMutate}
+                    />
+                  </CardContent>
+                </CollapsibleContent>
+              </Card>
+            </Collapsible>
+          );
+        })}
+        {searchedItems.length === 0 && (
+          <p className="text-sm text-muted-foreground py-8 text-center">No items match your search.</p>
+        )}
+      </div>
 
       <FormModal
         isOpen={isModalOpen}
@@ -289,11 +390,11 @@ export default function Items() {
                 ...editingItem,
                 is_active: editingItem.is_active ? "true" : "false",
                 is_kit: editingItem.is_kit ? "true" : "false",
-                price: editingItem.price || "0",
+                finish: editingItem.finish ?? "none",
                 desired_safety_stock: editingItem.desired_safety_stock || "0",
                 unit_weight_kg: editingItem.unit_weight_kg ?? "",
               }
-            : { is_active: "true", is_kit: "false" }
+            : { is_active: "true", is_kit: "false", finish: "none" }
         }
         submitLabel={editingItem ? "Update Item" : "Add Item"}
       />
