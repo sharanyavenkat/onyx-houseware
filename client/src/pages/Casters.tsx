@@ -872,10 +872,6 @@ export default function Casters() {
     <div data-testid="page-casters">
       <Tabs defaultValue="purchases" className="w-full">
         <TabsList className="w-full justify-start flex-wrap gap-1">
-          <TabsTrigger value="casters" className="gap-1.5">
-            <Package className="h-4 w-4" />
-            Vendors
-          </TabsTrigger>
           <TabsTrigger value="purchases" className="gap-1.5">
             <FileText className="h-4 w-4" />
             Purchases
@@ -886,6 +882,10 @@ export default function Casters() {
             <Scale className="h-4 w-4" />
             Ingots
           </TabsTrigger>
+          <TabsTrigger value="statements" className="gap-1.5">
+            <CalendarDays className="h-4 w-4" />
+            Statements
+          </TabsTrigger>
           <TabsTrigger value="dies" className="gap-1.5">
             <Package className="h-4 w-4" />
             Dies
@@ -894,9 +894,9 @@ export default function Casters() {
             <FileText className="h-4 w-4" />
             Reworks
           </TabsTrigger>
-          <TabsTrigger value="statements" className="gap-1.5">
-            <CalendarDays className="h-4 w-4" />
-            Statements
+          <TabsTrigger value="casters" className="gap-1.5">
+            <Package className="h-4 w-4" />
+            Vendors
           </TabsTrigger>
         </TabsList>
 
@@ -1413,7 +1413,9 @@ function PurchasesTab({
 }) {
   const sortByDate = (a: POWithDetails, b: POWithDetails) => 
     new Date(b.order_date).getTime() - new Date(a.order_date).getTime();
-  const confirmedPOs = purchaseOrders.filter(po => po.status === 'confirmed').sort(sortByDate);
+  const sortByAgeing = (a: POWithDetails, b: POWithDetails) =>
+    new Date(a.order_date).getTime() - new Date(b.order_date).getTime(); // oldest first — most overdue surfaces first
+  const confirmedPOs = purchaseOrders.filter(po => po.status === 'confirmed').sort(sortByAgeing);
   const completedPOs = purchaseOrders.filter(po => po.status === 'completed').sort(sortByDate);
 
   return (
@@ -1458,6 +1460,12 @@ function PurchasesTab({
   );
 }
 
+function daysSince(dateStr: string): number {
+  const then = new Date(dateStr);
+  const now = new Date();
+  return Math.max(0, Math.floor((now.getTime() - then.getTime()) / (1000 * 60 * 60 * 24)));
+}
+
 function POCard({
   po,
   canMutate,
@@ -1472,6 +1480,9 @@ function POCard({
   const totalOrdered = po.line_items.reduce((s, i) => s + i.quantity_ordered, 0);
   const totalReceived = po.line_items.reduce((s, i) => s + i.quantity_received, 0);
   const totalRemaining = Math.max(0, totalOrdered - totalReceived);
+  const overallFillRate = totalOrdered > 0 ? Math.round((totalReceived / totalOrdered) * 100) : 0;
+  const ageing = daysSince(po.order_date);
+  const isStale = po.status !== 'completed' && ageing > 30 && overallFillRate < 100;
 
   return (
     <Card>
@@ -1482,6 +1493,11 @@ function POCard({
             <Badge variant={po.status === 'completed' ? 'secondary' : 'default'} className="text-xs">
               {po.status}
             </Badge>
+            {po.status !== 'completed' && (
+              <Badge variant={isStale ? 'destructive' : 'outline'} className="text-xs">
+                {ageing} {ageing === 1 ? 'day' : 'days'} old
+              </Badge>
+            )}
           </div>
           <div className="flex items-center gap-2">
             <span className="text-sm text-muted-foreground">{po.caster_name}</span>
@@ -1502,7 +1518,7 @@ function POCard({
         <div className="flex flex-col sm:flex-row sm:items-center gap-2 mb-3 text-sm text-muted-foreground">
           <span>Ordered: {new Date(po.order_date).toLocaleDateString()}</span>
           <span className="font-medium text-foreground">
-            {totalReceived.toLocaleString()} / {totalOrdered.toLocaleString()} received
+            {totalReceived.toLocaleString()} / {totalOrdered.toLocaleString()} received ({overallFillRate}% fill rate)
             {totalRemaining > 0 && (
               <span className="text-orange-600 dark:text-orange-400 ml-1">
                 ({totalRemaining.toLocaleString()} remaining)
@@ -1519,11 +1535,14 @@ function POCard({
                 <th className="text-right py-1.5 px-3 font-medium">Ordered</th>
                 <th className="text-right py-1.5 px-3 font-medium">Received</th>
                 <th className="text-right py-1.5 px-3 font-medium">Remaining</th>
+                <th className="text-right py-1.5 px-3 font-medium">Fill Rate</th>
+                <th className="text-right py-1.5 px-3 font-medium">Ageing</th>
               </tr>
             </thead>
             <tbody>
               {po.line_items.map(item => {
                 const remaining = Math.max(0, item.quantity_ordered - item.quantity_received);
+                const fillRate = item.quantity_ordered > 0 ? Math.round((item.quantity_received / item.quantity_ordered) * 100) : 0;
                 return (
                   <tr key={item.id} className="border-t">
                     <td className="py-1.5 px-3">{item.item_name}</td>
@@ -1531,6 +1550,10 @@ function POCard({
                     <td className="py-1.5 px-3 text-right font-mono">{item.quantity_received.toLocaleString()}</td>
                     <td className={`py-1.5 px-3 text-right font-mono ${remaining > 0 ? 'text-orange-600 dark:text-orange-400 font-medium' : ''}`}>
                       {remaining.toLocaleString()}
+                    </td>
+                    <td className="py-1.5 px-3 text-right font-mono">{fillRate}%</td>
+                    <td className="py-1.5 px-3 text-right font-mono">
+                      {po.status === 'completed' ? '—' : `${ageing}d`}
                     </td>
                   </tr>
                 );
@@ -1542,6 +1565,7 @@ function POCard({
         <div className="sm:hidden divide-y">
           {po.line_items.map(item => {
             const remaining = Math.max(0, item.quantity_ordered - item.quantity_received);
+            const fillRate = item.quantity_ordered > 0 ? Math.round((item.quantity_received / item.quantity_ordered) * 100) : 0;
             return (
               <div key={item.id} className="py-2">
                 <div className="font-medium text-sm">{item.item_name}</div>
@@ -1559,6 +1583,16 @@ function POCard({
                     <div className={`font-mono ${remaining > 0 ? 'text-orange-600 dark:text-orange-400' : ''}`}>
                       {remaining.toLocaleString()}
                     </div>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-2 text-sm mt-1">
+                  <div>
+                    <span className="text-muted-foreground text-xs">Fill Rate</span>
+                    <div className="font-mono">{fillRate}%</div>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground text-xs">Ageing</span>
+                    <div className="font-mono">{po.status === 'completed' ? '—' : `${ageing}d`}</div>
                   </div>
                 </div>
               </div>
