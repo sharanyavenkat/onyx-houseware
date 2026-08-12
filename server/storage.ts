@@ -177,6 +177,7 @@ export interface IStorage {
   // checking sku_wastage_overrides first (exact material_type, then null=both),
   // then the caster's own default, then the company-wide fallback (6% ingot / 8% scrap).
   resolveWastagePct(casterId: number, itemId: number, materialType: "ingot" | "scrap"): Promise<number>;
+  resolveBlendedWastagePct(casterId: number, itemId: number, ingotKgSent: number, scrapKgSent: number): Promise<number>;
   getAllSkuWastageOverrides(): Promise<SkuWastageOverride[]>;
   createSkuWastageOverride(o: InsertSkuWastageOverride): Promise<SkuWastageOverride>;
   updateSkuWastageOverride(id: number, o: Partial<InsertSkuWastageOverride>): Promise<SkuWastageOverride | undefined>;
@@ -1416,6 +1417,27 @@ export class DbStorage implements IStorage {
     return materialType === "ingot" ? 6 : 8;
   }
 
+  /**
+   * Blends the ingot and scrap wastage rates for a caster+item, weighted by
+   * the actual proportion of ingot vs. scrap kg sent (since casters melt both
+   * together, not separately, so a batch's expected consumption should
+   * reflect the real metal mix, not always assume pure ingot). Falls back to
+   * the pure ingot rate if nothing's been dispatched yet (ratio undefined).
+   */
+  async resolveBlendedWastagePct(casterId: number, itemId: number, ingotKgSent: number, scrapKgSent: number): Promise<number> {
+    const totalKg = ingotKgSent + scrapKgSent;
+    if (totalKg <= 0) {
+      return this.resolveWastagePct(casterId, itemId, "ingot");
+    }
+    const [ingotWastage, scrapWastage] = await Promise.all([
+      this.resolveWastagePct(casterId, itemId, "ingot"),
+      this.resolveWastagePct(casterId, itemId, "scrap"),
+    ]);
+    const ingotRatio = ingotKgSent / totalKg;
+    const scrapRatio = scrapKgSent / totalKg;
+    return ingotRatio * ingotWastage + scrapRatio * scrapWastage;
+  }
+
   async getAllSkuWastageOverrides(): Promise<SkuWastageOverride[]> {
     return await db.select().from(skuWastageOverrides);
   }
@@ -1508,7 +1530,7 @@ export class DbStorage implements IStorage {
       const batchWeightKg = batch.quantity_produced * item.unit_weight_kg;
       totalFinishedWeightKgReceived += batchWeightKg;
 
-      const wastagePct = await this.resolveWastagePct(casterId, item.id, "ingot");
+      const wastagePct = await this.resolveBlendedWastagePct(casterId, item.id, totalIngotKgSent, totalScrapKgSent);
       expectedMetalConsumedKg += batchWeightKg / (1 - wastagePct / 100);
       hasWeighableBatch = true;
     }
@@ -1626,7 +1648,9 @@ export class DbStorage implements IStorage {
     const balanceAsOf = async (cutoffExclusive: string) => {
       const dispatches = (await this.getIngotDispatchesByCasterId(casterId))
         .filter(d => d.material_type !== 'rework' && d.dispatch_date < cutoffExclusive);
-      const dispatchedKg = dispatches.reduce((sum, d) => sum + d.quantity_kg, 0);
+      const ingotKg = dispatches.filter(d => d.material_type === 'ingot').reduce((sum, d) => sum + d.quantity_kg, 0);
+      const scrapKg = dispatches.filter(d => d.material_type === 'scrap').reduce((sum, d) => sum + d.quantity_kg, 0);
+      const dispatchedKg = ingotKg + scrapKg;
 
       const casterReworks = await this.getReworksByCasterId(casterId);
       const replacementBatchIds = new Set(
@@ -1649,7 +1673,7 @@ export class DbStorage implements IStorage {
         }
         const weightKg = batch.quantity_produced * item.unit_weight_kg;
         actualFinishedWeightKg += weightKg;
-        const wastagePct = await this.resolveWastagePct(casterId, item.id, "ingot");
+        const wastagePct = await this.resolveBlendedWastagePct(casterId, item.id, ingotKg, scrapKg);
         expectedMetalConsumedKg += weightKg / (1 - wastagePct / 100);
       }
 

@@ -167,7 +167,7 @@ const ingotColumns = [
   {
     key: 'quantity_kg',
     label: 'Quantity (kg)',
-    render: (value: number) => value?.toLocaleString(undefined, { maximumFractionDigits: 1 }),
+    render: (value: number) => value?.toLocaleString(undefined, { minimumFractionDigits: 3, maximumFractionDigits: 3 }),
   },
 ];
 
@@ -294,13 +294,13 @@ const statementColumns = [
   {
     key: 'closing_balance_kg',
     label: 'Our Closing Balance',
-    render: (value: number) => `${value.toFixed(0)} kg`,
+    render: (value: number) => formatWeightKg(value),
   },
   {
     key: 'vendor_reported_remaining_kg',
     label: "Vendor's Reported Balance",
     hideOnMobile: true,
-    render: (value: number | null) => value === null ? '—' : `${value.toFixed(0)} kg`,
+    render: (value: number | null) => formatWeightKg(value),
   },
   {
     key: 'status',
@@ -337,9 +337,9 @@ function formatWeightKg(kg: number | null | undefined): string {
   if (kg === null || kg === undefined || isNaN(kg)) return '—';
   const abs = Math.abs(kg);
   if (abs < 1) {
-    return `${parseFloat((kg * 1000).toFixed(6))} g`;
+    return `${(kg * 1000).toFixed(3)} g`;
   }
-  return `${parseFloat(kg.toFixed(6))} kg`;
+  return `${kg.toFixed(3)} kg`;
 }
 
 function getMonthOptions() {
