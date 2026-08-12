@@ -691,7 +691,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           item_id: oi.item_id,
           item_name: item?.name || '',
           sku: item?.sku || '',
-          quantity: oi.quantity
+          quantity: oi.quantity,
+          is_kit: item?.is_kit || false
         };
       });
 
@@ -733,7 +734,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           item_id: oi.item_id,
           item_name: item?.name || '',
           sku: item?.sku || '',
-          quantity: oi.quantity
+          quantity: oi.quantity,
+          is_kit: item?.is_kit || false
         };
       });
 
@@ -795,7 +797,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           item_id: oi.item_id,
           item_name: item?.name || '',
           sku: item?.sku || '',
-          quantity: oi.quantity
+          quantity: oi.quantity,
+          is_kit: item?.is_kit || false
         };
       });
 

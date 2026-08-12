@@ -40,6 +40,8 @@ import {
   type BomComponent,
   type InsertBomComponent,
   type AppSetting,
+  type KitShipmentAllocation,
+  type InsertKitShipmentAllocation,
   users,
   items,
   customers,
@@ -60,6 +62,7 @@ import {
   vendorMetalStatements,
   bomComponents,
   appSettings,
+  kitShipmentAllocations,
   SETTINGS_KEYS,
 } from "@shared/schema";
 
@@ -250,7 +253,17 @@ export interface IStorage {
   shipKitComponents(parentItemId: number, quantityKits: number, shipmentDate: string): Promise<{
     itemDeductions: Array<{ itemId: number; itemName: string; quantityDeducted: number }>;
     accessoryDeductions: Array<{ accessoryId: number; accessoryName: string; quantityDeducted: number }>;
+    allocations: Array<{
+      component_type: "item" | "accessory";
+      component_item_id?: number;
+      component_accessory_id?: number;
+      batch_id?: number;
+      quantity: number;
+    }>;
   }>;
+  // Restores stock exactly per a shipment's recorded allocations (undoing
+  // shipKitComponents), then deletes those allocation records.
+  reverseKitShipmentAllocations(shipmentId: number): Promise<void>;
 }
 
 export class DbStorage implements IStorage {
@@ -475,8 +488,24 @@ export class DbStorage implements IStorage {
     if (!shipmentData.shipment_number) {
       shipmentData.shipment_number = await this.getNextShipmentNumber();
     }
+
+    // If no batch_number was given, this might be a kit order line — kits
+    // have no batch of their own, they're shipped by decomposing the BOM.
+    // Resolve this BEFORE inserting the shipment row, so a stock shortfall
+    // (thrown by shipKitComponents) doesn't leave an orphan shipment record.
+    let kitItemId: number | null = null;
+    if (!shipmentData.batch_number) {
+      const [orderItem] = await db.select().from(orderItems).where(eq(orderItems.id, shipmentData.order_item_id));
+      if (orderItem) {
+        const [item] = await db.select().from(items).where(eq(items.id, orderItem.item_id));
+        if (item?.is_kit) {
+          kitItemId = item.id;
+        }
+      }
+    }
+
     const [shipment] = await db.insert(shipments).values(shipmentData).returning();
-    
+
     // Update batch quantity_remaining (only if batch_number is provided)
     // Note: Rejections are now tracked at batch creation (from caster), not at shipment
     if (shipment.batch_number) {
@@ -495,6 +524,20 @@ export class DbStorage implements IStorage {
             is_depleted: newRemaining <= 0
           })
           .where(eq(batches.batch_number, shipment.batch_number));
+      }
+    } else if (kitItemId !== null) {
+      try {
+        const { allocations } = await this.shipKitComponents(kitItemId, shipment.quantity_shipped, shipment.shipment_date);
+        if (allocations.length > 0) {
+          await db.insert(kitShipmentAllocations).values(
+            allocations.map(a => ({ ...a, shipment_id: shipment.id }))
+          );
+        }
+      } catch (err) {
+        // Roll back the shipment record — it doesn't correspond to a real
+        // stock movement if the components couldn't actually be deducted.
+        await db.delete(shipments).where(eq(shipments.id, shipment.id));
+        throw err;
       }
     }
     
@@ -554,6 +597,43 @@ export class DbStorage implements IStorage {
       }
     }
     
+    // Kit shipment (no batch_number on either side) — since a kit draws from
+    // multiple batches via FIFO, we don't compute a delta; we reverse the old
+    // allocations fully and reapply at the new quantity/date, which stays
+    // correct even if stock has moved since the original shipment.
+    if (!oldBatchNumber && !newBatchNumber) {
+      const [orderItem] = await db.select().from(orderItems).where(eq(orderItems.id, shipment.order_item_id));
+      if (orderItem) {
+        const [item] = await db.select().from(items).where(eq(items.id, orderItem.item_id));
+        if (item?.is_kit) {
+          await this.reverseKitShipmentAllocations(id);
+          try {
+            const { allocations } = await this.shipKitComponents(item.id, shipment.quantity_shipped, shipment.shipment_date);
+            if (allocations.length > 0) {
+              await db.insert(kitShipmentAllocations).values(
+                allocations.map(a => ({ ...a, shipment_id: shipment.id }))
+              );
+            }
+          } catch (err) {
+            // Couldn't reapply at the new quantity — restore at the ORIGINAL
+            // quantity so stock isn't left in limbo, then surface the error.
+            const { allocations: restoreAllocations } = await this.shipKitComponents(
+              item.id, oldShipment.quantity_shipped, oldShipment.shipment_date
+            );
+            if (restoreAllocations.length > 0) {
+              await db.insert(kitShipmentAllocations).values(
+                restoreAllocations.map(a => ({ ...a, shipment_id: shipment.id }))
+              );
+            }
+            await db.update(shipments)
+              .set({ quantity_shipped: oldShipment.quantity_shipped, shipment_date: oldShipment.shipment_date })
+              .where(eq(shipments.id, id));
+            throw err;
+          }
+        }
+      }
+    }
+    
     return shipment;
   }
 
@@ -563,6 +643,13 @@ export class DbStorage implements IStorage {
     if (!shipmentToDelete) return;
     
     const batchNumber = shipmentToDelete.batch_number;
+
+    // If this was a kit shipment (no batch_number), restore its allocations
+    // BEFORE deleting — the allocations cascade-delete with the shipment row,
+    // so this has to happen first or there'd be nothing left to reverse.
+    if (!batchNumber) {
+      await this.reverseKitShipmentAllocations(id);
+    }
     
     // Delete the shipment
     await db.delete(shipments).where(eq(shipments.id, id));
@@ -1781,6 +1868,13 @@ export class DbStorage implements IStorage {
   async shipKitComponents(parentItemId: number, quantityKits: number, shipmentDate: string): Promise<{
     itemDeductions: Array<{ itemId: number; itemName: string; quantityDeducted: number }>;
     accessoryDeductions: Array<{ accessoryId: number; accessoryName: string; quantityDeducted: number }>;
+    allocations: Array<{
+      component_type: "item" | "accessory";
+      component_item_id?: number;
+      component_accessory_id?: number;
+      batch_id?: number;
+      quantity: number;
+    }>;
   }> {
     const components = await this.getBomComponentsByParentId(parentItemId);
     if (components.length === 0) {
@@ -1813,8 +1907,16 @@ export class DbStorage implements IStorage {
 
     const itemDeductions: Array<{ itemId: number; itemName: string; quantityDeducted: number }> = [];
     const accessoryDeductions: Array<{ accessoryId: number; accessoryName: string; quantityDeducted: number }> = [];
+    const allocations: Array<{
+      component_type: "item" | "accessory";
+      component_item_id?: number;
+      component_accessory_id?: number;
+      batch_id?: number;
+      quantity: number;
+    }> = [];
 
-    // Second pass: actually deduct
+    // Second pass: actually deduct, recording exactly which batch(es) absorbed
+    // how much — this is what makes the shipment reversible later.
     for (const c of components) {
       const needed = c.qty_per_kit * quantityKits;
       if (c.component_type === "item" && c.component_item_id) {
@@ -1826,6 +1928,12 @@ export class DbStorage implements IStorage {
           const take = Math.min(remaining, batch.quantity_remaining);
           if (take <= 0) continue;
           await this.adjustBatchQuantities(batch.batch_number, { shipped: take });
+          allocations.push({
+            component_type: "item",
+            component_item_id: c.component_item_id,
+            batch_id: batch.id,
+            quantity: take,
+          });
           remaining -= take;
         }
         itemDeductions.push({
@@ -1839,6 +1947,11 @@ export class DbStorage implements IStorage {
           await db.update(accessories)
             .set({ stock_on_hand: acc.stock_on_hand - needed })
             .where(eq(accessories.id, acc.id));
+          allocations.push({
+            component_type: "accessory",
+            component_accessory_id: acc.id,
+            quantity: needed,
+          });
           accessoryDeductions.push({
             accessoryId: acc.id,
             accessoryName: acc.name,
@@ -1848,7 +1961,33 @@ export class DbStorage implements IStorage {
       }
     }
 
-    return { itemDeductions, accessoryDeductions };
+    return { itemDeductions, accessoryDeductions, allocations };
+  }
+
+  async reverseKitShipmentAllocations(shipmentId: number): Promise<void> {
+    const allocations = await db.select().from(kitShipmentAllocations)
+      .where(eq(kitShipmentAllocations.shipment_id, shipmentId));
+
+    for (const a of allocations) {
+      if (a.component_type === "item" && a.batch_id) {
+        const [batch] = await db.select().from(batches).where(eq(batches.id, a.batch_id));
+        if (batch) {
+          const restoredRemaining = batch.quantity_remaining + a.quantity;
+          await db.update(batches)
+            .set({ quantity_remaining: restoredRemaining, is_depleted: restoredRemaining <= 0 })
+            .where(eq(batches.id, a.batch_id));
+        }
+      } else if (a.component_type === "accessory" && a.component_accessory_id) {
+        const [acc] = await db.select().from(accessories).where(eq(accessories.id, a.component_accessory_id));
+        if (acc) {
+          await db.update(accessories)
+            .set({ stock_on_hand: acc.stock_on_hand + a.quantity })
+            .where(eq(accessories.id, acc.id));
+        }
+      }
+    }
+
+    await db.delete(kitShipmentAllocations).where(eq(kitShipmentAllocations.shipment_id, shipmentId));
   }
 }
 

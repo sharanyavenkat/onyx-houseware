@@ -480,3 +480,26 @@ export const SETTINGS_KEYS = {
   DEFAULT_WASTAGE_INGOT_PCT: "default_wastage_ingot_pct",
   DEFAULT_WASTAGE_SCRAP_PCT: "default_wastage_scrap_pct",
 } as const;
+
+// Records exactly which batch(es) or accessory a kit shipment drew from —
+// the missing piece that makes kit shipments reversible (edit/delete), same
+// as normal single-batch shipments already are. Without this, we'd know a
+// kit shipment happened but not precisely what to undo.
+export const kitShipmentAllocations = sqliteTable("kit_shipment_allocations", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  shipment_id: integer("shipment_id")
+    .notNull()
+    .references(() => shipments.id, { onDelete: "cascade" }),
+  component_type: text("component_type").notNull(), // 'item' | 'accessory'
+  component_item_id: integer("component_item_id").references(() => items.id),
+  component_accessory_id: integer("component_accessory_id").references(() => accessories.id),
+  batch_id: integer("batch_id").references(() => batches.id), // set for item-type allocations only
+  quantity: integer("quantity").notNull(),
+});
+
+export const insertKitShipmentAllocationSchema = createInsertSchema(kitShipmentAllocations).omit({
+  id: true,
+});
+
+export type InsertKitShipmentAllocation = z.infer<typeof insertKitShipmentAllocationSchema>;
+export type KitShipmentAllocation = typeof kitShipmentAllocations.$inferSelect;

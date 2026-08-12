@@ -1,6 +1,6 @@
 import { db } from "./client";
 import { sql } from "drizzle-orm";
-import { appSettings } from "@shared/schema";
+import { appSettings, kitShipmentAllocations } from "@shared/schema";
 
 /**
  * Helper function to safely add columns to existing tables
@@ -761,6 +761,20 @@ export async function bootstrapDatabase() {
         await db.insert(appSettings).values({ key, value, updated_at: new Date().toISOString() });
       }
     }
+
+    // Tracks exactly which batch(es)/accessory a kit shipment drew from, so
+    // it can be precisely reversed on edit/delete — same as normal shipments.
+    await db.run(sql`
+      CREATE TABLE IF NOT EXISTS kit_shipment_allocations (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        shipment_id INTEGER NOT NULL REFERENCES shipments(id) ON DELETE CASCADE,
+        component_type TEXT NOT NULL,
+        component_item_id INTEGER REFERENCES items(id),
+        component_accessory_id INTEGER REFERENCES accessories(id),
+        batch_id INTEGER REFERENCES batches(id),
+        quantity INTEGER NOT NULL
+      )
+    `);
 
     console.log("✅ SQLite database tables initialized successfully");
   } catch (error) {

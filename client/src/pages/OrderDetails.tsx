@@ -240,6 +240,7 @@ export default function OrderDetails() {
           itemId={trackingShipment.item_id}
           itemName={trackingShipment.item_name}
           orderedQuantity={trackingShipment.quantity}
+          isKit={trackingShipment.is_kit}
         />
       )}
     </div>

@@ -1,10 +1,26 @@
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Input } from "@/components/ui/input";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import type { Item } from "@shared/schema";
+import type { Item, Accessory, BomComponent } from "@shared/schema";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
+import { Plus, Trash2 } from "lucide-react";
 import ConfirmDialog from "../components/ConfirmDialog";
 import DataTable from "../components/DataTable";
 import FormModal from "../components/FormModal";
@@ -52,6 +68,16 @@ const itemFields = [
     placeholder: "Used to reconcile ingot sent vs. castings received",
   },
   {
+    name: "is_kit",
+    label: "Is this a kit / combo pack?",
+    type: "select" as const,
+    required: true,
+    options: [
+      { value: "false", label: "No — a regular SKU" },
+      { value: "true", label: "Yes — a kit assembled from other items/accessories" },
+    ],
+  },
+  {
     name: "is_active",
     label: "Status",
     type: "select" as const,
@@ -69,7 +95,7 @@ const itemFields = [
   },
 ];
 
-const itemColumns = [
+const getItemColumns = (onManageBom: (item: Item) => void) => [
   { key: "name", label: "Product Name", isPrimary: true },
   { key: "sku", label: "SKU" },
   { key: "size_specification", label: "Size/Spec" },
@@ -80,6 +106,29 @@ const itemColumns = [
       value ? `₹${parseFloat(value).toFixed(2)}` : "-",
   },
   { key: "desired_safety_stock", label: "Desired Safety Stock", hideOnMobile: true },
+  {
+    key: "is_kit",
+    label: "Type",
+    render: (value: boolean, row: Item) =>
+      value ? (
+        <div className="flex items-center gap-2">
+          <Badge variant="outline">Kit</Badge>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-7 px-2 text-xs"
+            onClick={(e) => {
+              e.stopPropagation();
+              onManageBom(row);
+            }}
+          >
+            Manage Contents
+          </Button>
+        </div>
+      ) : (
+        <span className="text-muted-foreground text-xs">SKU</span>
+      ),
+  },
   {
     key: "is_active",
     label: "Status",
@@ -96,6 +145,7 @@ export default function Items() {
   const [editingItem, setEditingItem] = useState<Item | null>(null);
   const [isConfirmOpen, setIsConfirmOpen] = useState(false);
   const [itemToDelete, setItemToDelete] = useState<Item | null>(null);
+  const [bomEditorItem, setBomEditorItem] = useState<Item | null>(null);
   const { toast } = useToast();
   const { canMutate } = useAuth();
 
@@ -193,12 +243,15 @@ export default function Items() {
   };
 
   const handleSubmit = (data: any) => {
+    const isKit = data.is_kit === "true";
     const processedData = {
       ...data,
       is_active: data.is_active === "true",
+      is_kit: isKit,
       price: parseFloat(data.price),
       desired_safety_stock: parseInt(data.desired_safety_stock),
-      unit_weight_kg: data.unit_weight_kg ? parseFloat(data.unit_weight_kg) : null,
+      // Kits are never cast themselves — no weight of their own to reconcile
+      unit_weight_kg: isKit ? null : (data.unit_weight_kg ? parseFloat(data.unit_weight_kg) : null),
     };
 
     if (editingItem) {
@@ -208,12 +261,10 @@ export default function Items() {
     }
   };
 
-  console.log("items: ", items);
-  console.log("editingItem: ", editingItem);
   return (
     <div className="space-y-6" data-testid="page-items">
       <DataTable
-        columns={itemColumns}
+        columns={getItemColumns(setBomEditorItem)}
         data={sortedItems}
         title="Items"
         addButtonLabel="Add Item"
@@ -237,11 +288,12 @@ export default function Items() {
             ? {
                 ...editingItem,
                 is_active: editingItem.is_active ? "true" : "false",
+                is_kit: editingItem.is_kit ? "true" : "false",
                 price: editingItem.price || "0",
                 desired_safety_stock: editingItem.desired_safety_stock || "0",
                 unit_weight_kg: editingItem.unit_weight_kg ?? "",
               }
-            : { is_active: "true" }
+            : { is_active: "true", is_kit: "false" }
         }
         submitLabel={editingItem ? "Update Item" : "Add Item"}
       />
@@ -254,6 +306,256 @@ export default function Items() {
         description={`Are you sure you want to delete "${itemToDelete?.name}"? This action cannot be undone.`}
         confirmText="Delete"
       />
+
+      <BomEditorModal
+        kitItem={bomEditorItem}
+        onClose={() => setBomEditorItem(null)}
+        allItems={items}
+      />
     </div>
+  );
+}
+
+type BomRow = {
+  key: string; // stable local key for React, not the same as DB id
+  id?: number; // present once saved to the DB
+  component_type: "item" | "accessory";
+  component_item_id?: number;
+  component_accessory_id?: number;
+  qty_per_kit: number;
+};
+
+function bomComponentToRow(c: BomComponent): BomRow {
+  return {
+    key: `saved-${c.id}`,
+    id: c.id,
+    component_type: c.component_type as "item" | "accessory",
+    component_item_id: c.component_item_id ?? undefined,
+    component_accessory_id: c.component_accessory_id ?? undefined,
+    qty_per_kit: c.qty_per_kit,
+  };
+}
+
+function BomEditorModal({
+  kitItem,
+  onClose,
+  allItems,
+}: {
+  kitItem: Item | null;
+  onClose: () => void;
+  allItems: Item[];
+}) {
+  const { toast } = useToast();
+  const { canMutate } = useAuth();
+  const isOpen = !!kitItem;
+
+  const { data: existingComponents = [], isLoading } = useQuery<BomComponent[]>({
+    queryKey: ["/api/bom-components/by-parent", kitItem?.id],
+    queryFn: async () => {
+      const res = await fetch(`/api/bom-components/by-parent/${kitItem?.id}`, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch kit contents");
+      return res.json();
+    },
+    enabled: isOpen,
+  });
+
+  const { data: accessories = [] } = useQuery<Accessory[]>({
+    queryKey: ["/api/accessories"],
+    enabled: isOpen,
+  });
+
+  const [rows, setRows] = useState<BomRow[]>([]);
+  const [saving, setSaving] = useState(false);
+
+  // Load fetched components into editable local state whenever the modal
+  // opens for a (possibly different) kit
+  useEffect(() => {
+    if (isOpen) {
+      setRows(existingComponents.map(bomComponentToRow));
+    }
+  }, [isOpen, kitItem?.id, existingComponents]);
+
+  const componentItemOptions = useMemo(
+    () => allItems.filter(i => i.is_active && !i.is_kit && i.id !== kitItem?.id),
+    [allItems, kitItem]
+  );
+  const accessoryOptions = useMemo(
+    () => accessories.filter(a => a.status === "active"),
+    [accessories]
+  );
+
+  const addRow = () => {
+    setRows(prev => [
+      ...prev,
+      { key: `new-${Date.now()}-${Math.random()}`, component_type: "item", qty_per_kit: 1 },
+    ]);
+  };
+
+  const removeRow = (key: string) => {
+    setRows(prev => prev.filter(r => r.key !== key));
+  };
+
+  const updateRow = (key: string, patch: Partial<BomRow>) => {
+    setRows(prev => prev.map(r => (r.key === key ? { ...r, ...patch } : r)));
+  };
+
+  const handleSave = async () => {
+    if (!kitItem) return;
+
+    // Validate every row has a component selected and a positive quantity
+    for (const row of rows) {
+      const hasComponent = row.component_type === "item" ? !!row.component_item_id : !!row.component_accessory_id;
+      if (!hasComponent) {
+        toast({ title: "Every row needs a component selected", variant: "destructive" });
+        return;
+      }
+      if (!row.qty_per_kit || row.qty_per_kit < 1) {
+        toast({ title: "Quantity per kit must be at least 1", variant: "destructive" });
+        return;
+      }
+    }
+
+    setSaving(true);
+    try {
+      const currentIds = new Set(rows.filter(r => r.id).map(r => r.id));
+      const removed = existingComponents.filter(c => !currentIds.has(c.id));
+
+      for (const c of removed) {
+        await apiRequest("DELETE", `/api/bom-components/${c.id}`);
+      }
+
+      for (const row of rows) {
+        const payload = {
+          parent_item_id: kitItem.id,
+          component_type: row.component_type,
+          component_item_id: row.component_type === "item" ? row.component_item_id : null,
+          component_accessory_id: row.component_type === "accessory" ? row.component_accessory_id : null,
+          qty_per_kit: row.qty_per_kit,
+        };
+        if (row.id) {
+          const original = existingComponents.find(c => c.id === row.id);
+          const changed =
+            original &&
+            (original.component_type !== payload.component_type ||
+              original.component_item_id !== payload.component_item_id ||
+              original.component_accessory_id !== payload.component_accessory_id ||
+              original.qty_per_kit !== payload.qty_per_kit);
+          if (changed) {
+            await apiRequest("PATCH", `/api/bom-components/${row.id}`, payload);
+          }
+        } else {
+          await apiRequest("POST", "/api/bom-components", payload);
+        }
+      }
+
+      queryClient.invalidateQueries({ queryKey: ["/api/bom-components/by-parent", kitItem.id] });
+      toast({ title: "Kit contents saved" });
+      onClose();
+    } catch (err: any) {
+      toast({ title: "Error saving kit contents", description: err.message, variant: "destructive" });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Kit Contents — {kitItem?.name}</DialogTitle>
+        </DialogHeader>
+
+        <div className="space-y-4">
+          <p className="text-sm text-muted-foreground">
+            What one unit of this kit is assembled from. Shipping this kit deducts these quantities automatically from each component's stock.
+          </p>
+
+          {isLoading ? (
+            <p className="text-sm text-muted-foreground">Loading...</p>
+          ) : (
+            <div className="space-y-2">
+              {rows.length === 0 && (
+                <p className="text-sm text-muted-foreground py-4 text-center">No components yet — add one below.</p>
+              )}
+              {rows.map(row => (
+                <div key={row.key} className="flex gap-2 items-start border rounded-md p-2">
+                  <Select
+                    value={row.component_type}
+                    onValueChange={(v) => updateRow(row.key, { component_type: v as "item" | "accessory", component_item_id: undefined, component_accessory_id: undefined })}
+                    disabled={!canMutate}
+                  >
+                    <SelectTrigger className="w-28 shrink-0"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="item">Item</SelectItem>
+                      <SelectItem value="accessory">Accessory</SelectItem>
+                    </SelectContent>
+                  </Select>
+
+                  {row.component_type === "item" ? (
+                    <Select
+                      value={row.component_item_id?.toString() || ""}
+                      onValueChange={(v) => updateRow(row.key, { component_item_id: parseInt(v) })}
+                      disabled={!canMutate}
+                    >
+                      <SelectTrigger className="flex-1"><SelectValue placeholder="Select item..." /></SelectTrigger>
+                      <SelectContent>
+                        {componentItemOptions.map(i => (
+                          <SelectItem key={i.id} value={i.id.toString()}>{i.name} ({i.sku})</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  ) : (
+                    <Select
+                      value={row.component_accessory_id?.toString() || ""}
+                      onValueChange={(v) => updateRow(row.key, { component_accessory_id: parseInt(v) })}
+                      disabled={!canMutate}
+                    >
+                      <SelectTrigger className="flex-1"><SelectValue placeholder="Select accessory..." /></SelectTrigger>
+                      <SelectContent>
+                        {accessoryOptions.map(a => (
+                          <SelectItem key={a.id} value={a.id.toString()}>{a.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+
+                  <Input
+                    type="number"
+                    min="1"
+                    className="w-20 shrink-0"
+                    value={row.qty_per_kit}
+                    onChange={(e) => updateRow(row.key, { qty_per_kit: parseInt(e.target.value) || 1 })}
+                    disabled={!canMutate}
+                    placeholder="Qty"
+                  />
+
+                  {canMutate && (
+                    <Button type="button" variant="ghost" size="icon" onClick={() => removeRow(row.key)} className="shrink-0 text-destructive">
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  )}
+                </div>
+              ))}
+
+              {canMutate && (
+                <Button type="button" variant="outline" size="sm" onClick={addRow} className="gap-1.5">
+                  <Plus className="h-4 w-4" />
+                  Add Component
+                </Button>
+              )}
+            </div>
+          )}
+
+          <div className="flex justify-end gap-3 pt-4 border-t">
+            <Button type="button" variant="outline" onClick={onClose}>Close</Button>
+            {canMutate && (
+              <Button type="button" onClick={handleSave} disabled={saving}>
+                {saving ? "Saving..." : "Save Kit Contents"}
+              </Button>
+            )}
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }
