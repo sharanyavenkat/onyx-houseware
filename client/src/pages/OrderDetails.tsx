@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { ArrowLeft, Package } from 'lucide-react';
+import { ArrowLeft, Truck } from 'lucide-react';
 import { useState, useMemo } from 'react';
 import ShipmentTracking from '../components/ShipmentTracking';
 import InvoiceSection from '../components/InvoiceSection';
@@ -204,7 +204,7 @@ export default function OrderDetails() {
                           data-testid={`button-track-shipment-${index}`}
                           className="whitespace-nowrap"
                         >
-                          <Package className="h-4 w-4 mr-1" />
+                          <Truck className="h-4 w-4 mr-1" />
                           <span className="hidden sm:inline">Track Shipments</span>
                           <span className="sm:hidden">Track</span>
                         </Button>

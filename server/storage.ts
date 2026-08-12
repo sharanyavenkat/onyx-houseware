@@ -397,6 +397,16 @@ export class DbStorage implements IStorage {
   }
 
   async deleteOrder(id: number): Promise<void> {
+    // Deleting the order via DB cascade alone would silently wipe its
+    // shipments (and kit_shipment_allocations) WITHOUT reversing their stock
+    // effect — the batch/accessory deductions would be permanently orphaned,
+    // since the shipment record that explains them is gone. Route through
+    // deleteShipment() for each one first, since that already has the
+    // correct reversal logic for both normal batches and kit allocations.
+    const orderShipments = await db.select().from(shipments).where(eq(shipments.order_id, id));
+    for (const s of orderShipments) {
+      await this.deleteShipment(s.id);
+    }
     await db.delete(orders).where(eq(orders.id, id));
   }
 
