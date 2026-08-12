@@ -37,7 +37,8 @@ import { useLocation } from 'wouter';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { Plus, X, Pencil, Trash2, Package, CalendarDays, FileText, Scale } from 'lucide-react';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
+import { Plus, X, Pencil, Trash2, Package, CalendarDays, FileText, Scale, ChevronDown, ChevronRight } from 'lucide-react';
 import type { Caster, Item, PurchaseOrder, PurchaseOrderItem, IngotDispatch, Die, Rework, VendorMetalStatement } from '@shared/schema';
 
 const casterFields = [
@@ -381,6 +382,7 @@ export default function Casters() {
   const [ingotToDelete, setIngotToDelete] = useState<IngotDispatchWithCaster | null>(null);
   const [reconciliationCasterId, setReconciliationCasterId] = useState<string>('');
   const [isDieModalOpen, setIsDieModalOpen] = useState(false);
+  const [expandedDieVendors, setExpandedDieVendors] = useState<Set<number>>(new Set());
   const [editingDie, setEditingDie] = useState<DieWithNames | null>(null);
   const [isDieDeleteConfirmOpen, setIsDieDeleteConfirmOpen] = useState(false);
   const [dieToDelete, setDieToDelete] = useState<DieWithNames | null>(null);
@@ -438,6 +440,28 @@ export default function Casters() {
   const { data: allDies = [] } = useQuery<DieWithNames[]>({
     queryKey: ['/api/dies'],
   });
+
+  const diesByVendor = useMemo(() => {
+    const groups = new Map<number, { casterName: string; dies: DieWithNames[] }>();
+    for (const die of allDies) {
+      if (!groups.has(die.caster_id)) {
+        groups.set(die.caster_id, { casterName: die.caster_name, dies: [] });
+      }
+      groups.get(die.caster_id)!.dies.push(die);
+    }
+    return Array.from(groups.entries())
+      .map(([casterId, g]) => ({ casterId, ...g }))
+      .sort((a, b) => a.casterName.localeCompare(b.casterName));
+  }, [allDies]);
+
+  const toggleDieVendor = (casterId: number) => {
+    setExpandedDieVendors(prev => {
+      const next = new Set(prev);
+      if (next.has(casterId)) next.delete(casterId);
+      else next.add(casterId);
+      return next;
+    });
+  };
 
   const { data: allReworks = [] } = useQuery<ReworkWithNames[]>({
     queryKey: ['/api/reworks'],
@@ -856,11 +880,8 @@ export default function Casters() {
             <FileText className="h-4 w-4" />
             Purchases
           </TabsTrigger>
-          <TabsTrigger value="monthly-report" className="gap-1.5">
-            <CalendarDays className="h-4 w-4" />
-            <span className="hidden sm:inline">Monthly Report</span>
-            <span className="sm:hidden">Report</span>
-          </TabsTrigger>
+          {/* Monthly Report tab hidden — felt redundant with Purchases (ordered vs. received).
+              Content left intact below in case it's wanted back later. */}
           <TabsTrigger value="ingots" className="gap-1.5">
             <Scale className="h-4 w-4" />
             Ingots
@@ -1140,16 +1161,62 @@ export default function Casters() {
         </TabsContent>
 
         <TabsContent value="dies">
-          <DataTable
-            columns={dieColumns}
-            data={allDies}
-            title="Dies & Moulds"
-            addButtonLabel="Add Die"
-            onAdd={handleAddDie}
-            onEdit={handleEditDie}
-            onDelete={handleDeleteDie}
-            canMutate={canMutate}
-          />
+          <div className="space-y-3">
+            <div className="flex justify-end">
+              {canMutate && (
+                <Button size="sm" onClick={handleAddDie} className="gap-1.5">
+                  <Plus className="h-4 w-4" />
+                  Add Die
+                </Button>
+              )}
+            </div>
+
+            {diesByVendor.length === 0 ? (
+              <p className="text-sm text-muted-foreground py-8 text-center">No dies recorded yet.</p>
+            ) : (
+              diesByVendor.map(group => (
+                <Collapsible
+                  key={group.casterId}
+                  open={expandedDieVendors.has(group.casterId)}
+                  onOpenChange={() => toggleDieVendor(group.casterId)}
+                >
+                  <Card>
+                    <CollapsibleTrigger asChild>
+                      <button type="button" className="w-full text-left">
+                        <CardHeader className="flex flex-row items-center justify-between py-4">
+                          <div>
+                            <CardTitle className="text-base">{group.casterName}</CardTitle>
+                            <p className="text-xs text-muted-foreground mt-0.5">
+                              {group.dies.length} {group.dies.length === 1 ? 'die' : 'dies'} ·{' '}
+                              {group.dies.filter(d => d.status === 'active').length} active
+                            </p>
+                          </div>
+                          {expandedDieVendors.has(group.casterId) ? (
+                            <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                          ) : (
+                            <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                          )}
+                        </CardHeader>
+                      </button>
+                    </CollapsibleTrigger>
+                    <CollapsibleContent>
+                      <CardContent className="pt-0">
+                        <DataTable
+                          columns={dieColumns.filter(c => c.key !== 'caster_name')}
+                          data={group.dies}
+                          title="Dies"
+                          searchable={false}
+                          onEdit={handleEditDie}
+                          onDelete={handleDeleteDie}
+                          canMutate={canMutate}
+                        />
+                      </CardContent>
+                    </CollapsibleContent>
+                  </Card>
+                </Collapsible>
+              ))
+            )}
+          </div>
         </TabsContent>
 
         <TabsContent value="reworks">
@@ -1915,7 +1982,7 @@ function StatementModal({
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+      <DialogContent>
         <DialogHeader>
           <DialogTitle>{editingStatement ? 'Edit Statement' : 'New Monthly Statement'}</DialogTitle>
         </DialogHeader>
@@ -1939,11 +2006,16 @@ function StatementModal({
             </div>
           </div>
 
-          {!editingStatement && (
+          <div>
             <Button type="button" variant="outline" size="sm" onClick={handleCalculate} disabled={!casterId || !periodMonth || calculating}>
-              {calculating ? 'Calculating...' : 'Calculate'}
+              {calculating ? 'Calculating...' : editingStatement ? 'Recalculate' : 'Calculate'}
             </Button>
-          )}
+            {editingStatement && (
+              <p className="text-xs text-muted-foreground mt-1">
+                Recalculating refreshes the figures below from the latest castings/materials on record — it won't touch the vendor-reported fields, status, or notes you've already entered.
+              </p>
+            )}
+          </div>
           {calcError && <p className="text-sm text-destructive">{calcError}</p>}
 
           {calculated && (
