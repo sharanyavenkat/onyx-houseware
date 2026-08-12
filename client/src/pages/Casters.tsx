@@ -1135,7 +1135,7 @@ export default function Casters() {
                     </div>
 
                     <p className="text-xs text-muted-foreground">
-                      "Expected Metal Consumed" is each batch's finished weight divided by that SKU's resolved wastage rate at this caster (SKU override → vendor default → company default 6%/8%) — not a blended average across SKUs. Treat variance as a signal to investigate, not a hard defect number.
+                      "Expected Metal Consumed" is each batch's finished weight divided by the wastage rate at this caster — blended by the actual ingot/scrap mix sent, using this vendor's own rate if set (on this page) or the company-wide default from Settings otherwise. Not a blended average across different SKUs. Treat variance as a signal to investigate, not a hard defect number.
                     </p>
                     {ingotReconciliation.itemsMissingWeight.length > 0 && (
                       <div className="text-xs text-amber-600 dark:text-amber-500">

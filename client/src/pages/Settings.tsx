@@ -68,7 +68,7 @@ export default function Settings() {
         <CardHeader>
           <CardTitle className="text-base">Default Wastage Rates</CardTitle>
           <p className="text-sm text-muted-foreground">
-            Used whenever a vendor doesn't have its own wastage rate set on the Vendors page. This is the bottom of the fallback chain: SKU override → vendor default → this company-wide default.
+            Used whenever a vendor doesn't have its own wastage rate set on the Vendors page. A vendor's own rate always takes priority over this company-wide default when set.
           </p>
         </CardHeader>
         <CardContent className="space-y-4">
