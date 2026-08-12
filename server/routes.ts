@@ -1666,6 +1666,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // App settings (key-value config: default wastage rates, etc.)
+  app.get("/api/settings", async (req, res) => {
+    try {
+      const all = await storage.getAllSettings();
+      const asRecord: Record<string, string> = {};
+      for (const s of all) asRecord[s.key] = s.value;
+      res.json(asRecord);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.patch("/api/settings/:key", async (req, res) => {
+    try {
+      const { value } = req.body;
+      if (typeof value !== "string") {
+        return res.status(400).json({ message: "value must be a string" });
+      }
+      const updated = await storage.setSetting(req.params.key, value);
+      res.json(updated);
+    } catch (error: any) {
+      res.status(400).json({ message: error.message });
+    }
+  });
+
   const httpServer = createServer(app);
 
   return httpServer;

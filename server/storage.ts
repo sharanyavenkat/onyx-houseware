@@ -39,6 +39,7 @@ import {
   type InsertVendorMetalStatement,
   type BomComponent,
   type InsertBomComponent,
+  type AppSetting,
   users,
   items,
   customers,
@@ -58,6 +59,8 @@ import {
   reworks,
   vendorMetalStatements,
   bomComponents,
+  appSettings,
+  SETTINGS_KEYS,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -178,6 +181,10 @@ export interface IStorage {
   // then the caster's own default, then the company-wide fallback (6% ingot / 8% scrap).
   resolveWastagePct(casterId: number, itemId: number, materialType: "ingot" | "scrap"): Promise<number>;
   resolveBlendedWastagePct(casterId: number, itemId: number, ingotKgSent: number, scrapKgSent: number): Promise<number>;
+
+  getAllSettings(): Promise<AppSetting[]>;
+  getSetting(key: string): Promise<string | undefined>;
+  setSetting(key: string, value: string): Promise<AppSetting>;
   getAllSkuWastageOverrides(): Promise<SkuWastageOverride[]>;
   createSkuWastageOverride(o: InsertSkuWastageOverride): Promise<SkuWastageOverride>;
   updateSkuWastageOverride(id: number, o: Partial<InsertSkuWastageOverride>): Promise<SkuWastageOverride | undefined>;
@@ -1414,7 +1421,39 @@ export class DbStorage implements IStorage {
       if (vendorDefault !== null && vendorDefault !== undefined) return vendorDefault;
     }
 
+    const settingKey = materialType === "ingot" ? SETTINGS_KEYS.DEFAULT_WASTAGE_INGOT_PCT : SETTINGS_KEYS.DEFAULT_WASTAGE_SCRAP_PCT;
+    const companyDefault = await this.getSetting(settingKey);
+    if (companyDefault !== undefined) {
+      const parsed = parseFloat(companyDefault);
+      if (!isNaN(parsed)) return parsed;
+    }
+
+    // Last-resort fallback if settings somehow aren't seeded yet
     return materialType === "ingot" ? 6 : 8;
+  }
+
+  async getAllSettings(): Promise<AppSetting[]> {
+    return await db.select().from(appSettings);
+  }
+
+  async getSetting(key: string): Promise<string | undefined> {
+    const [row] = await db.select().from(appSettings).where(eq(appSettings.key, key));
+    return row?.value;
+  }
+
+  async setSetting(key: string, value: string): Promise<AppSetting> {
+    const existing = await db.select().from(appSettings).where(eq(appSettings.key, key));
+    if (existing.length > 0) {
+      const [updated] = await db.update(appSettings)
+        .set({ value, updated_at: new Date().toISOString() })
+        .where(eq(appSettings.key, key))
+        .returning();
+      return updated;
+    }
+    const [created] = await db.insert(appSettings)
+      .values({ key, value, updated_at: new Date().toISOString() })
+      .returning();
+    return created;
   }
 
   /**

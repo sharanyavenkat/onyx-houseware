@@ -17,7 +17,8 @@ import {
   Menu,
   Box,
   Wrench,
-  Factory
+  Factory,
+  Settings
 } from "lucide-react";
 import { useState } from "react";
 import { Link, useLocation } from "wouter";
@@ -37,6 +38,7 @@ const menuItems = [
   { icon: Wrench, label: "Accessories", href: "/accessories" },
   { icon: Users, label: "Customers", href: "/customers" },
   { icon: Factory, label: "Vendors", href: "/casters" },
+  { icon: Settings, label: "Settings", href: "/settings" },
 ];
 
 function NavigationContent({ 

@@ -19,6 +19,7 @@ import Login from "@/pages/Login";
 import NotFound from "@/pages/not-found";
 import OrderDetails from "@/pages/OrderDetails";
 import Orders from "@/pages/Orders";
+import Settings from "@/pages/Settings";
 
 function AuthenticatedApp() {
   return (
@@ -40,6 +41,7 @@ function AuthenticatedApp() {
             <Route path="/casters/:id" component={CasterDetails} />
             <Route path="/accessories" component={Accessories} />
             <Route path="/customers" component={Customers} />
+            <Route path="/settings" component={Settings} />
             <Route component={NotFound} />
           </Switch>
         </div>

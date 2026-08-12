@@ -1,5 +1,6 @@
 import { db } from "./client";
 import { sql } from "drizzle-orm";
+import { appSettings } from "@shared/schema";
 
 /**
  * Helper function to safely add columns to existing tables
@@ -738,6 +739,28 @@ export async function bootstrapDatabase() {
         qty_per_kit INTEGER NOT NULL DEFAULT 1
       )
     `);
+
+    // Generic app settings key-value store, seeded with the current
+    // hardcoded wastage defaults so behavior doesn't change until someone
+    // edits them on the Settings page.
+    await db.run(sql`
+      CREATE TABLE IF NOT EXISTS app_settings (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL,
+        updated_at TEXT
+      )
+    `);
+    const existingSettings = await db.select().from(appSettings);
+    const existingKeys = new Set(existingSettings.map(s => s.key));
+    const seedDefaults: Array<[string, string]> = [
+      ["default_wastage_ingot_pct", "6"],
+      ["default_wastage_scrap_pct", "8"],
+    ];
+    for (const [key, value] of seedDefaults) {
+      if (!existingKeys.has(key)) {
+        await db.insert(appSettings).values({ key, value, updated_at: new Date().toISOString() });
+      }
+    }
 
     console.log("✅ SQLite database tables initialized successfully");
   } catch (error) {

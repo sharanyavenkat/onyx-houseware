@@ -459,3 +459,24 @@ export const insertIngotDispatchSchema = createInsertSchema(ingotDispatches).omi
 
 export type InsertIngotDispatch = z.infer<typeof insertIngotDispatchSchema>;
 export type IngotDispatch = typeof ingotDispatches.$inferSelect;
+
+// Generic key-value store for app-wide configuration (e.g. default wastage
+// rates, and later things like a current metal rate for quotations). Using
+// key-value rather than dedicated columns means adding a new setting later
+// is just a new row, not a schema migration.
+export const appSettings = sqliteTable("app_settings", {
+  key: text("key").primaryKey(),
+  value: text("value").notNull(),
+  updated_at: text("updated_at"),
+});
+
+export const insertAppSettingSchema = createInsertSchema(appSettings);
+
+export type InsertAppSetting = z.infer<typeof insertAppSettingSchema>;
+export type AppSetting = typeof appSettings.$inferSelect;
+
+// Well-known setting keys, so callers don't hand-type strings
+export const SETTINGS_KEYS = {
+  DEFAULT_WASTAGE_INGOT_PCT: "default_wastage_ingot_pct",
+  DEFAULT_WASTAGE_SCRAP_PCT: "default_wastage_scrap_pct",
+} as const;
