@@ -32,12 +32,12 @@ interface SidebarProps {
 const menuItems = [
   { icon: Home, label: "Dashboard", href: "/" },
   { icon: FileText, label: "Orders", href: "/orders" },
-  { icon: Box, label: "Batches", href: "/batches" },
   { icon: ClipboardList, label: "Indent", href: "/indent" },
+  { icon: Box, label: "Batches", href: "/batches" },
+  { icon: Factory, label: "Vendors", href: "/casters" },
   { icon: Package, label: "Items", href: "/items" },
   { icon: Wrench, label: "Accessories", href: "/accessories" },
   { icon: Users, label: "Customers", href: "/customers" },
-  { icon: Factory, label: "Vendors", href: "/casters" },
   { icon: Settings, label: "Settings", href: "/settings" },
 ];
 
