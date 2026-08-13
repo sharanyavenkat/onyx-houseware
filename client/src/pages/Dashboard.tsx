@@ -249,7 +249,7 @@ export default function Dashboard() {
           <div>
             <h2 className="text-xl font-semibold">Items Requiring Attention</h2>
             <p className="text-sm text-muted-foreground mt-1">
-              Shows items with pending orders using current month's indent data (Opening Balance + Expected Receipts + Safety Stock). 
+              Shows items with pending orders using current month's indent data (Current Stock from Batches + Expected Receipts + Safety Stock). 
               "Still Need to Order" shows the shortfall to fulfill pending orders after using all available stock. Visit Indent page for detailed planning.
             </p>
           </div>
@@ -290,7 +290,7 @@ export default function Dashboard() {
             <div>
               <h2 className="text-xl font-semibold">Vendors Requiring Attention</h2>
               <p className="text-sm text-muted-foreground mt-1">
-                Vendors with a rejection rate of 10%+ this month, or a metal balance beyond what their production accounts for.
+                Vendors with an all-time rejection rate of 10%+, or a metal balance beyond what their production accounts for.
                 Visit the Vendors page for details.
               </p>
             </div>

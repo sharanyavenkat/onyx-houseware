@@ -604,6 +604,7 @@ export default function Casters() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/ingot-dispatches'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/casters'] });
       toast({ title: 'Ingot dispatch updated successfully' });
       setIsIngotModalOpen(false);
       setEditingIngot(null);
@@ -619,6 +620,7 @@ export default function Casters() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/ingot-dispatches'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/casters'] });
       toast({ title: 'Ingot dispatch deleted successfully' });
     },
     onError: (error: Error) => {
@@ -725,6 +727,7 @@ export default function Casters() {
     mutationFn: async ({ id, data }: { id: number; data: any }) => apiRequest('PATCH', `/api/reworks/${id}`, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/reworks'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/casters'] });
       toast({ title: 'Rework updated successfully' });
       setIsReworkModalOpen(false);
       setEditingRework(null);
@@ -735,6 +738,7 @@ export default function Casters() {
     mutationFn: async (id: number) => apiRequest('DELETE', `/api/reworks/${id}`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/reworks'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/casters'] });
       toast({ title: 'Rework deleted successfully' });
     },
     onError: (error: Error) => toast({ title: 'Error deleting rework', description: error.message, variant: 'destructive' }),

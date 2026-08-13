@@ -1101,6 +1101,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       await storage.deleteAccessory(parseInt(req.params.id));
       res.status(204).send();
     } catch (error: any) {
+      // e.g. this accessory is used as a component in a kit's BOM
+      if (error.message && error.message.toLowerCase().includes('foreign key constraint')) {
+        return res.status(400).json({
+          message: "Cannot delete this accessory because it's used elsewhere (e.g. in a kit's contents). Please remove those references first."
+        });
+      }
       res.status(500).json({ message: error.message });
     }
   });
@@ -1169,10 +1175,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       await storage.deleteCaster(parseInt(req.params.id));
       res.status(204).send();
     } catch (error: any) {
-      // Check for foreign key constraint (caster used in batches)
+      // Check for foreign key constraint (caster referenced by batches, dies,
+      // reworks, purchase orders, ingot dispatches, or metal statements)
       if (error.message && error.message.toLowerCase().includes('foreign key constraint')) {
         return res.status(400).json({ 
-          message: "Cannot delete this caster because they have existing batches. Please remove their batches first." 
+          message: "Cannot delete this vendor because they're referenced elsewhere (batches, dies, reworks, purchase orders, ingot dispatches, or statements). Please remove those references first." 
         });
       }
       res.status(500).json({ message: error.message });

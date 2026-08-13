@@ -230,6 +230,9 @@ export default function Items() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/items"] });
+      // Weight changes here directly affect the Vendors page's metal
+      // reconciliation math, which is cached under this key.
+      queryClient.invalidateQueries({ queryKey: ["/api/casters"] });
       toast({ title: "Item updated successfully" });
       setIsModalOpen(false);
       setEditingItem(null);
@@ -476,14 +479,30 @@ function BomEditorModal({
     }
   }, [isOpen, kitItem?.id, existingComponents]);
 
-  const componentItemOptions = useMemo(
+  const baseComponentItemOptions = useMemo(
     () => allItems.filter(i => i.is_active && !i.is_kit && i.id !== kitItem?.id),
     [allItems, kitItem]
   );
-  const accessoryOptions = useMemo(
+  const baseAccessoryOptions = useMemo(
     () => accessories.filter(a => a.status === "active"),
     [accessories]
   );
+
+  // Excludes components already used in OTHER rows of this same kit, so the
+  // same SKU/accessory can't accidentally end up as two separate rows —
+  // that would silently double-deduct it on every kit shipment.
+  const getComponentItemOptionsForRow = (currentKey: string) => {
+    const usedElsewhere = new Set(
+      rows.filter(r => r.key !== currentKey && r.component_type === "item").map(r => r.component_item_id)
+    );
+    return baseComponentItemOptions.filter(i => !usedElsewhere.has(i.id));
+  };
+  const getAccessoryOptionsForRow = (currentKey: string) => {
+    const usedElsewhere = new Set(
+      rows.filter(r => r.key !== currentKey && r.component_type === "accessory").map(r => r.component_accessory_id)
+    );
+    return baseAccessoryOptions.filter(a => !usedElsewhere.has(a.id));
+  };
 
   const addRow = () => {
     setRows(prev => [
@@ -600,7 +619,7 @@ function BomEditorModal({
                     >
                       <SelectTrigger className="flex-1"><SelectValue placeholder="Select item..." /></SelectTrigger>
                       <SelectContent>
-                        {componentItemOptions.map(i => (
+                        {getComponentItemOptionsForRow(row.key).map(i => (
                           <SelectItem key={i.id} value={i.id.toString()}>{i.name} ({i.sku})</SelectItem>
                         ))}
                       </SelectContent>
@@ -613,7 +632,7 @@ function BomEditorModal({
                     >
                       <SelectTrigger className="flex-1"><SelectValue placeholder="Select accessory..." /></SelectTrigger>
                       <SelectContent>
-                        {accessoryOptions.map(a => (
+                        {getAccessoryOptionsForRow(row.key).map(a => (
                           <SelectItem key={a.id} value={a.id.toString()}>{a.name}</SelectItem>
                         ))}
                       </SelectContent>
