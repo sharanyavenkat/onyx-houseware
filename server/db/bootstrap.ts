@@ -1,5 +1,6 @@
 import { db } from "./client";
 import { sql } from "drizzle-orm";
+import { appSettings, kitShipmentAllocations } from "@shared/schema";
 
 /**
  * Helper function to safely add columns to existing tables
@@ -75,6 +76,18 @@ export async function bootstrapDatabase() {
       )
     `);
 
+    // Add unit_weight_kg column to items table (finished-casting weight, used
+    // to reconcile ingot dispatched to a caster against casting weight received)
+    await addColumnIfNotExists(
+      "items",
+      "unit_weight_kg REAL",
+      "unit_weight_kg"
+    );
+    // Kits (combo packs like CSTONE 10) are never cast themselves; finish tags
+    // bare/nonstick/ceramic casting variants, each tracked as its own item
+    await addColumnIfNotExists("items", "is_kit INTEGER NOT NULL DEFAULT 0", "is_kit");
+    await addColumnIfNotExists("items", "finish TEXT", "finish");
+
     // Create customers table
     await db.run(sql`
       CREATE TABLE IF NOT EXISTS customers (
@@ -100,6 +113,8 @@ export async function bootstrapDatabase() {
         notes TEXT
       )
     `);
+    // Business-line tag: 'oem' | 'kreme' | 'd2c'
+    await addColumnIfNotExists("orders", "channel TEXT NOT NULL DEFAULT 'oem'", "channel");
 
     // Create order_items table
     await db.run(sql`
@@ -121,6 +136,12 @@ export async function bootstrapDatabase() {
         current_safety_stock INTEGER NOT NULL DEFAULT 0
       )
     `);
+    // false (default) = expected_receipts auto-derived from open POs; true = manually overridden
+    await addColumnIfNotExists(
+      "indents",
+      "is_manual_expected_receipts INTEGER NOT NULL DEFAULT 0",
+      "is_manual_expected_receipts"
+    );
 
     // Create batches table
     await db.run(sql`
@@ -331,6 +352,28 @@ export async function bootstrapDatabase() {
         notes TEXT
       )
     `);
+
+    // Add vendor master columns to casters table (contact info, lead time,
+    // payment terms, active/inactive status)
+    await addColumnIfNotExists("casters", "contact_person TEXT", "contact_person");
+    await addColumnIfNotExists("casters", "phone TEXT", "phone");
+    await addColumnIfNotExists("casters", "email TEXT", "email");
+    await addColumnIfNotExists("casters", "lead_time_days INTEGER", "lead_time_days");
+    await addColumnIfNotExists("casters", "payment_terms TEXT", "payment_terms");
+    await addColumnIfNotExists(
+      "casters",
+      "status TEXT NOT NULL DEFAULT 'active'",
+      "status"
+    );
+    // Generalize casters into "any vendor" via vendor_type, plus material-type
+    // wastage defaults (null = fall back to company-wide 6% ingot / 8% scrap)
+    await addColumnIfNotExists(
+      "casters",
+      "vendor_type TEXT NOT NULL DEFAULT 'caster'",
+      "vendor_type"
+    );
+    await addColumnIfNotExists("casters", "default_wastage_ingot_pct REAL", "default_wastage_ingot_pct");
+    await addColumnIfNotExists("casters", "default_wastage_scrap_pct REAL", "default_wastage_scrap_pct");
 
     // Add caster_id column to batches table (references casters)
     await addColumnIfNotExists(
@@ -595,6 +638,143 @@ export async function bootstrapDatabase() {
       "purchase_order_id INTEGER REFERENCES purchase_orders(id) ON DELETE SET NULL",
       "purchase_order_id"
     );
+
+    // Create ingot_dispatches table for tracking raw aluminium ingot/scrap sent to casters
+    await db.run(sql`
+      CREATE TABLE IF NOT EXISTS ingot_dispatches (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        caster_id INTEGER NOT NULL REFERENCES casters(id),
+        dispatch_date TEXT NOT NULL,
+        material_type TEXT NOT NULL DEFAULT 'ingot',
+        alloy_grade TEXT,
+        quantity_kg REAL NOT NULL,
+        purchase_order_id INTEGER REFERENCES purchase_orders(id) ON DELETE SET NULL,
+        notes TEXT
+      )
+    `);
+    // Safety net in case ingot_dispatches already existed from an earlier version without material_type
+    await addColumnIfNotExists(
+      "ingot_dispatches",
+      "material_type TEXT NOT NULL DEFAULT 'ingot'",
+      "material_type"
+    );
+
+    // Per-SKU wastage override for a specific vendor (overrides that vendor's
+    // material-type default). material_type NULL = applies to both ingot and scrap.
+    await db.run(sql`
+      CREATE TABLE IF NOT EXISTS sku_wastage_overrides (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        caster_id INTEGER NOT NULL REFERENCES casters(id) ON DELETE CASCADE,
+        item_id INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+        material_type TEXT,
+        wastage_pct REAL NOT NULL,
+        notes TEXT
+      )
+    `);
+
+    // Dies/moulds Onyx owns, held at a vendor (casting dies at casters, handle
+    // moulds at handle vendors)
+    await db.run(sql`
+      CREATE TABLE IF NOT EXISTS dies (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        caster_id INTEGER NOT NULL REFERENCES casters(id),
+        item_id INTEGER NOT NULL REFERENCES items(id),
+        mould_type TEXT NOT NULL DEFAULT 'casting',
+        shot_count INTEGER NOT NULL DEFAULT 0,
+        last_rework_date TEXT,
+        status TEXT NOT NULL DEFAULT 'active',
+        notes TEXT
+      )
+    `);
+
+    // Rework: defective batch swapped 1:1 for good pieces by one caster.
+    // Free — does not touch the main ingot/scrap metal balance.
+    await db.run(sql`
+      CREATE TABLE IF NOT EXISTS reworks (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        caster_id INTEGER NOT NULL REFERENCES casters(id),
+        item_id INTEGER NOT NULL REFERENCES items(id),
+        original_batch_id INTEGER REFERENCES batches(id) ON DELETE SET NULL,
+        quantity_defective INTEGER NOT NULL,
+        sent_date TEXT NOT NULL,
+        quantity_replaced INTEGER NOT NULL DEFAULT 0,
+        replacement_batch_id INTEGER REFERENCES batches(id) ON DELETE SET NULL,
+        replacement_received_date TEXT,
+        status TEXT NOT NULL DEFAULT 'pending',
+        notes TEXT
+      )
+    `);
+
+    // Monthly vendor metal statement — both Onyx's calculated figures and (when
+    // provided) the vendor's own reported figures, for side-by-side reconciliation.
+    await db.run(sql`
+      CREATE TABLE IF NOT EXISTS vendor_metal_statements (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        caster_id INTEGER NOT NULL REFERENCES casters(id),
+        period_month TEXT NOT NULL,
+        opening_balance_kg REAL NOT NULL DEFAULT 0,
+        dispatched_kg REAL NOT NULL DEFAULT 0,
+        expected_received_kg REAL NOT NULL DEFAULT 0,
+        actual_received_kg REAL NOT NULL DEFAULT 0,
+        closing_balance_kg REAL NOT NULL DEFAULT 0,
+        vendor_reported_produced_kg REAL,
+        vendor_reported_received_kg REAL,
+        vendor_reported_remaining_kg REAL,
+        status TEXT NOT NULL DEFAULT 'draft',
+        sent_date TEXT,
+        ack_date TEXT,
+        notes TEXT
+      )
+    `);
+
+    // BOM: what a kit item (items.is_kit = 1) contains. Fully data-driven —
+    // new combo packs are just new rows, no schema change needed.
+    await db.run(sql`
+      CREATE TABLE IF NOT EXISTS bom_components (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        parent_item_id INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+        component_type TEXT NOT NULL,
+        component_item_id INTEGER REFERENCES items(id),
+        component_accessory_id INTEGER REFERENCES accessories(id),
+        qty_per_kit INTEGER NOT NULL DEFAULT 1
+      )
+    `);
+
+    // Generic app settings key-value store, seeded with the current
+    // hardcoded wastage defaults so behavior doesn't change until someone
+    // edits them on the Settings page.
+    await db.run(sql`
+      CREATE TABLE IF NOT EXISTS app_settings (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL,
+        updated_at TEXT
+      )
+    `);
+    const existingSettings = await db.select().from(appSettings);
+    const existingKeys = new Set(existingSettings.map(s => s.key));
+    const seedDefaults: Array<[string, string]> = [
+      ["default_wastage_ingot_pct", "6"],
+      ["default_wastage_scrap_pct", "8"],
+    ];
+    for (const [key, value] of seedDefaults) {
+      if (!existingKeys.has(key)) {
+        await db.insert(appSettings).values({ key, value, updated_at: new Date().toISOString() });
+      }
+    }
+
+    // Tracks exactly which batch(es)/accessory a kit shipment drew from, so
+    // it can be precisely reversed on edit/delete — same as normal shipments.
+    await db.run(sql`
+      CREATE TABLE IF NOT EXISTS kit_shipment_allocations (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        shipment_id INTEGER NOT NULL REFERENCES shipments(id) ON DELETE CASCADE,
+        component_type TEXT NOT NULL,
+        component_item_id INTEGER REFERENCES items(id),
+        component_accessory_id INTEGER REFERENCES accessories(id),
+        batch_id INTEGER REFERENCES batches(id),
+        quantity INTEGER NOT NULL
+      )
+    `);
 
     console.log("✅ SQLite database tables initialized successfully");
   } catch (error) {

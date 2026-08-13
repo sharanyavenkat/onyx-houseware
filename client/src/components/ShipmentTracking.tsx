@@ -41,6 +41,7 @@ interface ShipmentTrackingProps {
   itemId: number;
   itemName: string;
   orderedQuantity: number;
+  isKit?: boolean;
 }
 
 export default function ShipmentTracking({
@@ -51,6 +52,7 @@ export default function ShipmentTracking({
   itemId,
   itemName,
   orderedQuantity,
+  isKit = false,
 }: ShipmentTrackingProps) {
   const { toast } = useToast();
   const { canMutate } = useAuth();
@@ -79,7 +81,7 @@ export default function ShipmentTracking({
       if (!response.ok) throw new Error("Failed to fetch batches");
       return response.json();
     },
-    enabled: isOpen,
+    enabled: isOpen && !isKit,
   });
 
   // When editing, fetch the specific batch (even if depleted) to include in dropdown
@@ -90,7 +92,7 @@ export default function ShipmentTracking({
       if (!response.ok) throw new Error("Failed to fetch batch");
       return response.json();
     },
-    enabled: isOpen && !!editingShipment?.batch_number,
+    enabled: isOpen && !isKit && !!editingShipment?.batch_number,
   });
 
   // Merge active batches with the editing batch (if not already included)
@@ -259,7 +261,15 @@ export default function ShipmentTracking({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!batchNumber || !quantityShipped || !shipmentDate) {
+    if (isKit) {
+      if (!quantityShipped || !shipmentDate) {
+        toast({
+          title: "Please fill all required fields (Quantity, Date)",
+          variant: "destructive",
+        });
+        return;
+      }
+    } else if (!batchNumber || !quantityShipped || !shipmentDate) {
       toast({
         title: "Please fill all required fields (Batch Number, Quantity, Date)",
         variant: "destructive",
@@ -267,7 +277,7 @@ export default function ShipmentTracking({
       return;
     }
 
-    if (quantityExceedsBatch) {
+    if (!isKit && quantityExceedsBatch) {
       toast({
         title: "Quantity exceeds batch remaining",
         description: `Only ${availableRemainingForBatch.toLocaleString()} pieces available in this batch.`,
@@ -276,13 +286,17 @@ export default function ShipmentTracking({
       return;
     }
 
-    const data = {
+    const data: any = {
       order_id: orderId,
       order_item_id: orderItemId,
-      batch_number: batchNumber,
       quantity_shipped: parseInt(quantityShipped),
       shipment_date: shipmentDate,
     };
+    // Kits have no single batch — the backend decomposes the BOM instead
+    // when batch_number is omitted (only for kit order lines).
+    if (!isKit) {
+      data.batch_number = batchNumber;
+    }
 
     if (editingShipment) {
       updateMutation.mutate({ id: editingShipment.id, data });
@@ -411,12 +425,18 @@ export default function ShipmentTracking({
                 </Button>
               )}
             </div>
+            {isKit && (
+              <p className="text-xs text-muted-foreground -mt-2">
+                This is a kit — shipping it deducts from each component's stock automatically, and editing or deleting a kit shipment correctly restores that stock too.
+              </p>
+            )}
 
             {canMutate && isFormOpen && (
               <Card>
                 <CardContent className="pt-6">
                   <form onSubmit={handleSubmit} className="space-y-4">
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                      {!isKit && (
                       <div>
                         <Label htmlFor="batch_number">
                           Batch Number <span className="text-destructive">*</span>
@@ -445,6 +465,7 @@ export default function ShipmentTracking({
                           </p>
                         )}
                       </div>
+                      )}
 
                       <div>
                         <Label htmlFor="quantity_shipped">
@@ -528,7 +549,7 @@ export default function ShipmentTracking({
                           data-testid={`row-shipment-${shipment.id}`}
                         >
                           <TableCell className="font-medium font-mono">
-                            {shipment.batch_number || "-"}
+                            {shipment.batch_number || (isKit ? "Kit assembly" : "-")}
                           </TableCell>
                           <TableCell>
                             {formatDate(shipment.shipment_date)}
@@ -572,7 +593,7 @@ export default function ShipmentTracking({
                         <div className="flex justify-between items-start">
                           <div>
                             <div className="font-mono font-semibold">
-                              {shipment.batch_number || "-"}
+                              {shipment.batch_number || (isKit ? "Kit assembly" : "-")}
                             </div>
                             <div className="text-sm text-muted-foreground">
                               {formatDate(shipment.shipment_date)}

@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { ArrowLeft, Package } from 'lucide-react';
+import { ArrowLeft, Truck } from 'lucide-react';
 import { useState, useMemo } from 'react';
 import ShipmentTracking from '../components/ShipmentTracking';
 import InvoiceSection from '../components/InvoiceSection';
@@ -101,6 +101,9 @@ export default function OrderDetails() {
               <div className="mt-1 flex flex-wrap gap-1">
                 <Badge variant={statusVariants[order.status] || 'secondary'}>
                   {order.status}
+                </Badge>
+                <Badge variant="outline">
+                  {({ oem: 'OEM', d2c: 'D2C' } as Record<string, string>)[order.channel] || order.channel || 'OEM'}
                 </Badge>
                 {order.order_type === 'sample' && (
                   <Badge variant="outline" className="border-cyan-500 text-cyan-600">
@@ -204,7 +207,7 @@ export default function OrderDetails() {
                           data-testid={`button-track-shipment-${index}`}
                           className="whitespace-nowrap"
                         >
-                          <Package className="h-4 w-4 mr-1" />
+                          <Truck className="h-4 w-4 mr-1" />
                           <span className="hidden sm:inline">Track Shipments</span>
                           <span className="sm:hidden">Track</span>
                         </Button>
@@ -240,6 +243,7 @@ export default function OrderDetails() {
           itemId={trackingShipment.item_id}
           itemName={trackingShipment.item_name}
           orderedQuantity={trackingShipment.quantity}
+          isKit={trackingShipment.is_kit}
         />
       )}
     </div>

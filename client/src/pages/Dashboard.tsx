@@ -7,6 +7,14 @@ import { useQuery } from '@tanstack/react-query';
 import type { Item, Order, Customer, Indent, Accessory } from '@shared/schema';
 import { calculateInventoryMetrics } from '@shared/inventory';
 
+type VendorAttentionEntry = {
+  casterId: number;
+  casterName: string;
+  rejectionRatePct: number | null;
+  metalBalanceKg: number | null;
+  flagReason: string;
+};
+
 // Extended Order type with line_items from API
 type OrderWithLineItems = Order & {
   line_items?: Array<{
@@ -73,6 +81,11 @@ export default function Dashboard() {
   // Fetch accessories for low stock monitoring
   const { data: accessories = [] } = useQuery<Accessory[]>({
     queryKey: ['/api/accessories'],
+  });
+
+  // Vendors flagged for high rejection rate or an outstanding metal balance
+  const { data: vendorAttention = [] } = useQuery<VendorAttentionEntry[]>({
+    queryKey: ['/api/casters/attention-summary'],
   });
 
   // Extract unique months from orders based on fulfillment_date
@@ -177,6 +190,26 @@ export default function Dashboard() {
     }
   ];
 
+  const vendorAttentionColumns = [
+    { key: 'casterName', label: 'Vendor', isPrimary: true },
+    {
+      key: 'rejectionRatePct',
+      label: 'Rejection Rate',
+      render: (value: number | null) => value === null ? '—' : `${value.toFixed(1)}%`,
+    },
+    {
+      key: 'metalBalanceKg',
+      label: 'Metal Balance',
+      hideOnMobile: true,
+      render: (value: number | null) => value === null ? '—' : `${value.toFixed(0)} kg`,
+    },
+    {
+      key: 'flagReason',
+      label: 'Why',
+      render: (value: string) => <Badge variant="destructive">{value}</Badge>,
+    },
+  ];
+
   return (
     <div className="space-y-6" data-testid="page-dashboard">
       {/* Header */}
@@ -216,7 +249,7 @@ export default function Dashboard() {
           <div>
             <h2 className="text-xl font-semibold">Items Requiring Attention</h2>
             <p className="text-sm text-muted-foreground mt-1">
-              Shows items with pending orders using current month's indent data (Opening Balance + Expected Receipts + Safety Stock). 
+              Shows items with pending orders using current month's indent data (Current Stock from Batches + Expected Receipts + Safety Stock). 
               "Still Need to Order" shows the shortfall to fulfill pending orders after using all available stock. Visit Indent page for detailed planning.
             </p>
           </div>
@@ -244,6 +277,27 @@ export default function Dashboard() {
           <DataTable 
             columns={accessoriesColumns}
             data={lowStockAccessories}
+            title=""
+            searchable={false}
+          />
+        </div>
+      )}
+
+      {/* Vendors Requiring Attention */}
+      {vendorAttention.length > 0 && (
+        <div className="space-y-4">
+          <div className="space-y-2">
+            <div>
+              <h2 className="text-xl font-semibold">Vendors Requiring Attention</h2>
+              <p className="text-sm text-muted-foreground mt-1">
+                Vendors with an all-time rejection rate of 10%+, or a metal balance beyond what their production accounts for.
+                Visit the Vendors page for details.
+              </p>
+            </div>
+          </div>
+          <DataTable
+            columns={vendorAttentionColumns}
+            data={vendorAttention}
             title=""
             searchable={false}
           />

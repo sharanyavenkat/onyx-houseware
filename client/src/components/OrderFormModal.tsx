@@ -55,6 +55,7 @@ export default function OrderFormModal({
   const [status, setStatus] = useState("");
   const [orderType, setOrderType] = useState("standard");
   const [isFreeSample, setIsFreeSample] = useState(false);
+  const [channel, setChannel] = useState("oem");
   const [notes, setNotes] = useState("");
   const [lineItems, setLineItems] = useState<LineItem[]>([]);
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -70,6 +71,7 @@ export default function OrderFormModal({
       setStatus(initialData.status || "");
       setOrderType(initialData.order_type || "standard");
       setIsFreeSample(initialData.is_free_sample || false);
+      setChannel(initialData.channel || "oem");
       setNotes(initialData.notes || "");
       setLineItems(initialData.line_items || []);
       setErrors({});
@@ -161,6 +163,7 @@ export default function OrderFormModal({
       status,
       order_type: orderType,
       is_free_sample: orderType === "sample" ? isFreeSample : false,
+      channel,
       notes,
       line_items: lineItems,
     };
@@ -279,6 +282,19 @@ export default function OrderFormModal({
               <SelectContent>
                 <SelectItem value="standard">Standard Order</SelectItem>
                 <SelectItem value="sample">Sample Order</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div>
+            <Label htmlFor="channel">Channel</Label>
+            <Select value={channel} onValueChange={setChannel}>
+              <SelectTrigger id="channel" data-testid="select-channel">
+                <SelectValue placeholder="Select Channel" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="oem">OEM</SelectItem>
+                <SelectItem value="d2c">D2C</SelectItem>
               </SelectContent>
             </Select>
           </div>
