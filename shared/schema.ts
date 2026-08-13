@@ -72,7 +72,8 @@ export const orders = sqliteTable("orders", {
   status: text("status").notNull().default("draft"),
   order_type: text("order_type").notNull().default("standard"),
   is_free_sample: integer("is_free_sample", { mode: "boolean" }).notNull().default(false),
-  // 'oem' | 'kreme' | 'd2c' — which business line this order belongs to.
+  // 'oem' | 'd2c' — what physically ships: raw castings (oem) vs.
+  // coated/finished pieces (d2c), regardless of which customer it is.
   // Reporting/dashboard filter; doesn't change how orders/order_items work.
   channel: text("channel").notNull().default("oem"),
   notes: text("notes"),

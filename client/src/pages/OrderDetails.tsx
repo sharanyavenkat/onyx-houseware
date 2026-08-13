@@ -102,6 +102,9 @@ export default function OrderDetails() {
                 <Badge variant={statusVariants[order.status] || 'secondary'}>
                   {order.status}
                 </Badge>
+                <Badge variant="outline">
+                  {({ oem: 'OEM', d2c: 'D2C' } as Record<string, string>)[order.channel] || order.channel || 'OEM'}
+                </Badge>
                 {order.order_type === 'sample' && (
                   <Badge variant="outline" className="border-cyan-500 text-cyan-600">
                     {order.is_free_sample ? 'Free Sample' : 'Sample'}

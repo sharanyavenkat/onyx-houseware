@@ -51,6 +51,15 @@ const orderColumns = [
     hideOnMobile: true,
   },
   {
+    key: "channel",
+    label: "Channel",
+    render: (value: string) => {
+      const labels: Record<string, string> = { oem: "OEM", d2c: "D2C" };
+      return <Badge variant="outline">{labels[value] || value || "OEM"}</Badge>;
+    },
+    hideOnMobile: true,
+  },
+  {
     key: "order_type",
     label: "Type",
     render: (value: string, row: any) => {
@@ -89,6 +98,7 @@ export default function Orders() {
   const [selectedMonth, setSelectedMonth] = useState<string>("all");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [orderTypeFilter, setOrderTypeFilter] = useState<string>("all");
+  const [channelFilter, setChannelFilter] = useState<string>("all");
   const [isConfirmOpen, setIsConfirmOpen] = useState(false);
   const [orderToDelete, setOrderToDelete] = useState<any>(null);
   const { toast } = useToast();
@@ -178,6 +188,11 @@ export default function Orders() {
       result = result.filter((order) => order.order_type === orderTypeFilter);
     }
 
+    // Filter by channel
+    if (channelFilter !== "all") {
+      result = result.filter((order) => (order.channel || "oem") === channelFilter);
+    }
+
     // Sort: Active orders (confirmed) first, then by latest order date
     result = [...result].sort((a, b) => {
       const activeStatuses = ['confirmed'];
@@ -195,7 +210,7 @@ export default function Orders() {
     });
 
     return result;
-  }, [ordersWithCustomerNames, selectedMonth, statusFilter, orderTypeFilter]);
+  }, [ordersWithCustomerNames, selectedMonth, statusFilter, orderTypeFilter, channelFilter]);
 
   const createMutation = useMutation({
     mutationFn: async (data: any) => {
@@ -355,6 +370,23 @@ export default function Orders() {
               <SelectItem value="all">All Types</SelectItem>
               <SelectItem value="standard">Standard Orders</SelectItem>
               <SelectItem value="sample">Sample Orders</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+          <label className="text-sm font-medium">Channel:</label>
+          <Select value={channelFilter} onValueChange={setChannelFilter}>
+            <SelectTrigger
+              className="w-full sm:w-[160px]"
+              data-testid="select-channel-filter"
+            >
+              <SelectValue placeholder="All Channels" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Channels</SelectItem>
+              <SelectItem value="oem">OEM</SelectItem>
+              <SelectItem value="d2c">D2C</SelectItem>
             </SelectContent>
           </Select>
         </div>
