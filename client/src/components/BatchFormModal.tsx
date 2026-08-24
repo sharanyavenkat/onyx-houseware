@@ -302,6 +302,9 @@ export default function BatchFormModal({
               )}
             />
 
+            {/* Purchase Order field hidden — doesn't fit how metal actually works with
+                casters (running allocation, not itemized quantity orders). Kept in
+                code, unrendered, in case a real itemized-order vendor needs it later.
             {watchedCasterId && watchedCasterId !== "" && watchedCasterId !== "none" && (
               <FormField
                 control={form.control}
@@ -339,6 +342,7 @@ export default function BatchFormModal({
                 )}
               />
             )}
+            */}
 
             <FormField
               control={form.control}

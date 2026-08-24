@@ -874,13 +874,14 @@ export default function Casters() {
 
   return (
     <div data-testid="page-casters">
-      <Tabs defaultValue="purchases" className="w-full">
+      <Tabs defaultValue="ingots" className="w-full">
         <TabsList className="w-full justify-start flex-wrap gap-1">
-          <TabsTrigger value="purchases" className="gap-1.5">
-            <FileText className="h-4 w-4" />
-            Purchases
-          </TabsTrigger>
-          {/* Monthly Report tab hidden — felt redundant with Purchases (ordered vs. received).
+          {/* Purchases tab hidden — POs don't fit how metal actually works with casters
+              (running allocation via Ingots, not itemized quantity orders). Ingot
+              Dispatches + Batches already cover this correctly. Content left intact
+              below in case a real itemized-order vendor (e.g. a material supplier)
+              needs it back later.
+              Monthly Report tab hidden — felt redundant with Purchases (ordered vs. received).
               Content left intact below in case it's wanted back later. */}
           <TabsTrigger value="ingots" className="gap-1.5">
             <Scale className="h-4 w-4" />
