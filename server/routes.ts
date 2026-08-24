@@ -3,7 +3,7 @@ import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { verifyPassword } from "./auth";
 import { requireAuth, requireAdmin } from "./middleware";
-import { insertItemSchema, insertCustomerSchema, insertOrderSchema, insertOrderItemSchema, insertIndentSchema, insertShipmentSchema, insertBatchSchema, updateBatchSchema, insertInvoiceSchema, insertAccessorySchema, insertCasterSchema, insertPurchaseOrderSchema, insertPurchaseOrderItemSchema, insertIngotDispatchSchema, insertSkuWastageOverrideSchema, insertDieSchema, insertReworkSchema, insertVendorMetalStatementSchema, insertBomComponentSchema } from "@shared/schema";
+import { insertItemSchema, insertCustomerSchema, insertOrderSchema, insertOrderItemSchema, insertIndentSchema, insertShipmentSchema, insertBatchSchema, updateBatchSchema, insertInvoiceSchema, insertAccessorySchema, insertCasterSchema, insertPurchaseOrderSchema, insertPurchaseOrderItemSchema, insertIngotDispatchSchema, insertSkuWastageOverrideSchema, insertDieSchema, insertReworkSchema, insertVendorMetalStatementSchema, insertBomComponentSchema, insertOrderAccessoryShipmentSchema, insertCoatingConversionSchema } from "@shared/schema";
 import { db } from "./db/client";
 import { batches } from "@shared/schema";
 import { eq } from "drizzle-orm";
@@ -639,6 +639,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const allOrders = await storage.getAllOrders();
       const customers = await storage.getAllCustomers();
       const items = await storage.getAllItems();
+      const allAccessories = await storage.getAllAccessories();
       
       const ordersWithDetails = await Promise.all(
         allOrders.map(async (order) => {
@@ -646,6 +647,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           const orderItemsData = await storage.getOrderItemsByOrderId(order.id);
           const orderShipments = await storage.getShipmentsByOrderId(order.id);
           const total_shipped = orderShipments.reduce((sum, s) => sum + s.quantity_shipped, 0);
+          const accessoryItemsData = await storage.getOrderAccessoryItemsByOrderId(order.id);
           
           const line_items = orderItemsData.map(oi => {
             const item = items.find(i => i.id === oi.item_id);
@@ -654,7 +656,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
               item_id: oi.item_id,
               item_name: item?.name || '',
               sku: item?.sku || '',
-              quantity: oi.quantity
+              quantity: oi.quantity,
+              variant_note: oi.variant_note || null
+            };
+          });
+
+          const accessory_items = accessoryItemsData.map(ai => {
+            const accessory = allAccessories.find(a => a.id === ai.accessory_id);
+            return {
+              order_accessory_item_id: ai.id,
+              accessory_id: ai.accessory_id,
+              accessory_name: accessory?.name || '',
+              quantity: ai.quantity
             };
           });
 
@@ -662,7 +675,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
             ...order,
             customer_name: customer?.company_name || '',
             total_shipped,
-            line_items
+            line_items,
+            accessory_items
           };
         })
       );
@@ -683,6 +697,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const customer = await storage.getCustomerById(order.customer_id);
       const orderItemsData = await storage.getOrderItemsByOrderId(order.id);
       const items = await storage.getAllItems();
+      const allAccessories = await storage.getAllAccessories();
+      const accessoryItemsData = await storage.getOrderAccessoryItemsByOrderId(order.id);
+      const component_summary = await storage.getOrderComponentSummary(order.id);
 
       const line_items = orderItemsData.map(oi => {
         const item = items.find(i => i.id === oi.item_id);
@@ -692,14 +709,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
           item_name: item?.name || '',
           sku: item?.sku || '',
           quantity: oi.quantity,
-          is_kit: item?.is_kit || false
+          is_kit: item?.is_kit || false,
+          variant_note: oi.variant_note || null
+        };
+      });
+
+      const accessory_items = accessoryItemsData.map(ai => {
+        const accessory = allAccessories.find(a => a.id === ai.accessory_id);
+        return {
+          order_accessory_item_id: ai.id,
+          accessory_id: ai.accessory_id,
+          accessory_name: accessory?.name || '',
+          quantity: ai.quantity
         };
       });
 
       res.json({
         ...order,
         customer_name: customer?.company_name || '',
-        line_items
+        line_items,
+        accessory_items,
+        component_summary
       });
     } catch (error: any) {
       res.status(500).json({ message: error.message });
@@ -708,7 +738,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/orders", async (req, res) => {
     try {
-      const { line_items, ...orderData } = req.body;
+      const { line_items, accessory_items, ...orderData } = req.body;
       
       const validatedOrder = insertOrderSchema.parse(orderData);
       const order = await storage.createOrder(validatedOrder);
@@ -718,7 +748,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
           await storage.createOrderItem({
             order_id: order.id,
             item_id: lineItem.item_id,
-            quantity: lineItem.quantity
+            quantity: lineItem.quantity,
+            variant_note: lineItem.variant_note || null
+          });
+        }
+      }
+
+      if (accessory_items && accessory_items.length > 0) {
+        for (const accItem of accessory_items) {
+          await storage.createOrderAccessoryItem({
+            order_id: order.id,
+            accessory_id: accItem.accessory_id,
+            quantity: accItem.quantity
           });
         }
       }
@@ -726,6 +767,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const customer = await storage.getCustomerById(order.customer_id);
       const items = await storage.getAllItems();
       const orderItemsData = await storage.getOrderItemsByOrderId(order.id);
+      const allAccessories = await storage.getAllAccessories();
+      const accessoryItemsData = await storage.getOrderAccessoryItemsByOrderId(order.id);
 
       const line_items_response = orderItemsData.map(oi => {
         const item = items.find(i => i.id === oi.item_id);
@@ -735,14 +778,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
           item_name: item?.name || '',
           sku: item?.sku || '',
           quantity: oi.quantity,
-          is_kit: item?.is_kit || false
+          is_kit: item?.is_kit || false,
+          variant_note: oi.variant_note || null
+        };
+      });
+
+      const accessory_items_response = accessoryItemsData.map(ai => {
+        const accessory = allAccessories.find(a => a.id === ai.accessory_id);
+        return {
+          order_accessory_item_id: ai.id,
+          accessory_id: ai.accessory_id,
+          accessory_name: accessory?.name || '',
+          quantity: ai.quantity
         };
       });
 
       res.status(201).json({
         ...order,
         customer_name: customer?.company_name || '',
-        line_items: line_items_response
+        line_items: line_items_response,
+        accessory_items: accessory_items_response
       });
     } catch (error: any) {
       res.status(400).json({ message: error.message });
@@ -751,7 +806,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.patch("/api/orders/:id", async (req, res) => {
     try {
-      const { line_items, ...orderData } = req.body;
+      const { line_items, accessory_items, ...orderData } = req.body;
       
       const order = await storage.updateOrder(parseInt(req.params.id), orderData);
       if (!order) {
@@ -767,8 +822,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         for (const existingItem of existingItems) {
           const newLineItem = line_items.find((li: any) => li.item_id === existingItem.item_id);
           if (newLineItem) {
-            if (newLineItem.quantity !== existingItem.quantity) {
-              await storage.updateOrderItem(existingItem.id, { quantity: newLineItem.quantity });
+            if (newLineItem.quantity !== existingItem.quantity || (newLineItem.variant_note || null) !== (existingItem.variant_note || null)) {
+              await storage.updateOrderItem(existingItem.id, { quantity: newLineItem.quantity, variant_note: newLineItem.variant_note || null });
             }
           } else {
             await storage.deleteOrderItem(existingItem.id);
@@ -780,7 +835,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
             await storage.createOrderItem({
               order_id: order.id,
               item_id: lineItem.item_id,
-              quantity: lineItem.quantity
+              quantity: lineItem.quantity,
+              variant_note: lineItem.variant_note || null
+            });
+          }
+        }
+      }
+
+      if (accessory_items) {
+        const existingAccItems = await storage.getOrderAccessoryItemsByOrderId(order.id);
+
+        for (const existingAcc of existingAccItems) {
+          const newAccItem = accessory_items.find((ai: any) => ai.accessory_id === existingAcc.accessory_id);
+          if (newAccItem) {
+            if (newAccItem.quantity !== existingAcc.quantity) {
+              await storage.updateOrderAccessoryItem(existingAcc.id, { quantity: newAccItem.quantity });
+            }
+          } else {
+            await storage.deleteOrderAccessoryItem(existingAcc.id);
+          }
+        }
+
+        for (const accItem of accessory_items) {
+          if (!existingAccItems.some(ei => ei.accessory_id === accItem.accessory_id)) {
+            await storage.createOrderAccessoryItem({
+              order_id: order.id,
+              accessory_id: accItem.accessory_id,
+              quantity: accItem.quantity
             });
           }
         }
@@ -789,6 +870,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const customer = await storage.getCustomerById(order.customer_id);
       const items = await storage.getAllItems();
       const orderItemsData = await storage.getOrderItemsByOrderId(order.id);
+      const allAccessories = await storage.getAllAccessories();
+      const accessoryItemsData = await storage.getOrderAccessoryItemsByOrderId(order.id);
 
       const line_items_response = orderItemsData.map(oi => {
         const item = items.find(i => i.id === oi.item_id);
@@ -798,14 +881,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
           item_name: item?.name || '',
           sku: item?.sku || '',
           quantity: oi.quantity,
-          is_kit: item?.is_kit || false
+          is_kit: item?.is_kit || false,
+          variant_note: oi.variant_note || null
+        };
+      });
+
+      const accessory_items_response = accessoryItemsData.map(ai => {
+        const accessory = allAccessories.find(a => a.id === ai.accessory_id);
+        return {
+          order_accessory_item_id: ai.id,
+          accessory_id: ai.accessory_id,
+          accessory_name: accessory?.name || '',
+          quantity: ai.quantity
         };
       });
 
       res.json({
         ...order,
         customer_name: customer?.company_name || '',
-        line_items: line_items_response
+        line_items: line_items_response,
+        accessory_items: accessory_items_response
       });
     } catch (error: any) {
       res.status(500).json({ message: error.message });
@@ -1696,6 +1791,127 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       const updated = await storage.setSetting(req.params.key, value);
       res.json(updated);
+    } catch (error: any) {
+      res.status(400).json({ message: error.message });
+    }
+  });
+
+  // Shipment tracking for accessories ordered directly on an order (not via a kit)
+  app.get("/api/order-accessory-shipments/by-order/:orderId", async (req, res) => {
+    try {
+      res.json(await storage.getOrderAccessoryShipmentsByOrderId(parseInt(req.params.orderId)));
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/order-accessory-shipments", async (req, res) => {
+    try {
+      const validated = insertOrderAccessoryShipmentSchema.parse(req.body);
+      const created = await storage.createOrderAccessoryShipment(validated);
+      res.status(201).json(created);
+    } catch (error: any) {
+      res.status(400).json({ message: error.message });
+    }
+  });
+
+  app.delete("/api/order-accessory-shipments/:id", async (req, res) => {
+    try {
+      await storage.deleteOrderAccessoryShipment(parseInt(req.params.id));
+      res.status(204).send();
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Projections — manual monthly figures given to casters for planning
+  app.get("/api/projections/:month", async (req, res) => {
+    try {
+      const items = await storage.getAllItems();
+      const projectionsData = await storage.getProjectionsByMonth(req.params.month);
+      const projectionMap = new Map(projectionsData.map(p => [p.item_id, p]));
+      // Return one row per castable, non-kit item (bare + coated), so the UI
+      // always has a full list to edit — even for items with no projection yet
+      const response = items
+        .filter(i => i.is_active && !i.is_kit)
+        .map(item => {
+          const existing = projectionMap.get(item.id);
+          return {
+            item_id: item.id,
+            item_name: item.name,
+            sku: item.sku,
+            month: req.params.month,
+            quantity: existing?.quantity ?? 0,
+            notes: existing?.notes ?? null,
+          };
+        });
+      res.json(response);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/projections", async (req, res) => {
+    try {
+      const { item_id, month, quantity, notes } = req.body;
+      if (!item_id || !month || quantity === undefined) {
+        return res.status(400).json({ message: "item_id, month, and quantity are required" });
+      }
+      const result = await storage.upsertProjection(item_id, month, quantity, notes);
+      res.json(result);
+    } catch (error: any) {
+      res.status(400).json({ message: error.message });
+    }
+  });
+
+  // Coating conversions
+  app.get("/api/coating-conversions", async (req, res) => {
+    try {
+      const conversions = await storage.getAllCoatingConversions();
+      const items = await storage.getAllItems();
+      const allCasters = await storage.getAllCasters();
+      const itemMap = new Map(items.map(i => [i.id, i.name]));
+      const casterMap = new Map(allCasters.map(c => [c.id, c.name]));
+      res.json(conversions.map(c => ({
+        ...c,
+        bare_item_name: itemMap.get(c.bare_item_id) || '',
+        coated_item_name: itemMap.get(c.coated_item_id) || '',
+        caster_name: c.caster_id ? (casterMap.get(c.caster_id) || '') : '',
+      })));
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/coating-conversions", async (req, res) => {
+    try {
+      const validated = insertCoatingConversionSchema.parse(req.body);
+      const created = await storage.createCoatingConversion(validated);
+      res.status(201).json(created);
+    } catch (error: any) {
+      res.status(400).json({ message: error.message });
+    }
+  });
+
+  app.patch("/api/coating-conversions/:id/receive", async (req, res) => {
+    try {
+      const { quantity_received, quantity_rejected, received_date, color } = req.body;
+      if (quantity_received === undefined || quantity_rejected === undefined || !received_date) {
+        return res.status(400).json({ message: "quantity_received, quantity_rejected, and received_date are required" });
+      }
+      const updated = await storage.receiveCoatingConversion(parseInt(req.params.id), {
+        quantity_received, quantity_rejected, received_date, color
+      });
+      res.json(updated);
+    } catch (error: any) {
+      res.status(400).json({ message: error.message });
+    }
+  });
+
+  app.delete("/api/coating-conversions/:id", async (req, res) => {
+    try {
+      await storage.deleteCoatingConversion(parseInt(req.params.id));
+      res.status(204).send();
     } catch (error: any) {
       res.status(400).json({ message: error.message });
     }

@@ -16,9 +16,9 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import type { Item } from "@shared/schema";
+import type { Item, Accessory } from "@shared/schema";
 import { Plus, X } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 interface OrderFormModalProps {
   isOpen: boolean;
@@ -29,12 +29,20 @@ interface OrderFormModalProps {
   submitLabel: string;
   customers: Array<{ value: string; label: string }>;
   items: Item[];
+  accessories: Accessory[];
 }
 
 interface LineItem {
   item_id: number;
   item_name: string;
   sku: string;
+  quantity: number | string;
+  variant_note?: string;
+}
+
+interface AccessoryLineItem {
+  accessory_id: number;
+  accessory_name: string;
   quantity: number | string;
 }
 
@@ -47,6 +55,7 @@ export default function OrderFormModal({
   submitLabel,
   customers,
   items = [],
+  accessories = [],
 }: OrderFormModalProps) {
   const [poNumber, setPoNumber] = useState("");
   const [customerId, setCustomerId] = useState("");
@@ -58,12 +67,21 @@ export default function OrderFormModal({
   const [channel, setChannel] = useState("oem");
   const [notes, setNotes] = useState("");
   const [lineItems, setLineItems] = useState<LineItem[]>([]);
+  const [accessoryItems, setAccessoryItems] = useState<AccessoryLineItem[]>([]);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const wasOpenRef = useRef(isOpen);
 
   const activeItems = items.filter((item) => item.is_active);
+  const activeAccessories = accessories.filter((a) => a.status === "active");
 
+  // Only re-sync from initialData when the modal actually opens (closed ->
+  // open transition) — not on every parent re-render while it's already
+  // open, which would silently wipe out whatever's being typed (initialData
+  // is a fresh object reference on every parent render, e.g.
+  // `initialData={editingOrder || {}}`, so watching it directly re-fires
+  // this on completely unrelated re-renders elsewhere on the page).
   useEffect(() => {
-    if (isOpen) {
+    if (isOpen && !wasOpenRef.current) {
       setPoNumber(initialData.po_number || "");
       setCustomerId(initialData.customer_id || "");
       setOrderDate(initialData.order_date || "");
@@ -74,9 +92,18 @@ export default function OrderFormModal({
       setChannel(initialData.channel || "oem");
       setNotes(initialData.notes || "");
       setLineItems(initialData.line_items || []);
+      setAccessoryItems(
+        (initialData.accessory_items || []).map((ai: any) => ({
+          accessory_id: ai.accessory_id,
+          accessory_name: ai.accessory_name,
+          quantity: ai.quantity,
+        }))
+      );
       setErrors({});
     }
-  }, [isOpen, initialData]);
+    wasOpenRef.current = isOpen;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen]);
 
   const addLineItem = () => {
     setLineItems([
@@ -101,13 +128,53 @@ export default function OrderFormModal({
           item_name: selectedItem.name,
           sku: selectedItem.sku,
           quantity: newLineItems[index].quantity,
+          variant_note: newLineItems[index].variant_note,
         };
       }
     } else if (field === "quantity") {
       // Allow empty string while editing, will be validated on submit
       newLineItems[index][field] = value === "" ? "" : (parseInt(value) || 0);
+    } else if (field === "variant_note") {
+      newLineItems[index].variant_note = value;
     }
     setLineItems(newLineItems);
+  };
+
+  const addAccessoryItem = () => {
+    setAccessoryItems([
+      ...accessoryItems,
+      { accessory_id: 0, accessory_name: "", quantity: 1 },
+    ]);
+  };
+
+  const removeAccessoryItem = (index: number) => {
+    setAccessoryItems(accessoryItems.filter((_, i) => i !== index));
+  };
+
+  const updateAccessoryItem = (index: number, field: string, value: any) => {
+    const newAccessoryItems = [...accessoryItems];
+    if (field === "accessory_id") {
+      const selectedAccessory = activeAccessories.find(
+        (a) => a.id === parseInt(value)
+      );
+      if (selectedAccessory) {
+        newAccessoryItems[index] = {
+          accessory_id: selectedAccessory.id,
+          accessory_name: selectedAccessory.name,
+          quantity: newAccessoryItems[index].quantity,
+        };
+      }
+    } else if (field === "quantity") {
+      newAccessoryItems[index][field] = value === "" ? "" : (parseInt(value) || 0);
+    }
+    setAccessoryItems(newAccessoryItems);
+  };
+
+  const getAvailableAccessories = (currentIndex: number) => {
+    const selectedIds = accessoryItems
+      .map((ai, idx) => (idx !== currentIndex ? ai.accessory_id : null))
+      .filter((id) => id !== null);
+    return activeAccessories.filter((a) => !selectedIds.includes(a.id));
   };
 
   const validate = () => {
@@ -144,6 +211,21 @@ export default function OrderFormModal({
       }
     });
 
+    const accessoryIds = accessoryItems.map((ai) => ai.accessory_id).filter((id) => id > 0);
+    const uniqueAccessoryIds = new Set(accessoryIds);
+    if (accessoryIds.length !== uniqueAccessoryIds.size) {
+      newErrors.accessory_items_duplicate = "Cannot add the same accessory multiple times";
+    }
+    accessoryItems.forEach((ai, index) => {
+      if (!ai.accessory_id || ai.accessory_id === 0) {
+        newErrors[`accessory_item_${index}_accessory`] = "Please select an accessory";
+      }
+      const qty = typeof ai.quantity === 'string' ? parseInt(ai.quantity) : ai.quantity;
+      if (!qty || qty <= 0) {
+        newErrors[`accessory_item_${index}_quantity`] = "Quantity must be greater than 0";
+      }
+    });
+
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -166,6 +248,7 @@ export default function OrderFormModal({
       channel,
       notes,
       line_items: lineItems,
+      accessory_items: accessoryItems,
     };
 
     onSubmit(formData);
@@ -353,30 +436,141 @@ export default function OrderFormModal({
               {lineItems.map((lineItem, index) => (
                 <div
                   key={index}
-                  className="flex gap-2 items-start"
+                  className="space-y-1.5 pb-2 border-b last:border-b-0"
                   data-testid={`line-item-${index}`}
+                >
+                  <div className="flex gap-2 items-start">
+                    <div className="flex-1 space-y-1">
+                      <Select
+                        value={lineItem.item_id.toString()}
+                        onValueChange={(value) =>
+                          updateLineItem(index, "item_id", value)
+                        }
+                      >
+                        <SelectTrigger data-testid={`select-line-item-${index}`}>
+                          <SelectValue placeholder="Select Item" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {getAvailableItems(index).map((item) => (
+                            <SelectItem key={item.id} value={item.id.toString()}>
+                              {item.name} ({item.sku})
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      {errors[`line_item_${index}_item`] && (
+                        <p className="text-xs text-destructive">
+                          {errors[`line_item_${index}_item`]}
+                        </p>
+                      )}
+                    </div>
+
+                    <div className="w-24 space-y-1">
+                      <Input
+                        type="number"
+                        min="1"
+                        value={lineItem.quantity}
+                        onChange={(e) =>
+                          updateLineItem(index, "quantity", e.target.value)
+                        }
+                        data-testid={`input-quantity-${index}`}
+                      />
+                      {errors[`line_item_${index}_quantity`] && (
+                        <p className="text-xs text-destructive">
+                          {errors[`line_item_${index}_quantity`]}
+                        </p>
+                      )}
+                    </div>
+
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => removeLineItem(index)}
+                      data-testid={`button-remove-line-item-${index}`}
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
+                  </div>
+                  <Input
+                    value={lineItem.variant_note || ""}
+                    onChange={(e) => updateLineItem(index, "variant_note", e.target.value)}
+                    placeholder="Color/pattern variant, e.g. Ivory w/ red splutter (optional)"
+                    className="text-sm"
+                    data-testid={`input-variant-note-${index}`}
+                  />
+                </div>
+              ))}
+
+              {lineItems.length === 0 && (
+                <p className="text-sm text-muted-foreground text-center py-4">
+                  No items added yet. Click "Add Item" to add products to this
+                  order.
+                </p>
+              )}
+            </div>
+          </div>
+
+          <div className="border-t pt-4">
+            <div className="flex items-center justify-between mb-3">
+              <Label className="text-base font-semibold">Accessories</Label>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={addAccessoryItem}
+                data-testid="button-add-accessory-item"
+              >
+                <Plus className="h-4 w-4 mr-1" />
+                Add Accessory
+              </Button>
+            </div>
+            <p className="text-xs text-muted-foreground mb-2">
+              Loose accessories on this order — not part of a kit (e.g. extra handles or knobs alongside a bare casting).
+            </p>
+
+            {errors.accessory_items_duplicate && (
+              <p className="text-sm text-destructive mb-2">
+                {errors.accessory_items_duplicate}
+              </p>
+            )}
+
+            <div className="space-y-2">
+              {accessoryItems.length > 0 && (
+                <div className="flex gap-2 items-center px-2 pb-1 text-xs font-medium text-muted-foreground">
+                  <div className="flex-1">Accessory</div>
+                  <div className="w-24">Quantity</div>
+                  <div className="w-9"></div>
+                </div>
+              )}
+
+              {accessoryItems.map((accItem, index) => (
+                <div
+                  key={index}
+                  className="flex gap-2 items-start"
+                  data-testid={`accessory-item-${index}`}
                 >
                   <div className="flex-1 space-y-1">
                     <Select
-                      value={lineItem.item_id.toString()}
+                      value={accItem.accessory_id.toString()}
                       onValueChange={(value) =>
-                        updateLineItem(index, "item_id", value)
+                        updateAccessoryItem(index, "accessory_id", value)
                       }
                     >
-                      <SelectTrigger data-testid={`select-line-item-${index}`}>
-                        <SelectValue placeholder="Select Item" />
+                      <SelectTrigger data-testid={`select-accessory-item-${index}`}>
+                        <SelectValue placeholder="Select Accessory" />
                       </SelectTrigger>
                       <SelectContent>
-                        {getAvailableItems(index).map((item) => (
-                          <SelectItem key={item.id} value={item.id.toString()}>
-                            {item.name} ({item.sku})
+                        {getAvailableAccessories(index).map((a) => (
+                          <SelectItem key={a.id} value={a.id.toString()}>
+                            {a.name}
                           </SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
-                    {errors[`line_item_${index}_item`] && (
+                    {errors[`accessory_item_${index}_accessory`] && (
                       <p className="text-xs text-destructive">
-                        {errors[`line_item_${index}_item`]}
+                        {errors[`accessory_item_${index}_accessory`]}
                       </p>
                     )}
                   </div>
@@ -385,15 +579,15 @@ export default function OrderFormModal({
                     <Input
                       type="number"
                       min="1"
-                      value={lineItem.quantity}
+                      value={accItem.quantity}
                       onChange={(e) =>
-                        updateLineItem(index, "quantity", e.target.value)
+                        updateAccessoryItem(index, "quantity", e.target.value)
                       }
-                      data-testid={`input-quantity-${index}`}
+                      data-testid={`input-accessory-quantity-${index}`}
                     />
-                    {errors[`line_item_${index}_quantity`] && (
+                    {errors[`accessory_item_${index}_quantity`] && (
                       <p className="text-xs text-destructive">
-                        {errors[`line_item_${index}_quantity`]}
+                        {errors[`accessory_item_${index}_quantity`]}
                       </p>
                     )}
                   </div>
@@ -402,18 +596,17 @@ export default function OrderFormModal({
                     type="button"
                     variant="ghost"
                     size="icon"
-                    onClick={() => removeLineItem(index)}
-                    data-testid={`button-remove-line-item-${index}`}
+                    onClick={() => removeAccessoryItem(index)}
+                    data-testid={`button-remove-accessory-item-${index}`}
                   >
                     <X className="h-4 w-4" />
                   </Button>
                 </div>
               ))}
 
-              {lineItems.length === 0 && (
-                <p className="text-sm text-muted-foreground text-center py-4">
-                  No items added yet. Click "Add Item" to add products to this
-                  order.
+              {accessoryItems.length === 0 && (
+                <p className="text-sm text-muted-foreground text-center py-2">
+                  No loose accessories on this order.
                 </p>
               )}
             </div>

@@ -87,6 +87,8 @@ export async function bootstrapDatabase() {
     // bare/nonstick/ceramic casting variants, each tracked as its own item
     await addColumnIfNotExists("items", "is_kit INTEGER NOT NULL DEFAULT 0", "is_kit");
     await addColumnIfNotExists("items", "finish TEXT", "finish");
+    // Links a coated item back to the bare item it's converted from
+    await addColumnIfNotExists("items", "bare_item_id INTEGER REFERENCES items(id)", "bare_item_id");
 
     // Create customers table
     await db.run(sql`
@@ -125,6 +127,8 @@ export async function bootstrapDatabase() {
         quantity INTEGER NOT NULL
       )
     `);
+    // Optional color/pattern variant note for coated finishes — informational only
+    await addColumnIfNotExists("order_items", "variant_note TEXT", "variant_note");
 
     // Create indents table
     await db.run(sql`
@@ -158,6 +162,8 @@ export async function bootstrapDatabase() {
         is_depleted INTEGER NOT NULL DEFAULT 0
       )
     `);
+    // Color/pattern for a coated batch, set by a coating conversion
+    await addColumnIfNotExists("batches", "color TEXT", "color");
 
     // Create invoices table
     await db.run(sql`
@@ -772,6 +778,68 @@ export async function bootstrapDatabase() {
         component_item_id INTEGER REFERENCES items(id),
         component_accessory_id INTEGER REFERENCES accessories(id),
         batch_id INTEGER REFERENCES batches(id),
+        quantity INTEGER NOT NULL
+      )
+    `);
+
+    // Accessories ordered directly on an order (not via a kit's BOM)
+    await db.run(sql`
+      CREATE TABLE IF NOT EXISTS order_accessory_items (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        order_id INTEGER NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+        accessory_id INTEGER NOT NULL REFERENCES accessories(id),
+        quantity INTEGER NOT NULL
+      )
+    `);
+
+    // Shipment record for an order_accessory_item
+    await db.run(sql`
+      CREATE TABLE IF NOT EXISTS order_accessory_shipments (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        order_id INTEGER NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+        order_accessory_item_id INTEGER NOT NULL REFERENCES order_accessory_items(id) ON DELETE CASCADE,
+        accessory_id INTEGER NOT NULL REFERENCES accessories(id),
+        quantity_shipped INTEGER NOT NULL,
+        shipment_date TEXT NOT NULL
+      )
+    `);
+
+    // Monthly manual projections given to casters for planning
+    await db.run(sql`
+      CREATE TABLE IF NOT EXISTS projections (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        item_id INTEGER NOT NULL REFERENCES items(id),
+        month TEXT NOT NULL,
+        quantity INTEGER NOT NULL DEFAULT 0,
+        notes TEXT
+      )
+    `);
+
+    // Coating conversion: bare castings sent for coating, coated pieces received back
+    await db.run(sql`
+      CREATE TABLE IF NOT EXISTS coating_conversions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        bare_item_id INTEGER NOT NULL REFERENCES items(id),
+        coated_item_id INTEGER NOT NULL REFERENCES items(id),
+        caster_id INTEGER REFERENCES casters(id),
+        quantity_sent INTEGER NOT NULL,
+        sent_date TEXT NOT NULL,
+        color TEXT,
+        quantity_received INTEGER,
+        quantity_rejected INTEGER,
+        received_date TEXT,
+        output_batch_id INTEGER REFERENCES batches(id) ON DELETE SET NULL,
+        status TEXT NOT NULL DEFAULT 'pending',
+        notes TEXT
+      )
+    `);
+
+    // Tracks exactly which bare batch(es) a coating conversion drew from
+    await db.run(sql`
+      CREATE TABLE IF NOT EXISTS coating_conversion_allocations (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        coating_conversion_id INTEGER NOT NULL REFERENCES coating_conversions(id) ON DELETE CASCADE,
+        batch_id INTEGER NOT NULL REFERENCES batches(id),
         quantity INTEGER NOT NULL
       )
     `);

@@ -101,6 +101,22 @@ const itemFields = [
   },
 ];
 
+// Bare item link needs the live items list, so it's built dynamically rather
+// than as a static option list — only meaningful for coated items (finish =
+// nonstick/ceramic); this is what lets Coating Conversions know which bare
+// casting a coated SKU actually comes from.
+const getBareItemField = (allItems: Item[], currentItemId?: number) => ({
+  name: "bare_item_id",
+  label: "Bare Item (for coated SKUs — which bare casting this comes from)",
+  type: "select" as const,
+  options: [
+    { value: "none", label: "N/A / not a coated item" },
+    ...allItems
+      .filter((i) => i.is_active && !i.is_kit && (!i.finish || i.finish === "bare") && i.id !== currentItemId)
+      .map((i) => ({ value: i.id.toString(), label: `${i.name} (${i.sku})` })),
+  ],
+});
+
 const getItemColumns = (onManageBom: (item: Item) => void) => [
   { key: "name", label: "Product Name", isPrimary: true },
   { key: "sku", label: "SKU" },
@@ -300,6 +316,11 @@ export default function Items() {
       // Kits are never cast themselves — no weight of their own to reconcile
       unit_weight_kg: isKit ? null : (data.unit_weight_kg ? parseFloat(data.unit_weight_kg) : null),
       finish: isKit ? null : (data.finish === "none" ? null : data.finish),
+      // Only meaningful for coated finishes — a bare item or kit has no bare source of its own
+      bare_item_id:
+        isKit || !data.finish || data.finish === "none" || data.finish === "bare" || data.bare_item_id === "none" || !data.bare_item_id
+          ? null
+          : parseInt(data.bare_item_id),
     };
 
     if (editingItem) {
@@ -386,7 +407,7 @@ export default function Items() {
         }}
         onSubmit={handleSubmit}
         title={editingItem ? "Edit Item" : "Add New Item"}
-        fields={itemFields}
+        fields={[...itemFields.slice(0, 6), getBareItemField(items, editingItem?.id), ...itemFields.slice(6)]}
         initialData={
           editingItem
             ? {
@@ -394,10 +415,11 @@ export default function Items() {
                 is_active: editingItem.is_active ? "true" : "false",
                 is_kit: editingItem.is_kit ? "true" : "false",
                 finish: editingItem.finish ?? "none",
+                bare_item_id: editingItem.bare_item_id?.toString() ?? "none",
                 desired_safety_stock: editingItem.desired_safety_stock || "0",
                 unit_weight_kg: editingItem.unit_weight_kg ?? "",
               }
-            : { is_active: "true", is_kit: "false", finish: "none" }
+            : { is_active: "true", is_kit: "false", finish: "none", bare_item_id: "none" }
         }
         submitLabel={editingItem ? "Update Item" : "Add Item"}
       />

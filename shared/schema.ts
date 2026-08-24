@@ -34,6 +34,12 @@ export const items = sqliteTable("items", {
   // Optional tag for casting variants — 'bare' | 'nonstick' | 'ceramic' — since each
   // finish is tracked as its own item/SKU with its own stock, not a shared pool.
   finish: text("finish"),
+  // For a coated item (finish = nonstick/ceramic), points back to the bare
+  // item it's converted from — e.g. "Kadai 240 NS" -> "Kadai 240". This is
+  // the link that lets Indent trace kit/coated demand down to what you'd
+  // actually order from a caster (always the bare casting). Null for bare
+  // items and kits.
+  bare_item_id: integer("bare_item_id").references((): any => items.id),
   notes: text("notes"),
 });
 
@@ -95,6 +101,10 @@ export const orderItems = sqliteTable("order_items", {
     .notNull()
     .references(() => items.id),
   quantity: integer("quantity").notNull(),
+  // Free-text color/pattern variant for coated finishes (e.g. "Ivory w/ red
+  // splutter") — doesn't affect inventory, since stock stays tracked at the
+  // finish level (NS/Ceramic), not per color variant. Purely informational.
+  variant_note: text("variant_note"),
 });
 
 export const insertOrderItemSchema = createInsertSchema(orderItems).omit({
@@ -140,6 +150,10 @@ export const batches = sqliteTable("batches", {
   is_manual_quantity: integer("is_manual_quantity", { mode: "boolean" }).notNull().default(false),
   quality_status: text("quality_status").notNull().default("Good"),
   purchase_order_id: integer("purchase_order_id").references(() => purchaseOrders.id, { onDelete: "set null" }),
+  // Color/pattern for a coated batch (e.g. "Black", "Ivory") — set when a
+  // batch comes out of a coating conversion. Metadata only, doesn't split
+  // stock into separate pools (bare/NS/CER stays the only real split).
+  color: text("color"),
   notes: text("notes"),
   is_depleted: integer("is_depleted", { mode: "boolean" }).notNull().default(false),
 });
@@ -504,3 +518,129 @@ export const insertKitShipmentAllocationSchema = createInsertSchema(kitShipmentA
 
 export type InsertKitShipmentAllocation = z.infer<typeof insertKitShipmentAllocationSchema>;
 export type KitShipmentAllocation = typeof kitShipmentAllocations.$inferSelect;
+
+// Accessories ordered directly on an order — NOT as part of a kit's BOM, but
+// as their own line (e.g. a bare casting order that also needs loose handles
+// or extra knobs). Kept as a fully separate table from order_items rather
+// than making item_id nullable there, since order_items.item_id is relied
+// on (NOT NULL) throughout Dashboard/Indent/shipment logic — this keeps
+// those completely untouched and adds the new capability purely additively.
+export const orderAccessoryItems = sqliteTable("order_accessory_items", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  order_id: integer("order_id")
+    .notNull()
+    .references(() => orders.id, { onDelete: "cascade" }),
+  accessory_id: integer("accessory_id")
+    .notNull()
+    .references(() => accessories.id),
+  quantity: integer("quantity").notNull(),
+});
+
+export const insertOrderAccessoryItemSchema = createInsertSchema(orderAccessoryItems).omit({
+  id: true,
+});
+
+export type InsertOrderAccessoryItem = z.infer<typeof insertOrderAccessoryItemSchema>;
+export type OrderAccessoryItem = typeof orderAccessoryItems.$inferSelect;
+
+// Shipment record for an accessory ordered directly on an order (see
+// order_accessory_items above). Deducts straight from accessories.stock_on_hand
+// on create, restores it on delete — same reversible pattern as normal shipments.
+export const orderAccessoryShipments = sqliteTable("order_accessory_shipments", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  order_id: integer("order_id")
+    .notNull()
+    .references(() => orders.id, { onDelete: "cascade" }),
+  order_accessory_item_id: integer("order_accessory_item_id")
+    .notNull()
+    .references(() => orderAccessoryItems.id, { onDelete: "cascade" }),
+  accessory_id: integer("accessory_id")
+    .notNull()
+    .references(() => accessories.id),
+  quantity_shipped: integer("quantity_shipped").notNull(),
+  shipment_date: text("shipment_date").notNull(),
+});
+
+export const insertOrderAccessoryShipmentSchema = createInsertSchema(orderAccessoryShipments).omit({
+  id: true,
+});
+
+export type InsertOrderAccessoryShipment = z.infer<typeof insertOrderAccessoryShipmentSchema>;
+export type OrderAccessoryShipment = typeof orderAccessoryShipments.$inferSelect;
+
+// Monthly projections — a plain, manually-entered "how many pieces do we
+// expect to need next month" number per item, given to casters for planning.
+// Deliberately NOT derived from orders/stock like Indent's numbers — this is
+// a judgment call (can include unconfirmed/potential demand) that sits
+// alongside Indent's calculated figure for comparison, not instead of it.
+export const projections = sqliteTable("projections", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  item_id: integer("item_id")
+    .notNull()
+    .references(() => items.id),
+  month: text("month").notNull(), // 'YYYY-MM'
+  quantity: integer("quantity").notNull().default(0),
+  notes: text("notes"),
+});
+
+export const insertProjectionSchema = createInsertSchema(projections).omit({
+  id: true,
+});
+
+export type InsertProjection = z.infer<typeof insertProjectionSchema>;
+export type Projection = typeof projections.$inferSelect;
+
+// Coating conversion: bare castings sent out for coating, coated pieces come
+// back (some rejected at Onyx's own QC on the way back — separate from the
+// caster's original QC). Deducts from bare item's batches on send (FIFO,
+// tracked per-batch via coating_conversion_allocations for reversibility,
+// same pattern as kit shipments); creates a new batch for the coated item on
+// receive. Whether this is paper-trailed as a Delivery Chalan or a Sale
+// Invoice on the accounting side doesn't matter here — physically it's the
+// same movement either way, tracked once.
+export const coatingConversions = sqliteTable("coating_conversions", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  bare_item_id: integer("bare_item_id")
+    .notNull()
+    .references(() => items.id),
+  coated_item_id: integer("coated_item_id")
+    .notNull()
+    .references(() => items.id),
+  caster_id: integer("caster_id").references(() => casters.id), // the coater vendor, optional
+  quantity_sent: integer("quantity_sent").notNull(),
+  sent_date: text("sent_date").notNull(),
+  color: text("color"),
+  quantity_received: integer("quantity_received"), // null until received
+  quantity_rejected: integer("quantity_rejected"),
+  received_date: text("received_date"),
+  output_batch_id: integer("output_batch_id").references(() => batches.id, { onDelete: "set null" }),
+  status: text("status").notNull().default("pending"), // 'pending' | 'received'
+  notes: text("notes"),
+});
+
+export const insertCoatingConversionSchema = createInsertSchema(coatingConversions).omit({
+  id: true,
+});
+
+export type InsertCoatingConversion = z.infer<typeof insertCoatingConversionSchema>;
+export type CoatingConversion = typeof coatingConversions.$inferSelect;
+
+// Records exactly which bare batch(es) a coating conversion drew from, so it
+// can be precisely reversed on delete — same reasoning as kit_shipment_allocations.
+export const coatingConversionAllocations = sqliteTable("coating_conversion_allocations", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  coating_conversion_id: integer("coating_conversion_id")
+    .notNull()
+    .references(() => coatingConversions.id, { onDelete: "cascade" }),
+  batch_id: integer("batch_id")
+    .notNull()
+    .references(() => batches.id),
+  quantity: integer("quantity").notNull(),
+});
+
+export const insertCoatingConversionAllocationSchema = createInsertSchema(coatingConversionAllocations).omit({
+  id: true,
+});
+
+export type InsertCoatingConversionAllocation = z.infer<typeof insertCoatingConversionAllocationSchema>;
+export type CoatingConversionAllocation = typeof coatingConversionAllocations.$inferSelect;
