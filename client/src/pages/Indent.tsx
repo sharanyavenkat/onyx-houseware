@@ -5,6 +5,7 @@ import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { ChevronDown, ChevronRight, HelpCircle } from 'lucide-react';
 import { useState, useMemo, useEffect, useRef } from 'react';
@@ -30,8 +31,11 @@ export default function IndentPage() {
     queryKey: ['/api/items'],
   });
 
-  // Filter to only active items
-  const items = useMemo(() => allItems.filter(item => item.is_active), [allItems]);
+  // Filter to only active items — kits are excluded here too, since they
+  // aren't castable themselves (no caster, no weight, no wastage rate).
+  // Their demand should flow through to their bare components instead, not
+  // show up as their own line here.
+  const items = useMemo(() => allItems.filter(item => item.is_active && !item.is_kit), [allItems]);
 
   // Fetch indents for selected month
   const { data: indents = [], isFetched: indentsFetched, isLoading: indentsLoading } = useQuery<Indent[]>({
@@ -99,6 +103,7 @@ export default function IndentPage() {
       return {
         id: item.id,
         item_name: item.name,
+        finish: item.finish,
         on_hand_stock: currentOnHandStock,
         expected_receipts: expectedReceipts,
         desired_safety_stock: item.desired_safety_stock,
@@ -212,6 +217,39 @@ export default function IndentPage() {
     if (field === 'expected_receipts' || field === 'current_safety_stock') {
       setDirtyItems(prev => new Set(prev).add(itemId));
     }
+  };
+
+  // Group by finish — same categories as the Items page, so casting demand
+  // is organized the way you'd actually order it from a caster.
+  const GROUP_ORDER = ["bare", "nonstick", "ceramic", "ungrouped"] as const;
+  const GROUP_LABELS: Record<(typeof GROUP_ORDER)[number], string> = {
+    bare: "Bare Castings",
+    nonstick: "Non-Stick Coated",
+    ceramic: "Ceramic Coated",
+    ungrouped: "Ungrouped",
+  };
+  const groupedIndentData = useMemo(() => {
+    const groups: Record<string, typeof indentData> = { bare: [], nonstick: [], ceramic: [], ungrouped: [] };
+    for (const row of indentData) {
+      if (row.finish === "bare" || row.finish === "nonstick" || row.finish === "ceramic") {
+        groups[row.finish].push(row);
+      } else {
+        groups.ungrouped.push(row);
+      }
+    }
+    return groups;
+  }, [indentData]);
+
+  const [expandedIndentGroups, setExpandedIndentGroups] = useState<Set<string>>(
+    new Set(["bare", "nonstick", "ceramic", "ungrouped"])
+  );
+  const toggleIndentGroup = (key: string) => {
+    setExpandedIndentGroups(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
   };
 
   const indentColumns = [
@@ -427,13 +465,47 @@ export default function IndentPage() {
         </div>
       </Collapsible>
 
-      {/* Indent Table */}
-      <DataTable 
-        columns={indentColumns}
-        data={indentData}
-        title="Monthly Indent Report"
-        searchable={false}
-      />
+      {/* Indent Table — grouped by finish */}
+      <div className="space-y-3">
+        {GROUP_ORDER.map((groupKey) => {
+          const groupRows = groupedIndentData[groupKey];
+          if (groupRows.length === 0) return null;
+          const isOpen = expandedIndentGroups.has(groupKey);
+          return (
+            <Collapsible key={groupKey} open={isOpen} onOpenChange={() => toggleIndentGroup(groupKey)}>
+              <Card>
+                <CollapsibleTrigger asChild>
+                  <button type="button" className="w-full text-left">
+                    <CardHeader className="flex flex-row items-center justify-between py-4">
+                      <CardTitle className="text-base">
+                        {GROUP_LABELS[groupKey]}
+                        <span className="text-sm font-normal text-muted-foreground ml-2">
+                          ({groupRows.length})
+                        </span>
+                      </CardTitle>
+                      {isOpen ? (
+                        <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                      ) : (
+                        <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                      )}
+                    </CardHeader>
+                  </button>
+                </CollapsibleTrigger>
+                <CollapsibleContent>
+                  <CardContent className="pt-0">
+                    <DataTable
+                      columns={indentColumns}
+                      data={groupRows}
+                      title=""
+                      searchable={false}
+                    />
+                  </CardContent>
+                </CollapsibleContent>
+              </Card>
+            </Collapsible>
+          );
+        })}
+      </div>
     </div>
   );
 }
