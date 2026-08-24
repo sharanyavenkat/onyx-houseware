@@ -107,7 +107,7 @@ const itemFields = [
 // casting a coated SKU actually comes from.
 const getBareItemField = (allItems: Item[], currentItemId?: number) => ({
   name: "bare_item_id",
-  label: "Bare Item (for coated SKUs — which bare casting this comes from)",
+  label: "Bare Item (for coated SKUs only — not used for kits, which use BOM contents instead)",
   type: "select" as const,
   options: [
     { value: "none", label: "N/A / not a coated item" },
@@ -407,7 +407,11 @@ export default function Items() {
         }}
         onSubmit={handleSubmit}
         title={editingItem ? "Edit Item" : "Add New Item"}
-        fields={[...itemFields.slice(0, 6), getBareItemField(items, editingItem?.id), ...itemFields.slice(6)]}
+        fields={
+          editingItem?.is_kit
+            ? itemFields
+            : [...itemFields.slice(0, 6), getBareItemField(items, editingItem?.id), ...itemFields.slice(6)]
+        }
         initialData={
           editingItem
             ? {
