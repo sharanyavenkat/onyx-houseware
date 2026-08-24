@@ -106,11 +106,23 @@ export default function FormModal({
 }: FormModalProps) {
   const [formData, setFormData] = useState<Record<string, any>>(initialData);
   const formRef = useRef<HTMLFormElement>(null);
+  const wasOpenRef = useRef(isOpen);
 
-  // Update form data when initialData changes (for editing)
+  // Only re-sync form data from initialData when the modal is actually
+  // opening (transitioning from closed to open) — NOT on every parent
+  // re-render while it's already open. initialData is passed as a fresh
+  // object literal on every parent render (e.g. `initialData={editingItem ||
+  // {...}}`), so watching it directly would silently overwrite whatever
+  // someone is mid-typing whenever the parent re-renders for any unrelated
+  // reason (e.g. a mutation elsewhere on the page invalidating a query).
   useEffect(() => {
-    setFormData(initialData);
-  }, [initialData]);
+    if (isOpen && !wasOpenRef.current) {
+      setFormData(initialData);
+      setErrors({});
+    }
+    wasOpenRef.current = isOpen;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen]);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
   const handleInputChange = (name: string, value: any) => {

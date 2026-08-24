@@ -24,12 +24,12 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import type { Item, Caster } from "@shared/schema";
+import type { Item, Caster, Die } from "@shared/schema";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useForm, useWatch } from "react-hook-form";
 import { z } from "zod";
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 
 const batchFormSchema = z.object({
@@ -94,6 +94,33 @@ export default function BatchFormModal({
 
   const watchedCasterId = useWatch({ control: form.control, name: "caster_id" });
   const watchedItemId = useWatch({ control: form.control, name: "item_id" });
+
+  // Defaults to showing only SKUs this caster has an active casting die for —
+  // falls back to all items if die records are incomplete for this caster.
+  const [showAllItems, setShowAllItems] = useState(false);
+  const { data: dies = [] } = useQuery<Die[]>({
+    queryKey: ['/api/dies'],
+  });
+
+  const casterHasDies = !!watchedCasterId && watchedCasterId !== "none" && dies.some(
+    d => d.caster_id === parseInt(watchedCasterId) && d.mould_type === 'casting' && d.status === 'active'
+  );
+
+  const availableItems = useMemo(() => {
+    const active = items.filter((item) => item.is_active && !item.is_kit);
+    if (showAllItems || !watchedCasterId || watchedCasterId === "none") {
+      return active;
+    }
+    const casterDieItemIds = new Set(
+      dies
+        .filter(d => d.caster_id === parseInt(watchedCasterId) && d.mould_type === 'casting' && d.status === 'active')
+        .map(d => d.item_id)
+    );
+    if (casterDieItemIds.size === 0) {
+      return active;
+    }
+    return active.filter(i => casterDieItemIds.has(i.id));
+  }, [items, dies, watchedCasterId, showAllItems]);
   
   type POWithItems = { id: number; po_number: string; order_date: string; expected_delivery_date: string | null; status: string; line_items: { item_id: number; item_name: string; quantity_ordered: number; quantity_received: number }[] };
   
@@ -205,39 +232,6 @@ export default function BatchFormModal({
           <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4">
             <FormField
               control={form.control}
-              name="item_id"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Item</FormLabel>
-                  <Select
-                    value={field.value}
-                    onValueChange={(value) => {
-                      field.onChange(value);
-                      handleItemOrDateChange();
-                    }}
-                  >
-                    <FormControl>
-                      <SelectTrigger data-testid="select-batch-item">
-                        <SelectValue placeholder="Select item" />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                      {items
-                        .filter((item) => item.is_active && !item.is_kit)
-                        .map((item) => (
-                          <SelectItem key={item.id} value={item.id.toString()}>
-                            {item.name} ({item.sku})
-                          </SelectItem>
-                        ))}
-                    </SelectContent>
-                  </Select>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            <FormField
-              control={form.control}
               name="caster_id"
               render={({ field }) => (
                 <FormItem>
@@ -263,6 +257,48 @@ export default function BatchFormModal({
                       ))}
                     </SelectContent>
                   </Select>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name="item_id"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Item</FormLabel>
+                  <Select
+                    value={field.value}
+                    onValueChange={(value) => {
+                      field.onChange(value);
+                      handleItemOrDateChange();
+                    }}
+                  >
+                    <FormControl>
+                      <SelectTrigger data-testid="select-batch-item">
+                        <SelectValue placeholder="Select item" />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      {availableItems.map((item) => (
+                        <SelectItem key={item.id} value={item.id.toString()}>
+                          {item.name} ({item.sku})
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {watchedCasterId && watchedCasterId !== "none" && (
+                    <p className="text-xs text-muted-foreground">
+                      {showAllItems ? (
+                        <>Showing all items. <button type="button" className="underline" onClick={() => setShowAllItems(false)}>Show only this caster's dies</button></>
+                      ) : casterHasDies ? (
+                        <>Showing only SKUs this caster has an active die for. <button type="button" className="underline" onClick={() => setShowAllItems(true)}>Show all items</button></>
+                      ) : (
+                        <>No die records found for this caster yet, showing all items.</>
+                      )}
+                    </p>
+                  )}
                   <FormMessage />
                 </FormItem>
               )}

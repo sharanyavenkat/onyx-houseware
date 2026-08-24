@@ -9,6 +9,7 @@ import { queryClient } from "./lib/queryClient";
 import Sidebar from "@/components/Sidebar";
 import Accessories from "@/pages/Accessories";
 import Batches from "@/pages/Batches";
+import CoatingConversions from "@/pages/CoatingConversions";
 import Casters from "@/pages/Casters";
 import CasterDetails from "@/pages/CasterDetails";
 import Customers from "@/pages/Customers";
@@ -37,6 +38,7 @@ function AuthenticatedApp() {
             <Route path="/indent" component={Indent} />
             <Route path="/items" component={Items} />
             <Route path="/batches" component={Batches} />
+            <Route path="/coating" component={CoatingConversions} />
             <Route path="/casters" component={Casters} />
             <Route path="/casters/:id" component={CasterDetails} />
             <Route path="/accessories" component={Accessories} />

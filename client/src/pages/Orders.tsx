@@ -11,7 +11,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
 import { formatDate } from "@/lib/dateUtils";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import type { Customer, Item, Order } from "@shared/schema";
+import type { Customer, Item, Order, Accessory } from "@shared/schema";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import { useLocation } from "wouter";
@@ -119,6 +119,10 @@ export default function Orders() {
 
   const { data: items = [] } = useQuery<Item[]>({
     queryKey: ["/api/items"],
+  });
+
+  const { data: accessories = [] } = useQuery<Accessory[]>({
+    queryKey: ["/api/accessories"],
   });
 
   const { data: customers = [] } = useQuery<Customer[]>({
@@ -416,6 +420,7 @@ export default function Orders() {
         submitLabel={editingOrder ? "Update Order" : "Add Order"}
         customers={customerOptions}
         items={items}
+        accessories={accessories}
       />
 
       <ConfirmDialog

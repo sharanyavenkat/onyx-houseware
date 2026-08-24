@@ -18,7 +18,8 @@ import {
   Box,
   Wrench,
   Factory,
-  Settings
+  Settings,
+  Paintbrush
 } from "lucide-react";
 import { useState } from "react";
 import { Link, useLocation } from "wouter";
@@ -34,6 +35,7 @@ const menuItems = [
   { icon: FileText, label: "Orders", href: "/orders" },
   { icon: ClipboardList, label: "Indent", href: "/indent" },
   { icon: Box, label: "Batches", href: "/batches" },
+  { icon: Paintbrush, label: "Coating", href: "/coating" },
   { icon: Factory, label: "Vendors", href: "/casters" },
   { icon: Package, label: "Items", href: "/items" },
   { icon: Wrench, label: "Accessories", href: "/accessories" },

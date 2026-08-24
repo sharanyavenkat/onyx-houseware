@@ -38,6 +38,15 @@ import {
   type VendorMetalStatement,
   type InsertVendorMetalStatement,
   type BomComponent,
+  type OrderAccessoryItem,
+  type InsertOrderAccessoryItem,
+  type OrderAccessoryShipment,
+  type InsertOrderAccessoryShipment,
+  type Projection,
+  type InsertProjection,
+  type CoatingConversion,
+  type InsertCoatingConversion,
+  type CoatingConversionAllocation,
   type InsertBomComponent,
   type AppSetting,
   type KitShipmentAllocation,
@@ -61,6 +70,11 @@ import {
   reworks,
   vendorMetalStatements,
   bomComponents,
+  orderAccessoryItems,
+  orderAccessoryShipments,
+  projections,
+  coatingConversions,
+  coatingConversionAllocations,
   appSettings,
   kitShipmentAllocations,
   SETTINGS_KEYS,
@@ -264,6 +278,33 @@ export interface IStorage {
   // Restores stock exactly per a shipment's recorded allocations (undoing
   // shipKitComponents), then deletes those allocation records.
   reverseKitShipmentAllocations(shipmentId: number): Promise<void>;
+
+  getOrderAccessoryItemsByOrderId(orderId: number): Promise<OrderAccessoryItem[]>;
+  createOrderAccessoryItem(item: InsertOrderAccessoryItem): Promise<OrderAccessoryItem>;
+  updateOrderAccessoryItem(id: number, item: Partial<InsertOrderAccessoryItem>): Promise<OrderAccessoryItem | undefined>;
+  deleteOrderAccessoryItem(id: number): Promise<void>;
+
+  getOrderAccessoryShipmentsByOrderId(orderId: number): Promise<OrderAccessoryShipment[]>;
+  createOrderAccessoryShipment(shipment: InsertOrderAccessoryShipment): Promise<OrderAccessoryShipment>;
+  deleteOrderAccessoryShipment(id: number): Promise<void>;
+
+  // Order component summary: decomposes every line on an order (kits via
+  // BOM, direct items, accessory lines) into a flat rollup of "this order
+  // actually represents X of item A, Y of item B, Z of accessory C" —
+  // closes the gap between "100 CS10 kits" and "100 tawas, 100 kadais...".
+  getOrderComponentSummary(orderId: number): Promise<{
+    items: Array<{ itemId: number; itemName: string; quantity: number }>;
+    accessories: Array<{ accessoryId: number; accessoryName: string; quantity: number }>;
+  }>;
+
+  getProjectionsByMonth(month: string): Promise<Projection[]>;
+  upsertProjection(itemId: number, month: string, quantity: number, notes?: string | null): Promise<Projection>;
+
+  getAllCoatingConversions(): Promise<CoatingConversion[]>;
+  getCoatingConversionById(id: number): Promise<CoatingConversion | undefined>;
+  createCoatingConversion(data: InsertCoatingConversion): Promise<CoatingConversion>;
+  receiveCoatingConversion(id: number, data: { quantity_received: number; quantity_rejected: number; received_date: string; color?: string | null }): Promise<CoatingConversion>;
+  deleteCoatingConversion(id: number): Promise<void>;
 }
 
 export class DbStorage implements IStorage {
@@ -1998,6 +2039,270 @@ export class DbStorage implements IStorage {
     }
 
     await db.delete(kitShipmentAllocations).where(eq(kitShipmentAllocations.shipment_id, shipmentId));
+  }
+
+  // --- Accessories ordered directly on an order (not via a kit's BOM) ---
+  async getOrderAccessoryItemsByOrderId(orderId: number): Promise<OrderAccessoryItem[]> {
+    return await db.select().from(orderAccessoryItems).where(eq(orderAccessoryItems.order_id, orderId));
+  }
+
+  async createOrderAccessoryItem(item: InsertOrderAccessoryItem): Promise<OrderAccessoryItem> {
+    const [created] = await db.insert(orderAccessoryItems).values(item).returning();
+    return created;
+  }
+
+  async updateOrderAccessoryItem(id: number, item: Partial<InsertOrderAccessoryItem>): Promise<OrderAccessoryItem | undefined> {
+    const [updated] = await db.update(orderAccessoryItems).set(item).where(eq(orderAccessoryItems.id, id)).returning();
+    return updated;
+  }
+
+  async deleteOrderAccessoryItem(id: number): Promise<void> {
+    await db.delete(orderAccessoryItems).where(eq(orderAccessoryItems.id, id));
+  }
+
+  async getOrderAccessoryShipmentsByOrderId(orderId: number): Promise<OrderAccessoryShipment[]> {
+    return await db.select().from(orderAccessoryShipments).where(eq(orderAccessoryShipments.order_id, orderId));
+  }
+
+  async createOrderAccessoryShipment(shipment: InsertOrderAccessoryShipment): Promise<OrderAccessoryShipment> {
+    const [acc] = await db.select().from(accessories).where(eq(accessories.id, shipment.accessory_id));
+    if (!acc) {
+      throw new Error(`Accessory #${shipment.accessory_id} not found`);
+    }
+    if (acc.stock_on_hand < shipment.quantity_shipped) {
+      throw new Error(`Not enough stock of "${acc.name}": need ${shipment.quantity_shipped}, have ${acc.stock_on_hand}`);
+    }
+
+    const [created] = await db.insert(orderAccessoryShipments).values(shipment).returning();
+    await db.update(accessories)
+      .set({ stock_on_hand: acc.stock_on_hand - shipment.quantity_shipped })
+      .where(eq(accessories.id, acc.id));
+    return created;
+  }
+
+  async deleteOrderAccessoryShipment(id: number): Promise<void> {
+    const [shipment] = await db.select().from(orderAccessoryShipments).where(eq(orderAccessoryShipments.id, id));
+    if (!shipment) return;
+
+    const [acc] = await db.select().from(accessories).where(eq(accessories.id, shipment.accessory_id));
+    if (acc) {
+      await db.update(accessories)
+        .set({ stock_on_hand: acc.stock_on_hand + shipment.quantity_shipped })
+        .where(eq(accessories.id, acc.id));
+    }
+    await db.delete(orderAccessoryShipments).where(eq(orderAccessoryShipments.id, id));
+  }
+
+  // --- Order component summary (kit decomposition for planning/visibility) ---
+  async getOrderComponentSummary(orderId: number): Promise<{
+    items: Array<{ itemId: number; itemName: string; quantity: number }>;
+    accessories: Array<{ accessoryId: number; accessoryName: string; quantity: number }>;
+  }> {
+    const orderLineItems = await this.getOrderItemsByOrderId(orderId);
+    const orderAccItems = await this.getOrderAccessoryItemsByOrderId(orderId);
+    const allItems = await db.select().from(items);
+    const itemMap = new Map(allItems.map(i => [i.id, i]));
+    const allAccessories = await db.select().from(accessories);
+    const accessoryMap = new Map(allAccessories.map(a => [a.id, a]));
+
+    const itemTotals = new Map<number, number>();
+    const accessoryTotals = new Map<number, number>();
+
+    for (const li of orderLineItems) {
+      const item = itemMap.get(li.item_id);
+      if (!item) continue;
+      if (item.is_kit) {
+        const components = await this.getBomComponentsByParentId(item.id);
+        for (const c of components) {
+          const qty = c.qty_per_kit * li.quantity;
+          if (c.component_type === "item" && c.component_item_id) {
+            itemTotals.set(c.component_item_id, (itemTotals.get(c.component_item_id) || 0) + qty);
+          } else if (c.component_type === "accessory" && c.component_accessory_id) {
+            accessoryTotals.set(c.component_accessory_id, (accessoryTotals.get(c.component_accessory_id) || 0) + qty);
+          }
+        }
+      } else {
+        itemTotals.set(item.id, (itemTotals.get(item.id) || 0) + li.quantity);
+      }
+    }
+
+    for (const ai of orderAccItems) {
+      accessoryTotals.set(ai.accessory_id, (accessoryTotals.get(ai.accessory_id) || 0) + ai.quantity);
+    }
+
+    return {
+      items: Array.from(itemTotals.entries()).map(([itemId, quantity]) => ({
+        itemId,
+        itemName: itemMap.get(itemId)?.name || `Item #${itemId}`,
+        quantity,
+      })),
+      accessories: Array.from(accessoryTotals.entries()).map(([accessoryId, quantity]) => ({
+        accessoryId,
+        accessoryName: accessoryMap.get(accessoryId)?.name || `Accessory #${accessoryId}`,
+        quantity,
+      })),
+    };
+  }
+
+  // --- Projections (manual, for casters — not derived from orders/stock) ---
+  async getProjectionsByMonth(month: string): Promise<Projection[]> {
+    return await db.select().from(projections).where(eq(projections.month, month));
+  }
+
+  async upsertProjection(itemId: number, month: string, quantity: number, notes?: string | null): Promise<Projection> {
+    const [existing] = await db.select().from(projections)
+      .where(and(eq(projections.item_id, itemId), eq(projections.month, month)));
+    if (existing) {
+      const [updated] = await db.update(projections)
+        .set({ quantity, notes: notes ?? existing.notes })
+        .where(eq(projections.id, existing.id))
+        .returning();
+      return updated;
+    }
+    const [created] = await db.insert(projections)
+      .values({ item_id: itemId, month, quantity, notes: notes ?? null })
+      .returning();
+    return created;
+  }
+
+  // --- Coating conversions ---
+  async getAllCoatingConversions(): Promise<CoatingConversion[]> {
+    return await db.select().from(coatingConversions).orderBy(desc(coatingConversions.sent_date));
+  }
+
+  async getCoatingConversionById(id: number): Promise<CoatingConversion | undefined> {
+    const [c] = await db.select().from(coatingConversions).where(eq(coatingConversions.id, id));
+    return c;
+  }
+
+  /**
+   * Sends bare castings for coating: deducts from the bare item's active
+   * batches (FIFO), recording exactly which batch(es) were drawn from (via
+   * coating_conversion_allocations) so this is reversible on delete — same
+   * pattern as kit shipments. Creates the conversion in 'pending' status;
+   * nothing happens to the coated item's stock until receiveCoatingConversion
+   * is called.
+   */
+  async createCoatingConversion(data: InsertCoatingConversion): Promise<CoatingConversion> {
+    const activeBatches = (await this.getActiveBatchesByItemId(data.bare_item_id))
+      .sort((a, b) => a.received_date.localeCompare(b.received_date)); // FIFO
+    const available = activeBatches.reduce((sum, b) => sum + b.quantity_remaining, 0);
+    if (available < data.quantity_sent) {
+      const [bareItem] = await db.select().from(items).where(eq(items.id, data.bare_item_id));
+      throw new Error(`Not enough stock of "${bareItem?.name || 'bare item'}" to send for coating: need ${data.quantity_sent}, have ${available}`);
+    }
+
+    const [created] = await db.insert(coatingConversions).values(data).returning();
+
+    let remaining = data.quantity_sent;
+    for (const batch of activeBatches) {
+      if (remaining <= 0) break;
+      const take = Math.min(remaining, batch.quantity_remaining);
+      if (take <= 0) continue;
+      await this.adjustBatchQuantities(batch.batch_number, { shipped: take });
+      await db.insert(coatingConversionAllocations).values({
+        coating_conversion_id: created.id,
+        batch_id: batch.id,
+        quantity: take,
+      });
+      remaining -= take;
+    }
+
+    return created;
+  }
+
+  /**
+   * Records what came back from coating: creates a new batch for the coated
+   * item (quantity_received/rejected/produced/remaining, same shape as any
+   * other batch), links it back to the conversion, marks the conversion
+   * 'received'. Rejections here are Onyx's own QC on the way back — separate
+   * from whatever the caster rejected when the bare casting was first made.
+   */
+  async receiveCoatingConversion(
+    id: number,
+    data: { quantity_received: number; quantity_rejected: number; received_date: string; color?: string | null }
+  ): Promise<CoatingConversion> {
+    const conversion = await this.getCoatingConversionById(id);
+    if (!conversion) {
+      throw new Error(`Coating conversion #${id} not found`);
+    }
+    if (conversion.status === "received") {
+      throw new Error("This conversion has already been received");
+    }
+
+    const quantityProduced = data.quantity_received - data.quantity_rejected;
+    if (quantityProduced < 0) {
+      throw new Error("Rejected quantity cannot exceed received quantity");
+    }
+
+    const batchNumber = `CC${conversion.id}-${data.received_date.replace(/-/g, "")}`;
+    const [outputBatch] = await db.insert(batches).values({
+      item_id: conversion.coated_item_id,
+      caster_id: conversion.caster_id,
+      batch_number: batchNumber,
+      received_date: data.received_date,
+      quantity_received: data.quantity_received,
+      quantity_rejected: data.quantity_rejected,
+      quantity_produced: quantityProduced,
+      quantity_remaining: quantityProduced,
+      quality_status: "Good",
+      color: data.color ?? conversion.color ?? null,
+      notes: `From coating conversion #${conversion.id}`,
+    }).returning();
+
+    const [updated] = await db.update(coatingConversions)
+      .set({
+        quantity_received: data.quantity_received,
+        quantity_rejected: data.quantity_rejected,
+        received_date: data.received_date,
+        color: data.color ?? conversion.color,
+        output_batch_id: outputBatch.id,
+        status: "received",
+      })
+      .where(eq(coatingConversions.id, id))
+      .returning();
+
+    return updated;
+  }
+
+  /**
+   * Reverses a coating conversion: restores the bare batches it drew from
+   * (via its allocations), and if it was already received, removes the
+   * output batch too — unless some of that output has already shipped, in
+   * which case deletion is blocked rather than silently corrupting stock.
+   */
+  async deleteCoatingConversion(id: number): Promise<void> {
+    const conversion = await this.getCoatingConversionById(id);
+    if (!conversion) return;
+
+    if (conversion.output_batch_id) {
+      const [outputBatch] = await db.select().from(batches).where(eq(batches.id, conversion.output_batch_id));
+      if (outputBatch && outputBatch.quantity_remaining !== outputBatch.quantity_produced) {
+        throw new Error(
+          "Cannot delete this conversion — some of the coated stock it produced has already been shipped. " +
+          "Reverse those shipments first."
+        );
+      }
+    }
+
+    const allocations = await db.select().from(coatingConversionAllocations)
+      .where(eq(coatingConversionAllocations.coating_conversion_id, id));
+    for (const a of allocations) {
+      const [batch] = await db.select().from(batches).where(eq(batches.id, a.batch_id));
+      if (batch) {
+        const restoredRemaining = batch.quantity_remaining + a.quantity;
+        await db.update(batches)
+          .set({ quantity_remaining: restoredRemaining, is_depleted: restoredRemaining <= 0 })
+          .where(eq(batches.id, a.batch_id));
+      }
+    }
+    await db.delete(coatingConversionAllocations).where(eq(coatingConversionAllocations.coating_conversion_id, id));
+
+    if (conversion.output_batch_id) {
+      await db.delete(batches).where(eq(batches.id, conversion.output_batch_id));
+    }
+
+    await db.delete(coatingConversions).where(eq(coatingConversions.id, id));
   }
 }
 
