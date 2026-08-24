@@ -43,15 +43,13 @@ const batchFormSchema = z.object({
   quantity_produced: z.string().min(1, "Final quantity is required"),
   quality_status: z.enum(["Good", "Acceptable", "Rejected"]),
   notes: z.string().optional(),
-}).refine((data) => {
-  if (data.caster_id && data.caster_id !== "" && data.caster_id !== "none") {
-    return data.purchase_order_id && data.purchase_order_id !== "" && data.purchase_order_id !== "none";
-  }
-  return true;
-}, {
-  message: "Purchase order is required when a caster is selected",
-  path: ["purchase_order_id"],
 });
+// PO is deliberately optional even with a caster selected — most casters
+// work off a running metal allocation (e.g. "sent 2.5 tons, whatever comes
+// back after that date counts toward it"), not a discrete quantity-ordered
+// PO. The reconciliation math already matches dispatches to batches by
+// caster + running balance, not by a specific PO, so nothing else depends
+// on this being set.
 
 type BatchFormData = z.infer<typeof batchFormSchema>;
 
@@ -304,13 +302,16 @@ export default function BatchFormModal({
               )}
             />
 
+            {/* Purchase Order field hidden — doesn't fit how metal actually works with
+                casters (running allocation, not itemized quantity orders). Kept in
+                code, unrendered, in case a real itemized-order vendor needs it later.
             {watchedCasterId && watchedCasterId !== "" && watchedCasterId !== "none" && (
               <FormField
                 control={form.control}
                 name="purchase_order_id"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Purchase Order *</FormLabel>
+                    <FormLabel>Purchase Order (Optional)</FormLabel>
                     {matchingPOs.length > 0 ? (
                       <Select
                         value={field.value || "none"}
@@ -334,13 +335,14 @@ export default function BatchFormModal({
                         </SelectContent>
                       </Select>
                     ) : (
-                      <p className="text-sm text-muted-foreground">No confirmed purchase orders found for this caster. Please create one first.</p>
+                      <p className="text-sm text-muted-foreground">No confirmed purchase orders for this caster — that's fine, leave this blank if there isn't one for this batch.</p>
                     )}
                     <FormMessage />
                   </FormItem>
                 )}
               />
             )}
+            */}
 
             <FormField
               control={form.control}
