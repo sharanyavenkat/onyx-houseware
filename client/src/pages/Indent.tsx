@@ -174,6 +174,31 @@ export default function IndentPage() {
       }));
   }, [indentDataWithCoatingRollup]);
 
+  // Needs attention = something's actually due (Total to Order > 0) OR
+  // safety stock has drifted to Low/Critical — the latter matters even with
+  // nothing currently pending, since the goal is a steady buffer at the
+  // factory, not just reacting once an order forces the issue. Sorted by
+  // urgency (biggest shortfall first, safety severity as tiebreak) rather
+  // than alphabetically, since these are the rows actually worth reading top
+  // to bottom. Shown fully open — no need to hunt through everything else
+  // just to see the handful of items that matter today.
+  const severityRank: Record<string, number> = { critical: 2, low: 1, good: 0 };
+  const needsAttention = (row: (typeof mergedIndentRows)[number]) =>
+    row.required_to_order > 0 || row.safety_stock_status === 'low' || row.safety_stock_status === 'critical';
+
+  const attentionRows = useMemo(
+    () =>
+      mergedIndentRows
+        .filter(needsAttention)
+        .sort((a, b) =>
+          b.required_to_order - a.required_to_order ||
+          (severityRank[b.safety_stock_status] ?? 0) - (severityRank[a.safety_stock_status] ?? 0)
+        ),
+    [mergedIndentRows]
+  );
+  const otherRows = useMemo(() => mergedIndentRows.filter(row => !needsAttention(row)), [mergedIndentRows]);
+  const [showAllItems, setShowAllItems] = useState(false);
+
   // Save mutation for indent data
   const saveIndentMutation = useMutation({
     mutationFn: async (data: { item_id: number; month: string; expected_receipts: number; current_safety_stock: number }[]) => {
@@ -506,110 +531,168 @@ export default function IndentPage() {
         </div>
       </Collapsible>
 
-      {/* Indent — one collapsible row per bare item (coated items linked to
-          it merge into its breakdown, rather than showing as a second row) */}
-      <Accordion type="multiple" className="space-y-2">
-        {mergedIndentRows.map((row) => {
-          const finishLabel: Record<string, string> = { bare: "Bare", nonstick: "NS", ceramic: "CER" };
-          const breakdownColumns = indentColumns.filter(c => c.key !== "item_name" && c.key !== "required_for_coating");
-          const hasLinkedCoated = row.linkedCoatedItems.length > 0;
-          return (
-            <AccordionItem
-              key={row.id}
-              value={`item-${row.id}`}
-              className="border rounded-lg px-4"
-              data-testid={`indent-item-${row.id}`}
-            >
-              <AccordionTrigger className="hover:no-underline py-3">
-                <div className="flex flex-1 items-center justify-between gap-3 pr-4">
-                  <div className="flex items-center gap-2 text-left flex-wrap">
-                    <span className="font-medium">{row.item_name}</span>
-                    {row.finish && (
-                      <Badge variant="outline" className="text-xs">{finishLabel[row.finish] || row.finish}</Badge>
-                    )}
-                    {row.linkedCoatedItems.map(c => (
-                      <Badge key={c.id} variant="secondary" className="text-xs">
-                        {finishLabel[c.finish || ''] || c.finish} linked
-                      </Badge>
-                    ))}
-                  </div>
-                  <div className="flex items-center gap-2 shrink-0">
-                    <span className="text-xs text-muted-foreground hidden sm:inline">Total to Order</span>
-                    <span className={`font-mono font-bold ${row.required_to_order > 0 ? 'text-destructive' : 'text-muted-foreground'}`}>
-                      {row.required_to_order}
-                    </span>
-                  </div>
-                </div>
-              </AccordionTrigger>
-              <AccordionContent className="pb-4 pt-1">
-                {hasLinkedCoated ? (
-                  <div className="space-y-4">
-                    <div>
-                      <div className="text-sm font-semibold mb-2">Bare</div>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-3">
-                        {breakdownColumns.map((col) => (
-                          <div key={col.key}>
-                            <div className="text-xs text-muted-foreground mb-1">{col.label}</div>
-                            <div>{col.render ? (col.render as any)((row as any)[col.key], row) : (row as any)[col.key]}</div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
+      {/* Indent — items needing attention shown fully open (no clicking
+          needed); everything else tucked behind a toggle */}
+      {(() => {
+        const finishLabel: Record<string, string> = { bare: "Bare", nonstick: "NS", ceramic: "CER" };
+        const breakdownColumnsFor = (row: (typeof mergedIndentRows)[number]) =>
+          indentColumns.filter(c => c.key !== "item_name" && c.key !== "required_for_coating");
 
-                    <div className="border-t pt-3">
-                      <div className="text-sm font-semibold mb-2">Coated</div>
-                      <div className="space-y-3">
-                        {row.linkedCoatedItems.map(c => (
-                          <div key={c.id} className="rounded-md bg-muted/30 p-3">
-                            <div className="flex items-center gap-2 mb-2">
-                              <span className="font-medium text-sm">{c.item_name}</span>
-                              <Badge variant="outline" className="text-xs">{finishLabel[c.finish || ''] || c.finish}</Badge>
-                            </div>
-                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-2 text-sm">
-                              <div>
-                                <div className="text-xs text-muted-foreground">On Hand</div>
-                                <div className="font-mono">{c.on_hand_stock}</div>
-                              </div>
-                              <div>
-                                <div className="text-xs text-muted-foreground">Pending Orders</div>
-                                <div className="font-mono">{c.pending_order_qty}</div>
-                              </div>
-                              <div>
-                                <div className="text-xs text-muted-foreground">Own Shortfall</div>
-                                <div className={`font-mono ${c.direct_required_to_order > 0 ? 'text-destructive' : ''}`}>
-                                  {c.direct_required_to_order}
-                                </div>
-                              </div>
-                            </div>
+        const RowHeader = ({ row }: { row: (typeof mergedIndentRows)[number] }) => (
+          <div className="flex flex-1 items-center justify-between gap-3 pr-4 flex-wrap">
+            <div className="flex items-center gap-2 text-left flex-wrap">
+              <span className="font-medium">{row.item_name}</span>
+              {row.finish && (
+                <Badge variant="outline" className="text-xs">{finishLabel[row.finish] || row.finish}</Badge>
+              )}
+              {row.linkedCoatedItems.map(c => (
+                <Badge key={c.id} variant="secondary" className="text-xs">
+                  {finishLabel[c.finish || ''] || c.finish} linked
+                </Badge>
+              ))}
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <span className="text-xs text-muted-foreground hidden sm:inline">Total to Order</span>
+              <span className={`font-mono font-bold ${row.required_to_order > 0 ? 'text-destructive' : 'text-muted-foreground'}`}>
+                {row.required_to_order}
+              </span>
+            </div>
+          </div>
+        );
+
+        const RowBreakdown = ({ row }: { row: (typeof mergedIndentRows)[number] }) => {
+          const breakdownColumns = breakdownColumnsFor(row);
+          const hasLinkedCoated = row.linkedCoatedItems.length > 0;
+          if (!hasLinkedCoated) {
+            return (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-3">
+                {breakdownColumns.map((col) => (
+                  <div key={col.key}>
+                    <div className="text-xs text-muted-foreground mb-1">{col.label}</div>
+                    <div>{col.render ? (col.render as any)((row as any)[col.key], row) : (row as any)[col.key]}</div>
+                  </div>
+                ))}
+              </div>
+            );
+          }
+          return (
+            <div className="space-y-4">
+              <div>
+                <div className="text-sm font-semibold mb-2">Bare</div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-3">
+                  {breakdownColumns.map((col) => (
+                    <div key={col.key}>
+                      <div className="text-xs text-muted-foreground mb-1">{col.label}</div>
+                      <div>{col.render ? (col.render as any)((row as any)[col.key], row) : (row as any)[col.key]}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="border-t pt-3">
+                <div className="text-sm font-semibold mb-2">Coated</div>
+                <div className="space-y-3">
+                  {row.linkedCoatedItems.map(c => (
+                    <div key={c.id} className="rounded-md bg-muted/30 p-3">
+                      <div className="flex items-center gap-2 mb-2">
+                        <span className="font-medium text-sm">{c.item_name}</span>
+                        <Badge variant="outline" className="text-xs">{finishLabel[c.finish || ''] || c.finish}</Badge>
+                      </div>
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-2 text-sm">
+                        <div>
+                          <div className="text-xs text-muted-foreground">On Hand</div>
+                          <div className="font-mono">{c.on_hand_stock}</div>
+                        </div>
+                        <div>
+                          <div className="text-xs text-muted-foreground">Pending Orders</div>
+                          <div className="font-mono">{c.pending_order_qty}</div>
+                        </div>
+                        <div>
+                          <div className="text-xs text-muted-foreground">Own Shortfall</div>
+                          <div className={`font-mono ${c.direct_required_to_order > 0 ? 'text-destructive' : ''}`}>
+                            {c.direct_required_to_order}
                           </div>
-                        ))}
-                        <div className="flex items-center justify-between text-sm px-1">
-                          <span className="text-muted-foreground">Coated Total (rolls into Bare demand below)</span>
-                          <span className="font-mono font-semibold text-purple-600 dark:text-purple-400">{row.required_for_coating}</span>
                         </div>
                       </div>
                     </div>
+                  ))}
+                  <div className="flex items-center justify-between text-sm px-1">
+                    <span className="text-muted-foreground">Coated Total (rolls into Bare demand below)</span>
+                    <span className="font-mono font-semibold text-purple-600 dark:text-purple-400">{row.required_for_coating}</span>
+                  </div>
+                </div>
+              </div>
 
-                    <div className="border-t pt-3 flex items-center justify-between">
-                      <span className="text-sm font-semibold">Total to Order (Bare + Coated)</span>
-                      <span className="font-mono font-bold text-destructive">{row.required_to_order}</span>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-3">
-                    {breakdownColumns.map((col) => (
-                      <div key={col.key}>
-                        <div className="text-xs text-muted-foreground mb-1">{col.label}</div>
-                        <div>{col.render ? (col.render as any)((row as any)[col.key], row) : (row as any)[col.key]}</div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </AccordionContent>
-            </AccordionItem>
+              <div className="border-t pt-3 flex items-center justify-between">
+                <span className="text-sm font-semibold">Total to Order (Bare + Coated)</span>
+                <span className="font-mono font-bold text-destructive">{row.required_to_order}</span>
+              </div>
+            </div>
           );
-        })}
-      </Accordion>
+        };
+
+        return (
+          <div className="space-y-6">
+            <div className="space-y-3">
+              <h2 className="text-sm font-semibold text-muted-foreground">
+                Needs Attention ({attentionRows.length})
+              </h2>
+              {attentionRows.length === 0 ? (
+                <p className="text-sm text-muted-foreground py-4">
+                  Nothing needs attention right now — every item is at or above its safety stock, with no pending shortfalls.
+                </p>
+              ) : (
+                <div className="space-y-3">
+                  {attentionRows.map((row) => (
+                    <div
+                      key={row.id}
+                      className="border rounded-lg px-4 py-3"
+                      data-testid={`indent-item-${row.id}`}
+                    >
+                      <RowHeader row={row} />
+                      <div className="pt-3 mt-3 border-t">
+                        <RowBreakdown row={row} />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {otherRows.length > 0 && (
+              <div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowAllItems(!showAllItems)}
+                  data-testid="button-toggle-other-items"
+                >
+                  {showAllItems ? 'Hide' : 'Show'} {otherRows.length} other item{otherRows.length !== 1 ? 's' : ''} not needing attention
+                </Button>
+                {showAllItems && (
+                  <Accordion type="multiple" className="space-y-2 mt-3">
+                    {otherRows.map((row) => (
+                      <AccordionItem
+                        key={row.id}
+                        value={`item-${row.id}`}
+                        className="border rounded-lg px-4"
+                        data-testid={`indent-item-${row.id}`}
+                      >
+                        <AccordionTrigger className="hover:no-underline py-3">
+                          <RowHeader row={row} />
+                        </AccordionTrigger>
+                        <AccordionContent className="pb-4 pt-1">
+                          <RowBreakdown row={row} />
+                        </AccordionContent>
+                      </AccordionItem>
+                    ))}
+                  </Accordion>
+                )}
+              </div>
+            )}
+          </div>
+        );
+      })()}
     </div>
   );
 }
