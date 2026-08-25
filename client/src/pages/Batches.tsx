@@ -13,6 +13,8 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from "@/components/ui/accordion";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
 import { formatDate } from "@/lib/dateUtils";
@@ -22,7 +24,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import BatchFormModal from "../components/BatchFormModal";
 import BatchEditDialog from "../components/BatchEditDialog";
-import { Edit } from "lucide-react";
+import { Edit, ChevronDown, ChevronRight } from "lucide-react";
 
 export default function Batches() {
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
@@ -112,6 +114,42 @@ export default function Batches() {
     
     return grouped;
   }, [filteredBatches]);
+
+  // Group by finish — same categories as Items/Indent, so this stays easy
+  // to scan as the number of batches grows. Only items that actually have
+  // batches make it into a group (kits never do, so they self-exclude).
+  const GROUP_ORDER = ["bare", "nonstick", "ceramic", "ungrouped"] as const;
+  const GROUP_LABELS: Record<(typeof GROUP_ORDER)[number], string> = {
+    bare: "Bare Castings",
+    nonstick: "Non-Stick Coated",
+    ceramic: "Ceramic Coated",
+    ungrouped: "Ungrouped",
+  };
+  const groupedItemsWithBatches = useMemo(() => {
+    const groups: Record<string, Item[]> = { bare: [], nonstick: [], ceramic: [], ungrouped: [] };
+    for (const item of sortedItems) {
+      const itemBatches = batchesByItem.get(item.id);
+      if (!itemBatches || itemBatches.length === 0) continue;
+      if (item.finish === "bare" || item.finish === "nonstick" || item.finish === "ceramic") {
+        groups[item.finish].push(item);
+      } else {
+        groups.ungrouped.push(item);
+      }
+    }
+    return groups;
+  }, [sortedItems, batchesByItem]);
+
+  const [expandedBatchGroups, setExpandedBatchGroups] = useState<Set<string>>(
+    new Set(["bare", "nonstick", "ceramic", "ungrouped"])
+  );
+  const toggleBatchGroup = (key: string) => {
+    setExpandedBatchGroups(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
 
   // Update mutation for editing batch
   const updateMutation = useMutation({
@@ -239,16 +277,43 @@ export default function Batches() {
         </div>
       </div>
 
-      {/* Batches List - Grouped by Item */}
+      {/* Batches List - Grouped by finish category, then by Item within each */}
       {batchesByItem.size === 0 ? (
         <div className="text-center py-12 text-muted-foreground">
           No batches found. Add a batch to get started.
         </div>
       ) : (
-        <Accordion type="multiple" className="space-y-3">
-          {sortedItems.map((item) => {
-            const itemBatches = batchesByItem.get(item.id);
-            if (!itemBatches || itemBatches.length === 0) return null;
+        <div className="space-y-3">
+          {GROUP_ORDER.map((groupKey) => {
+            const groupItems = groupedItemsWithBatches[groupKey];
+            if (groupItems.length === 0) return null;
+            const isGroupOpen = expandedBatchGroups.has(groupKey);
+            return (
+              <Collapsible key={groupKey} open={isGroupOpen} onOpenChange={() => toggleBatchGroup(groupKey)}>
+                <Card>
+                  <CollapsibleTrigger asChild>
+                    <button type="button" className="w-full text-left">
+                      <CardHeader className="flex flex-row items-center justify-between py-4">
+                        <CardTitle className="text-base">
+                          {GROUP_LABELS[groupKey]}
+                          <span className="text-sm font-normal text-muted-foreground ml-2">
+                            ({groupItems.length})
+                          </span>
+                        </CardTitle>
+                        {isGroupOpen ? (
+                          <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                        ) : (
+                          <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                        )}
+                      </CardHeader>
+                    </button>
+                  </CollapsibleTrigger>
+                  <CollapsibleContent>
+                    <CardContent className="pt-0">
+                      <Accordion type="multiple" className="space-y-3">
+                        {groupItems.map((item) => {
+                          const itemBatches = batchesByItem.get(item.id);
+                          if (!itemBatches || itemBatches.length === 0) return null;
 
             // Calculate summary stats for this item
             const totalRemaining = itemBatches.reduce((sum, b) => sum + b.quantity_remaining, 0);
@@ -479,7 +544,14 @@ export default function Batches() {
               </AccordionItem>
             );
           })}
-        </Accordion>
+                      </Accordion>
+                    </CardContent>
+                  </CollapsibleContent>
+                </Card>
+              </Collapsible>
+            );
+          })}
+        </div>
       )}
 
       {/* Create Batch Modal */}
