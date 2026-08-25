@@ -5,7 +5,12 @@ import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from '@/components/ui/accordion';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { ChevronDown, ChevronRight, HelpCircle } from 'lucide-react';
 import { useState, useMemo, useEffect, useRef } from 'react';
@@ -104,6 +109,7 @@ export default function IndentPage() {
         id: item.id,
         item_name: item.name,
         finish: item.finish,
+        bare_item_id: item.bare_item_id,
         on_hand_stock: currentOnHandStock,
         expected_receipts: expectedReceipts,
         desired_safety_stock: item.desired_safety_stock,
@@ -121,6 +127,33 @@ export default function IndentPage() {
       };
     });
   }, [sortedItems, indents, pendingOrdersByItem, editingCells, onHandStock]);
+
+  // Second pass: a bare item's real requirement isn't just its own direct
+  // orders — it also needs to cover whatever's needed for coating, since
+  // every coated piece has to start as a bare casting. Each coated item's
+  // own required_to_order already nets out its own stock/safety/pending
+  // (via calculateInventoryMetrics above), so this rolls up the NET amount
+  // still needed, not the raw order quantity — a coated item sitting on
+  // plenty of its own stock correctly contributes 0 here.
+  const indentDataWithCoatingRollup = useMemo(() => {
+    const requiredForCoatingByBareId = new Map<number, number>();
+    for (const row of indentData) {
+      if (row.bare_item_id) {
+        requiredForCoatingByBareId.set(
+          row.bare_item_id,
+          (requiredForCoatingByBareId.get(row.bare_item_id) || 0) + row.required_to_order
+        );
+      }
+    }
+    return indentData.map(row => {
+      const requiredForCoating = requiredForCoatingByBareId.get(row.id) || 0;
+      return {
+        ...row,
+        required_for_coating: requiredForCoating,
+        required_to_order: row.required_to_order + requiredForCoating,
+      };
+    });
+  }, [indentData]);
 
   // Save mutation for indent data
   const saveIndentMutation = useMutation({
@@ -219,39 +252,6 @@ export default function IndentPage() {
     }
   };
 
-  // Group by finish — same categories as the Items page, so casting demand
-  // is organized the way you'd actually order it from a caster.
-  const GROUP_ORDER = ["bare", "nonstick", "ceramic", "ungrouped"] as const;
-  const GROUP_LABELS: Record<(typeof GROUP_ORDER)[number], string> = {
-    bare: "Bare Castings",
-    nonstick: "Non-Stick Coated",
-    ceramic: "Ceramic Coated",
-    ungrouped: "Ungrouped",
-  };
-  const groupedIndentData = useMemo(() => {
-    const groups: Record<string, typeof indentData> = { bare: [], nonstick: [], ceramic: [], ungrouped: [] };
-    for (const row of indentData) {
-      if (row.finish === "bare" || row.finish === "nonstick" || row.finish === "ceramic") {
-        groups[row.finish].push(row);
-      } else {
-        groups.ungrouped.push(row);
-      }
-    }
-    return groups;
-  }, [indentData]);
-
-  const [expandedIndentGroups, setExpandedIndentGroups] = useState<Set<string>>(
-    new Set(["bare", "nonstick", "ceramic", "ungrouped"])
-  );
-  const toggleIndentGroup = (key: string) => {
-    setExpandedIndentGroups(prev => {
-      const next = new Set(prev);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      return next;
-    });
-  };
-
   const indentColumns = [
     { key: 'item_name', label: 'Item Name' },
     { 
@@ -339,6 +339,19 @@ export default function IndentPage() {
       )
     },
     { 
+      key: 'required_for_coating', 
+      label: 'Req. for Coating', 
+      render: (value: number, row: any) => (
+        value > 0 ? (
+          <span className="font-semibold text-purple-600 dark:text-purple-400" data-testid={`text-coating-${row.id}`} title="Net demand rolled up from coated items linked to this bare item">
+            {value}
+          </span>
+        ) : (
+          <span className="text-muted-foreground">—</span>
+        )
+      )
+    },
+    { 
       key: 'shortfall_to_restore_safety', 
       label: 'Req. for Safety Stock', 
       render: (value: number, row: any) => (
@@ -366,6 +379,15 @@ export default function IndentPage() {
           return <Badge variant="default" data-testid={`badge-status-good-${row.id}`}>Good</Badge>;
         }
       }
+    },
+    {
+      key: 'required_to_order',
+      label: 'Total to Order',
+      render: (value: number, row: any) => (
+        <span className={`font-bold ${value > 0 ? 'text-destructive' : 'text-muted-foreground'}`} data-testid={`text-total-${row.id}`} title="Req. to Fulfill Orders + Req. for Coating + Req. for Safety Stock">
+          {value}
+        </span>
+      )
     }
   ];
 
@@ -465,47 +487,48 @@ export default function IndentPage() {
         </div>
       </Collapsible>
 
-      {/* Indent Table — grouped by finish */}
-      <div className="space-y-3">
-        {GROUP_ORDER.map((groupKey) => {
-          const groupRows = groupedIndentData[groupKey];
-          if (groupRows.length === 0) return null;
-          const isOpen = expandedIndentGroups.has(groupKey);
+      {/* Indent — one collapsible row per item, breakdown shown when expanded */}
+      <Accordion type="multiple" className="space-y-2">
+        {indentDataWithCoatingRollup.map((row) => {
+          const finishLabel: Record<string, string> = { bare: "Bare", nonstick: "NS", ceramic: "CER" };
+          const breakdownColumns = indentColumns.filter(c => c.key !== "item_name");
           return (
-            <Collapsible key={groupKey} open={isOpen} onOpenChange={() => toggleIndentGroup(groupKey)}>
-              <Card>
-                <CollapsibleTrigger asChild>
-                  <button type="button" className="w-full text-left">
-                    <CardHeader className="flex flex-row items-center justify-between py-4">
-                      <CardTitle className="text-base">
-                        {GROUP_LABELS[groupKey]}
-                        <span className="text-sm font-normal text-muted-foreground ml-2">
-                          ({groupRows.length})
-                        </span>
-                      </CardTitle>
-                      {isOpen ? (
-                        <ChevronDown className="h-4 w-4 text-muted-foreground" />
-                      ) : (
-                        <ChevronRight className="h-4 w-4 text-muted-foreground" />
-                      )}
-                    </CardHeader>
-                  </button>
-                </CollapsibleTrigger>
-                <CollapsibleContent>
-                  <CardContent className="pt-0">
-                    <DataTable
-                      columns={indentColumns}
-                      data={groupRows}
-                      title=""
-                      searchable={false}
-                    />
-                  </CardContent>
-                </CollapsibleContent>
-              </Card>
-            </Collapsible>
+            <AccordionItem
+              key={row.id}
+              value={`item-${row.id}`}
+              className="border rounded-lg px-4"
+              data-testid={`indent-item-${row.id}`}
+            >
+              <AccordionTrigger className="hover:no-underline py-3">
+                <div className="flex flex-1 items-center justify-between gap-3 pr-4">
+                  <div className="flex items-center gap-2 text-left">
+                    <span className="font-medium">{row.item_name}</span>
+                    {row.finish && (
+                      <Badge variant="outline" className="text-xs">{finishLabel[row.finish] || row.finish}</Badge>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <span className="text-xs text-muted-foreground hidden sm:inline">Total to Order</span>
+                    <span className={`font-mono font-bold ${row.required_to_order > 0 ? 'text-destructive' : 'text-muted-foreground'}`}>
+                      {row.required_to_order}
+                    </span>
+                  </div>
+                </div>
+              </AccordionTrigger>
+              <AccordionContent className="pb-4 pt-1">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-3">
+                  {breakdownColumns.map((col) => (
+                    <div key={col.key}>
+                      <div className="text-xs text-muted-foreground mb-1">{col.label}</div>
+                      <div>{col.render ? (col.render as any)((row as any)[col.key], row) : (row as any)[col.key]}</div>
+                    </div>
+                  ))}
+                </div>
+              </AccordionContent>
+            </AccordionItem>
           );
         })}
-      </div>
+      </Accordion>
     </div>
   );
 }
