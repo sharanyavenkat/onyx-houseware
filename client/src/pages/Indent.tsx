@@ -149,11 +149,30 @@ export default function IndentPage() {
       const requiredForCoating = requiredForCoatingByBareId.get(row.id) || 0;
       return {
         ...row,
+        direct_required_to_order: row.required_to_order,
         required_for_coating: requiredForCoating,
         required_to_order: row.required_to_order + requiredForCoating,
       };
     });
   }, [indentData]);
+
+  // Third pass: rather than showing "Tawa" and "Tawa NS" as two separate
+  // rows, merge each coated item into its bare parent's row — they're the
+  // same underlying casting at different stages, so one line with a
+  // Bare/Coated/Total breakdown is easier to actually read. Only items
+  // without a bare_item_id become their own top-level row: real bare items,
+  // and any coated item that hasn't been linked yet (kept visible on its
+  // own rather than silently hidden, since a missing link is a data gap
+  // worth noticing, not something to paper over).
+  const mergedIndentRows = useMemo(() => {
+    const byId = new Map(indentDataWithCoatingRollup.map(r => [r.id, r]));
+    return indentDataWithCoatingRollup
+      .filter(row => !row.bare_item_id)
+      .map(row => ({
+        ...row,
+        linkedCoatedItems: indentDataWithCoatingRollup.filter(r => r.bare_item_id === row.id),
+      }));
+  }, [indentDataWithCoatingRollup]);
 
   // Save mutation for indent data
   const saveIndentMutation = useMutation({
@@ -487,11 +506,13 @@ export default function IndentPage() {
         </div>
       </Collapsible>
 
-      {/* Indent — one collapsible row per item, breakdown shown when expanded */}
+      {/* Indent — one collapsible row per bare item (coated items linked to
+          it merge into its breakdown, rather than showing as a second row) */}
       <Accordion type="multiple" className="space-y-2">
-        {indentDataWithCoatingRollup.map((row) => {
+        {mergedIndentRows.map((row) => {
           const finishLabel: Record<string, string> = { bare: "Bare", nonstick: "NS", ceramic: "CER" };
-          const breakdownColumns = indentColumns.filter(c => c.key !== "item_name");
+          const breakdownColumns = indentColumns.filter(c => c.key !== "item_name" && c.key !== "required_for_coating");
+          const hasLinkedCoated = row.linkedCoatedItems.length > 0;
           return (
             <AccordionItem
               key={row.id}
@@ -501,11 +522,16 @@ export default function IndentPage() {
             >
               <AccordionTrigger className="hover:no-underline py-3">
                 <div className="flex flex-1 items-center justify-between gap-3 pr-4">
-                  <div className="flex items-center gap-2 text-left">
+                  <div className="flex items-center gap-2 text-left flex-wrap">
                     <span className="font-medium">{row.item_name}</span>
                     {row.finish && (
                       <Badge variant="outline" className="text-xs">{finishLabel[row.finish] || row.finish}</Badge>
                     )}
+                    {row.linkedCoatedItems.map(c => (
+                      <Badge key={c.id} variant="secondary" className="text-xs">
+                        {finishLabel[c.finish || ''] || c.finish} linked
+                      </Badge>
+                    ))}
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
                     <span className="text-xs text-muted-foreground hidden sm:inline">Total to Order</span>
@@ -516,14 +542,69 @@ export default function IndentPage() {
                 </div>
               </AccordionTrigger>
               <AccordionContent className="pb-4 pt-1">
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-3">
-                  {breakdownColumns.map((col) => (
-                    <div key={col.key}>
-                      <div className="text-xs text-muted-foreground mb-1">{col.label}</div>
-                      <div>{col.render ? (col.render as any)((row as any)[col.key], row) : (row as any)[col.key]}</div>
+                {hasLinkedCoated ? (
+                  <div className="space-y-4">
+                    <div>
+                      <div className="text-sm font-semibold mb-2">Bare</div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-3">
+                        {breakdownColumns.map((col) => (
+                          <div key={col.key}>
+                            <div className="text-xs text-muted-foreground mb-1">{col.label}</div>
+                            <div>{col.render ? (col.render as any)((row as any)[col.key], row) : (row as any)[col.key]}</div>
+                          </div>
+                        ))}
+                      </div>
                     </div>
-                  ))}
-                </div>
+
+                    <div className="border-t pt-3">
+                      <div className="text-sm font-semibold mb-2">Coated</div>
+                      <div className="space-y-3">
+                        {row.linkedCoatedItems.map(c => (
+                          <div key={c.id} className="rounded-md bg-muted/30 p-3">
+                            <div className="flex items-center gap-2 mb-2">
+                              <span className="font-medium text-sm">{c.item_name}</span>
+                              <Badge variant="outline" className="text-xs">{finishLabel[c.finish || ''] || c.finish}</Badge>
+                            </div>
+                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-2 text-sm">
+                              <div>
+                                <div className="text-xs text-muted-foreground">On Hand</div>
+                                <div className="font-mono">{c.on_hand_stock}</div>
+                              </div>
+                              <div>
+                                <div className="text-xs text-muted-foreground">Pending Orders</div>
+                                <div className="font-mono">{c.pending_order_qty}</div>
+                              </div>
+                              <div>
+                                <div className="text-xs text-muted-foreground">Own Shortfall</div>
+                                <div className={`font-mono ${c.direct_required_to_order > 0 ? 'text-destructive' : ''}`}>
+                                  {c.direct_required_to_order}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                        <div className="flex items-center justify-between text-sm px-1">
+                          <span className="text-muted-foreground">Coated Total (rolls into Bare demand below)</span>
+                          <span className="font-mono font-semibold text-purple-600 dark:text-purple-400">{row.required_for_coating}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="border-t pt-3 flex items-center justify-between">
+                      <span className="text-sm font-semibold">Total to Order (Bare + Coated)</span>
+                      <span className="font-mono font-bold text-destructive">{row.required_to_order}</span>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-3">
+                    {breakdownColumns.map((col) => (
+                      <div key={col.key}>
+                        <div className="text-xs text-muted-foreground mb-1">{col.label}</div>
+                        <div>{col.render ? (col.render as any)((row as any)[col.key], row) : (row as any)[col.key]}</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </AccordionContent>
             </AccordionItem>
           );
