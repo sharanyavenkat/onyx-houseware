@@ -1182,6 +1182,9 @@ export class DbStorage implements IStorage {
     
     // Get all shipments
     const allShipments = await db.select().from(shipments);
+
+    const allItems = await db.select().from(items);
+    const itemMap = new Map(allItems.map(i => [i.id, i]));
     
     // Calculate shipped quantities per order item
     // Note: Rejections are now tracked at batch level (caster receipt), not shipment level
@@ -1192,17 +1195,33 @@ export class DbStorage implements IStorage {
         (shippedByOrderItem[shipment.order_item_id] || 0) + shipment.quantity_shipped;
     });
     
-    // Calculate pending (ordered - shipped) per item
+    // Calculate pending (ordered - shipped) per item. A kit line's pending
+    // quantity gets decomposed through its BOM into real component demand —
+    // e.g. 63 pending CSTONE CS10 becomes 63 pending Tawa (plus every other
+    // component) — since that's what Indent actually needs to plan against.
+    // Without this, kit-derived demand is invisible here even though it's
+    // already correctly shown on the order's own "What This Order Actually
+    // Represents" summary.
     const pending: Record<number, number> = {};
-    allOrderItems.forEach(oi => {
-      if (activeOrderIds.has(oi.order_id)) {
-        const shipped = shippedByOrderItem[oi.id] || 0;
-        const pendingQty = oi.quantity - shipped;
-        if (pendingQty > 0) {
-          pending[oi.item_id] = (pending[oi.item_id] || 0) + pendingQty;
+    for (const oi of allOrderItems) {
+      if (!activeOrderIds.has(oi.order_id)) continue;
+      const shipped = shippedByOrderItem[oi.id] || 0;
+      const pendingQty = oi.quantity - shipped;
+      if (pendingQty <= 0) continue;
+
+      const item = itemMap.get(oi.item_id);
+      if (item?.is_kit) {
+        const components = await this.getBomComponentsByParentId(item.id);
+        for (const c of components) {
+          if (c.component_type === 'item' && c.component_item_id) {
+            const qty = c.qty_per_kit * pendingQty;
+            pending[c.component_item_id] = (pending[c.component_item_id] || 0) + qty;
+          }
         }
+      } else {
+        pending[oi.item_id] = (pending[oi.item_id] || 0) + pendingQty;
       }
-    });
+    }
     
     return pending;
   }
