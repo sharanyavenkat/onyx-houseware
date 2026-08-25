@@ -580,12 +580,33 @@ export default function IndentPage() {
               <div>
                 <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">Bare</div>
                 <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-x-4 gap-y-2">
-                  {breakdownColumns.map((col) => (
-                    <div key={col.key}>
-                      <div className="text-xs text-muted-foreground mb-0.5">{col.label}</div>
-                      <div className="text-sm">{col.render ? (col.render as any)((row as any)[col.key], row) : (row as any)[col.key]}</div>
-                    </div>
-                  ))}
+                  {breakdownColumns.map((col) => {
+                    // The combined Bare+Coated total is already shown in the
+                    // header and the final summary line below — inside the
+                    // Bare section specifically, show Bare's own contribution
+                    // instead, so the same number isn't repeated three times.
+                    if (col.key === 'required_to_order') {
+                      return (
+                        <div key={col.key}>
+                          <div className="text-xs text-muted-foreground mb-0.5">Bare's Own Total</div>
+                          <div className="text-sm">
+                            <span
+                              className={`font-bold ${row.direct_required_to_order > 0 ? 'text-destructive' : 'text-muted-foreground'}`}
+                              title="Req. to Fulfill Orders + Req. for Safety Stock (before adding Coated demand)"
+                            >
+                              {row.direct_required_to_order}
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    }
+                    return (
+                      <div key={col.key}>
+                        <div className="text-xs text-muted-foreground mb-0.5">{col.label}</div>
+                        <div className="text-sm">{col.render ? (col.render as any)((row as any)[col.key], row) : (row as any)[col.key]}</div>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
 
