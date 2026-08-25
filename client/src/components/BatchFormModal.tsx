@@ -72,7 +72,10 @@ export default function BatchFormModal({
   });
   // Batches are specifically castings received — only actual casting
   // vendors belong here, not handle vendors/coaters/material suppliers.
-  const casters = useMemo(() => allCasters.filter((c) => c.vendor_type === 'caster'), [allCasters]);
+  // Batches represent castings from a caster OR coated output from a coater
+  // (whether via a Coating Conversion or a manual backfill entry) — no
+  // longer just castings, since coated batches can be recorded directly here too.
+  const casters = useMemo(() => allCasters.filter((c) => c.vendor_type === 'caster' || c.vendor_type === 'coater'), [allCasters]);
 
   const form = useForm<BatchFormData>({
     resolver: zodResolver(batchFormSchema),
@@ -233,7 +236,7 @@ export default function BatchFormModal({
               name="caster_id"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Caster (Optional)</FormLabel>
+                  <FormLabel>Caster / Coater (Optional)</FormLabel>
                   <Select
                     value={field.value || "none"}
                     onValueChange={(value) => {
