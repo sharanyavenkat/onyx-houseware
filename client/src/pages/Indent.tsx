@@ -539,9 +539,9 @@ export default function IndentPage() {
           indentColumns.filter(c => c.key !== "item_name" && c.key !== "required_for_coating");
 
         const RowHeader = ({ row }: { row: (typeof mergedIndentRows)[number] }) => (
-          <div className="flex flex-1 items-center justify-between gap-3 pr-4 flex-wrap">
-            <div className="flex items-center gap-2 text-left flex-wrap">
-              <span className="font-medium">{row.item_name}</span>
+          <div className="flex flex-1 items-center justify-between gap-2 pr-4 flex-wrap">
+            <div className="flex items-center gap-1.5 text-left flex-wrap">
+              <span className="font-medium text-sm">{row.item_name}</span>
               {row.finish && (
                 <Badge variant="outline" className="text-xs">{finishLabel[row.finish] || row.finish}</Badge>
               )}
@@ -551,9 +551,9 @@ export default function IndentPage() {
                 </Badge>
               ))}
             </div>
-            <div className="flex items-center gap-2 shrink-0">
+            <div className="flex items-center gap-1.5 shrink-0">
               <span className="text-xs text-muted-foreground hidden sm:inline">Total to Order</span>
-              <span className={`font-mono font-bold ${row.required_to_order > 0 ? 'text-destructive' : 'text-muted-foreground'}`}>
+              <span className={`font-mono font-bold text-sm ${row.required_to_order > 0 ? 'text-destructive' : 'text-muted-foreground'}`}>
                 {row.required_to_order}
               </span>
             </div>
@@ -565,92 +565,92 @@ export default function IndentPage() {
           const hasLinkedCoated = row.linkedCoatedItems.length > 0;
           if (!hasLinkedCoated) {
             return (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-3">
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-x-4 gap-y-2">
                 {breakdownColumns.map((col) => (
                   <div key={col.key}>
-                    <div className="text-xs text-muted-foreground mb-1">{col.label}</div>
-                    <div>{col.render ? (col.render as any)((row as any)[col.key], row) : (row as any)[col.key]}</div>
+                    <div className="text-xs text-muted-foreground mb-0.5">{col.label}</div>
+                    <div className="text-sm">{col.render ? (col.render as any)((row as any)[col.key], row) : (row as any)[col.key]}</div>
                   </div>
                 ))}
               </div>
             );
           }
           return (
-            <div className="space-y-4">
+            <div className="space-y-3">
               <div>
-                <div className="text-sm font-semibold mb-2">Bare</div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-3">
+                <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">Bare</div>
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-x-4 gap-y-2">
                   {breakdownColumns.map((col) => (
                     <div key={col.key}>
-                      <div className="text-xs text-muted-foreground mb-1">{col.label}</div>
-                      <div>{col.render ? (col.render as any)((row as any)[col.key], row) : (row as any)[col.key]}</div>
+                      <div className="text-xs text-muted-foreground mb-0.5">{col.label}</div>
+                      <div className="text-sm">{col.render ? (col.render as any)((row as any)[col.key], row) : (row as any)[col.key]}</div>
                     </div>
                   ))}
                 </div>
               </div>
 
-              <div className="border-t pt-3">
-                <div className="text-sm font-semibold mb-2">Coated</div>
-                <div className="space-y-3">
+              <div className="border-t pt-2">
+                <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">Coated</div>
+                <div className="space-y-1.5">
                   {row.linkedCoatedItems.map(c => (
-                    <div key={c.id} className="rounded-md bg-muted/30 p-3">
-                      <div className="flex items-center gap-2 mb-2">
-                        <span className="font-medium text-sm">{c.item_name}</span>
+                    <div key={c.id} className="rounded-md bg-muted/30 px-2.5 py-1.5">
+                      <div className="flex items-center gap-1.5 mb-1">
+                        <span className="font-medium text-xs">{c.item_name}</span>
                         <Badge variant="outline" className="text-xs">{finishLabel[c.finish || ''] || c.finish}</Badge>
                       </div>
-                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-2 text-sm">
+                      <div className="grid grid-cols-3 gap-x-3 text-xs">
                         <div>
-                          <div className="text-xs text-muted-foreground">On Hand</div>
-                          <div className="font-mono">{c.on_hand_stock}</div>
+                          <span className="text-muted-foreground">On Hand: </span>
+                          <span className="font-mono">{c.on_hand_stock}</span>
                         </div>
                         <div>
-                          <div className="text-xs text-muted-foreground">Pending Orders</div>
-                          <div className="font-mono">{c.pending_order_qty}</div>
+                          <span className="text-muted-foreground">Pending: </span>
+                          <span className="font-mono">{c.pending_order_qty}</span>
                         </div>
                         <div>
-                          <div className="text-xs text-muted-foreground">Own Shortfall</div>
-                          <div className={`font-mono ${c.direct_required_to_order > 0 ? 'text-destructive' : ''}`}>
+                          <span className="text-muted-foreground">Shortfall: </span>
+                          <span className={`font-mono ${c.direct_required_to_order > 0 ? 'text-destructive' : ''}`}>
                             {c.direct_required_to_order}
-                          </div>
+                          </span>
                         </div>
                       </div>
                     </div>
                   ))}
-                  <div className="flex items-center justify-between text-sm px-1">
+                  <div className="flex items-center justify-between text-xs px-0.5">
                     <span className="text-muted-foreground">Coated Total (rolls into Bare demand below)</span>
                     <span className="font-mono font-semibold text-purple-600 dark:text-purple-400">{row.required_for_coating}</span>
                   </div>
                 </div>
               </div>
 
-              <div className="border-t pt-3 flex items-center justify-between">
-                <span className="text-sm font-semibold">Total to Order (Bare + Coated)</span>
-                <span className="font-mono font-bold text-destructive">{row.required_to_order}</span>
+              <div className="border-t pt-2 flex items-center justify-between">
+                <span className="text-xs font-semibold">Total to Order (Bare + Coated)</span>
+                <span className="font-mono font-bold text-destructive text-sm">{row.required_to_order}</span>
               </div>
             </div>
           );
         };
 
         return (
-          <div className="space-y-6">
-            <div className="space-y-3">
+          <div className="space-y-4">
+            <div className="space-y-2">
               <h2 className="text-sm font-semibold text-muted-foreground">
                 Needs Attention ({attentionRows.length})
               </h2>
               {attentionRows.length === 0 ? (
-                <p className="text-sm text-muted-foreground py-4">
+                <p className="text-sm text-muted-foreground py-3">
                   Nothing needs attention right now — every item is at or above its safety stock, with no pending shortfalls.
                 </p>
               ) : (
-                <div className="space-y-3">
+                <div className="space-y-2">
                   {attentionRows.map((row) => (
                     <div
                       key={row.id}
-                      className="border rounded-lg px-4 py-3"
+                      className="border rounded-lg px-3 py-2"
                       data-testid={`indent-item-${row.id}`}
                     >
                       <RowHeader row={row} />
-                      <div className="pt-3 mt-3 border-t">
+                      <div className="pt-2 mt-2 border-t">
                         <RowBreakdown row={row} />
                       </div>
                     </div>
@@ -670,18 +670,18 @@ export default function IndentPage() {
                   {showAllItems ? 'Hide' : 'Show'} {otherRows.length} other item{otherRows.length !== 1 ? 's' : ''} not needing attention
                 </Button>
                 {showAllItems && (
-                  <Accordion type="multiple" className="space-y-2 mt-3">
+                  <Accordion type="multiple" className="space-y-1.5 mt-2">
                     {otherRows.map((row) => (
                       <AccordionItem
                         key={row.id}
                         value={`item-${row.id}`}
-                        className="border rounded-lg px-4"
+                        className="border rounded-lg px-3"
                         data-testid={`indent-item-${row.id}`}
                       >
-                        <AccordionTrigger className="hover:no-underline py-3">
+                        <AccordionTrigger className="hover:no-underline py-2">
                           <RowHeader row={row} />
                         </AccordionTrigger>
-                        <AccordionContent className="pb-4 pt-1">
+                        <AccordionContent className="pb-3 pt-1">
                           <RowBreakdown row={row} />
                         </AccordionContent>
                       </AccordionItem>
