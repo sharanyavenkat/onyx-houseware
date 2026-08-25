@@ -5,7 +5,12 @@ import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from '@/components/ui/accordion';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { ChevronDown, ChevronRight, HelpCircle } from 'lucide-react';
 import { useState, useMemo, useEffect, useRef } from 'react';
@@ -104,6 +109,7 @@ export default function IndentPage() {
         id: item.id,
         item_name: item.name,
         finish: item.finish,
+        bare_item_id: item.bare_item_id,
         on_hand_stock: currentOnHandStock,
         expected_receipts: expectedReceipts,
         desired_safety_stock: item.desired_safety_stock,
@@ -121,6 +127,77 @@ export default function IndentPage() {
       };
     });
   }, [sortedItems, indents, pendingOrdersByItem, editingCells, onHandStock]);
+
+  // Second pass: a bare item's real requirement isn't just its own direct
+  // orders — it also needs to cover whatever's needed for coating, since
+  // every coated piece has to start as a bare casting. Each coated item's
+  // own required_to_order already nets out its own stock/safety/pending
+  // (via calculateInventoryMetrics above), so this rolls up the NET amount
+  // still needed, not the raw order quantity — a coated item sitting on
+  // plenty of its own stock correctly contributes 0 here.
+  const indentDataWithCoatingRollup = useMemo(() => {
+    const requiredForCoatingByBareId = new Map<number, number>();
+    for (const row of indentData) {
+      if (row.bare_item_id) {
+        requiredForCoatingByBareId.set(
+          row.bare_item_id,
+          (requiredForCoatingByBareId.get(row.bare_item_id) || 0) + row.required_to_order
+        );
+      }
+    }
+    return indentData.map(row => {
+      const requiredForCoating = requiredForCoatingByBareId.get(row.id) || 0;
+      return {
+        ...row,
+        direct_required_to_order: row.required_to_order,
+        required_for_coating: requiredForCoating,
+        required_to_order: row.required_to_order + requiredForCoating,
+      };
+    });
+  }, [indentData]);
+
+  // Third pass: rather than showing "Tawa" and "Tawa NS" as two separate
+  // rows, merge each coated item into its bare parent's row — they're the
+  // same underlying casting at different stages, so one line with a
+  // Bare/Coated/Total breakdown is easier to actually read. Only items
+  // without a bare_item_id become their own top-level row: real bare items,
+  // and any coated item that hasn't been linked yet (kept visible on its
+  // own rather than silently hidden, since a missing link is a data gap
+  // worth noticing, not something to paper over).
+  const mergedIndentRows = useMemo(() => {
+    const byId = new Map(indentDataWithCoatingRollup.map(r => [r.id, r]));
+    return indentDataWithCoatingRollup
+      .filter(row => !row.bare_item_id)
+      .map(row => ({
+        ...row,
+        linkedCoatedItems: indentDataWithCoatingRollup.filter(r => r.bare_item_id === row.id),
+      }));
+  }, [indentDataWithCoatingRollup]);
+
+  // Needs attention = something's actually due (Total to Order > 0) OR
+  // safety stock has drifted to Low/Critical — the latter matters even with
+  // nothing currently pending, since the goal is a steady buffer at the
+  // factory, not just reacting once an order forces the issue. Sorted by
+  // urgency (biggest shortfall first, safety severity as tiebreak) rather
+  // than alphabetically, since these are the rows actually worth reading top
+  // to bottom. Shown fully open — no need to hunt through everything else
+  // just to see the handful of items that matter today.
+  const severityRank: Record<string, number> = { critical: 2, low: 1, good: 0 };
+  const needsAttention = (row: (typeof mergedIndentRows)[number]) =>
+    row.required_to_order > 0 || row.safety_stock_status === 'low' || row.safety_stock_status === 'critical';
+
+  const attentionRows = useMemo(
+    () =>
+      mergedIndentRows
+        .filter(needsAttention)
+        .sort((a, b) =>
+          b.required_to_order - a.required_to_order ||
+          (severityRank[b.safety_stock_status] ?? 0) - (severityRank[a.safety_stock_status] ?? 0)
+        ),
+    [mergedIndentRows]
+  );
+  const otherRows = useMemo(() => mergedIndentRows.filter(row => !needsAttention(row)), [mergedIndentRows]);
+  const [showAllItems, setShowAllItems] = useState(false);
 
   // Save mutation for indent data
   const saveIndentMutation = useMutation({
@@ -219,39 +296,6 @@ export default function IndentPage() {
     }
   };
 
-  // Group by finish — same categories as the Items page, so casting demand
-  // is organized the way you'd actually order it from a caster.
-  const GROUP_ORDER = ["bare", "nonstick", "ceramic", "ungrouped"] as const;
-  const GROUP_LABELS: Record<(typeof GROUP_ORDER)[number], string> = {
-    bare: "Bare Castings",
-    nonstick: "Non-Stick Coated",
-    ceramic: "Ceramic Coated",
-    ungrouped: "Ungrouped",
-  };
-  const groupedIndentData = useMemo(() => {
-    const groups: Record<string, typeof indentData> = { bare: [], nonstick: [], ceramic: [], ungrouped: [] };
-    for (const row of indentData) {
-      if (row.finish === "bare" || row.finish === "nonstick" || row.finish === "ceramic") {
-        groups[row.finish].push(row);
-      } else {
-        groups.ungrouped.push(row);
-      }
-    }
-    return groups;
-  }, [indentData]);
-
-  const [expandedIndentGroups, setExpandedIndentGroups] = useState<Set<string>>(
-    new Set(["bare", "nonstick", "ceramic", "ungrouped"])
-  );
-  const toggleIndentGroup = (key: string) => {
-    setExpandedIndentGroups(prev => {
-      const next = new Set(prev);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      return next;
-    });
-  };
-
   const indentColumns = [
     { key: 'item_name', label: 'Item Name' },
     { 
@@ -339,6 +383,19 @@ export default function IndentPage() {
       )
     },
     { 
+      key: 'required_for_coating', 
+      label: 'Req. for Coating', 
+      render: (value: number, row: any) => (
+        value > 0 ? (
+          <span className="font-semibold text-purple-600 dark:text-purple-400" data-testid={`text-coating-${row.id}`} title="Net demand rolled up from coated items linked to this bare item">
+            {value}
+          </span>
+        ) : (
+          <span className="text-muted-foreground">—</span>
+        )
+      )
+    },
+    { 
       key: 'shortfall_to_restore_safety', 
       label: 'Req. for Safety Stock', 
       render: (value: number, row: any) => (
@@ -366,6 +423,15 @@ export default function IndentPage() {
           return <Badge variant="default" data-testid={`badge-status-good-${row.id}`}>Good</Badge>;
         }
       }
+    },
+    {
+      key: 'required_to_order',
+      label: 'Total to Order',
+      render: (value: number, row: any) => (
+        <span className={`font-bold ${value > 0 ? 'text-destructive' : 'text-muted-foreground'}`} data-testid={`text-total-${row.id}`} title="Req. to Fulfill Orders + Req. for Coating + Req. for Safety Stock">
+          {value}
+        </span>
+      )
     }
   ];
 
@@ -465,47 +531,168 @@ export default function IndentPage() {
         </div>
       </Collapsible>
 
-      {/* Indent Table — grouped by finish */}
-      <div className="space-y-3">
-        {GROUP_ORDER.map((groupKey) => {
-          const groupRows = groupedIndentData[groupKey];
-          if (groupRows.length === 0) return null;
-          const isOpen = expandedIndentGroups.has(groupKey);
+      {/* Indent — items needing attention shown fully open (no clicking
+          needed); everything else tucked behind a toggle */}
+      {(() => {
+        const finishLabel: Record<string, string> = { bare: "Bare", nonstick: "NS", ceramic: "CER" };
+        const breakdownColumnsFor = (row: (typeof mergedIndentRows)[number]) =>
+          indentColumns.filter(c => c.key !== "item_name" && c.key !== "required_for_coating");
+
+        const RowHeader = ({ row }: { row: (typeof mergedIndentRows)[number] }) => (
+          <div className="flex flex-1 items-center justify-between gap-2 pr-4 flex-wrap">
+            <div className="flex items-center gap-1.5 text-left flex-wrap">
+              <span className="font-medium text-sm">{row.item_name}</span>
+              {row.finish && (
+                <Badge variant="outline" className="text-xs">{finishLabel[row.finish] || row.finish}</Badge>
+              )}
+              {row.linkedCoatedItems.map(c => (
+                <Badge key={c.id} variant="secondary" className="text-xs">
+                  {finishLabel[c.finish || ''] || c.finish} linked
+                </Badge>
+              ))}
+            </div>
+            <div className="flex items-center gap-1.5 shrink-0">
+              <span className="text-xs text-muted-foreground hidden sm:inline">Total to Order</span>
+              <span className={`font-mono font-bold text-sm ${row.required_to_order > 0 ? 'text-destructive' : 'text-muted-foreground'}`}>
+                {row.required_to_order}
+              </span>
+            </div>
+          </div>
+        );
+
+        const RowBreakdown = ({ row }: { row: (typeof mergedIndentRows)[number] }) => {
+          const breakdownColumns = breakdownColumnsFor(row);
+          const hasLinkedCoated = row.linkedCoatedItems.length > 0;
+          if (!hasLinkedCoated) {
+            return (
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-x-4 gap-y-2">
+                {breakdownColumns.map((col) => (
+                  <div key={col.key}>
+                    <div className="text-xs text-muted-foreground mb-0.5">{col.label}</div>
+                    <div className="text-sm">{col.render ? (col.render as any)((row as any)[col.key], row) : (row as any)[col.key]}</div>
+                  </div>
+                ))}
+              </div>
+            );
+          }
           return (
-            <Collapsible key={groupKey} open={isOpen} onOpenChange={() => toggleIndentGroup(groupKey)}>
-              <Card>
-                <CollapsibleTrigger asChild>
-                  <button type="button" className="w-full text-left">
-                    <CardHeader className="flex flex-row items-center justify-between py-4">
-                      <CardTitle className="text-base">
-                        {GROUP_LABELS[groupKey]}
-                        <span className="text-sm font-normal text-muted-foreground ml-2">
-                          ({groupRows.length})
-                        </span>
-                      </CardTitle>
-                      {isOpen ? (
-                        <ChevronDown className="h-4 w-4 text-muted-foreground" />
-                      ) : (
-                        <ChevronRight className="h-4 w-4 text-muted-foreground" />
-                      )}
-                    </CardHeader>
-                  </button>
-                </CollapsibleTrigger>
-                <CollapsibleContent>
-                  <CardContent className="pt-0">
-                    <DataTable
-                      columns={indentColumns}
-                      data={groupRows}
-                      title=""
-                      searchable={false}
-                    />
-                  </CardContent>
-                </CollapsibleContent>
-              </Card>
-            </Collapsible>
+            <div className="space-y-3">
+              <div>
+                <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">Bare</div>
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-x-4 gap-y-2">
+                  {breakdownColumns.map((col) => (
+                    <div key={col.key}>
+                      <div className="text-xs text-muted-foreground mb-0.5">{col.label}</div>
+                      <div className="text-sm">{col.render ? (col.render as any)((row as any)[col.key], row) : (row as any)[col.key]}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="border-t pt-2">
+                <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">Coated</div>
+                <div className="space-y-1.5">
+                  {row.linkedCoatedItems.map(c => (
+                    <div key={c.id} className="rounded-md bg-muted/30 px-2.5 py-1.5">
+                      <div className="flex items-center gap-1.5 mb-1">
+                        <span className="font-medium text-xs">{c.item_name}</span>
+                        <Badge variant="outline" className="text-xs">{finishLabel[c.finish || ''] || c.finish}</Badge>
+                      </div>
+                      <div className="grid grid-cols-3 gap-x-3 text-xs">
+                        <div>
+                          <span className="text-muted-foreground">On Hand: </span>
+                          <span className="font-mono">{c.on_hand_stock}</span>
+                        </div>
+                        <div>
+                          <span className="text-muted-foreground">Pending: </span>
+                          <span className="font-mono">{c.pending_order_qty}</span>
+                        </div>
+                        <div>
+                          <span className="text-muted-foreground">Shortfall: </span>
+                          <span className={`font-mono ${c.direct_required_to_order > 0 ? 'text-destructive' : ''}`}>
+                            {c.direct_required_to_order}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                  <div className="flex items-center justify-between text-xs px-0.5">
+                    <span className="text-muted-foreground">Coated Total (rolls into Bare demand below)</span>
+                    <span className="font-mono font-semibold text-purple-600 dark:text-purple-400">{row.required_for_coating}</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="border-t pt-2 flex items-center justify-between">
+                <span className="text-xs font-semibold">Total to Order (Bare + Coated)</span>
+                <span className="font-mono font-bold text-destructive text-sm">{row.required_to_order}</span>
+              </div>
+            </div>
           );
-        })}
-      </div>
+        };
+
+        return (
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <h2 className="text-sm font-semibold text-muted-foreground">
+                Needs Attention ({attentionRows.length})
+              </h2>
+              {attentionRows.length === 0 ? (
+                <p className="text-sm text-muted-foreground py-3">
+                  Nothing needs attention right now — every item is at or above its safety stock, with no pending shortfalls.
+                </p>
+              ) : (
+                <div className="space-y-2">
+                  {attentionRows.map((row) => (
+                    <div
+                      key={row.id}
+                      className="border rounded-lg px-3 py-2"
+                      data-testid={`indent-item-${row.id}`}
+                    >
+                      <RowHeader row={row} />
+                      <div className="pt-2 mt-2 border-t">
+                        <RowBreakdown row={row} />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {otherRows.length > 0 && (
+              <div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowAllItems(!showAllItems)}
+                  data-testid="button-toggle-other-items"
+                >
+                  {showAllItems ? 'Hide' : 'Show'} {otherRows.length} other item{otherRows.length !== 1 ? 's' : ''} not needing attention
+                </Button>
+                {showAllItems && (
+                  <Accordion type="multiple" className="space-y-1.5 mt-2">
+                    {otherRows.map((row) => (
+                      <AccordionItem
+                        key={row.id}
+                        value={`item-${row.id}`}
+                        className="border rounded-lg px-3"
+                        data-testid={`indent-item-${row.id}`}
+                      >
+                        <AccordionTrigger className="hover:no-underline py-2">
+                          <RowHeader row={row} />
+                        </AccordionTrigger>
+                        <AccordionContent className="pb-3 pt-1">
+                          <RowBreakdown row={row} />
+                        </AccordionContent>
+                      </AccordionItem>
+                    ))}
+                  </Accordion>
+                )}
+              </div>
+            )}
+          </div>
+        );
+      })()}
     </div>
   );
 }
