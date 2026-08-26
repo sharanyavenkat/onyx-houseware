@@ -183,6 +183,7 @@ export const updateBatchSchema = z.object({
   ),
   is_manual_quantity: z.boolean().optional(),
   quality_status: z.enum(["Good", "Acceptable", "Rejected"]).optional(),
+  color: z.string().nullable().optional(),
   notes: z.string().optional(),
 }).refine(data => {
   // Count fields that are actually provided (not undefined)

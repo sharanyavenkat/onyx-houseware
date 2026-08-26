@@ -42,6 +42,7 @@ const batchFormSchema = z.object({
   quantity_rejected: z.string().optional(),
   quantity_produced: z.string().min(1, "Final quantity is required"),
   quality_status: z.enum(["Good", "Acceptable", "Rejected"]),
+  color: z.string().optional(),
   notes: z.string().optional(),
 });
 // PO is deliberately optional even with a caster selected — most casters
@@ -89,6 +90,7 @@ export default function BatchFormModal({
       quantity_rejected: "0",
       quantity_produced: "",
       quality_status: "Good",
+      color: "",
       notes: "",
     },
   });
@@ -511,6 +513,24 @@ export default function BatchFormModal({
                       <SelectItem value="Rejected">Rejected</SelectItem>
                     </SelectContent>
                   </Select>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name="color"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Color / Variant (Optional)</FormLabel>
+                  <FormControl>
+                    <Input
+                      {...field}
+                      placeholder="e.g. Black, Ivory"
+                      data-testid="input-batch-color"
+                    />
+                  </FormControl>
                   <FormMessage />
                 </FormItem>
               )}

@@ -318,6 +318,17 @@ export default function Batches() {
             // Calculate summary stats for this item
             const totalRemaining = itemBatches.reduce((sum, b) => sum + b.quantity_remaining, 0);
             const activeBatches = itemBatches.filter(b => !b.is_depleted).length;
+
+            // By-color breakdown of what's actually on hand — this is what
+            // lets you tell "how much BLK vs IVY do we have" apart, since
+            // color is just a tag on each batch, not a separate stock pool.
+            const colorBreakdown = new Map<string, number>();
+            itemBatches.forEach(b => {
+              const key = b.color || 'Untagged';
+              colorBreakdown.set(key, (colorBreakdown.get(key) || 0) + b.quantity_remaining);
+            });
+            const colorEntries = Array.from(colorBreakdown.entries()).filter(([, qty]) => qty > 0);
+            const hasColorSplit = colorEntries.length > 1 || (colorEntries.length === 1 && colorEntries[0][0] !== 'Untagged');
             
             return (
               <AccordionItem
@@ -336,6 +347,15 @@ export default function Batches() {
                       <div className="text-xs text-muted-foreground">
                         SKU: {item.sku} • {itemBatches.length} batch{itemBatches.length !== 1 ? 'es' : ''} ({activeBatches} active)
                       </div>
+                      {hasColorSplit && (
+                        <div className="flex flex-wrap gap-1 mt-1">
+                          {colorEntries.map(([color, qty]) => (
+                            <Badge key={color} variant="outline" className="text-xs font-normal" data-testid={`badge-color-${item.id}-${color}`}>
+                              {color}: {qty.toLocaleString()}
+                            </Badge>
+                          ))}
+                        </div>
+                      )}
                     </div>
 
                     {/* Right: Remaining Quantity */}
@@ -366,6 +386,7 @@ export default function Batches() {
                           <tr>
                             <th className="text-left py-2 px-3 font-medium">Batch</th>
                             <th className="text-left py-2 px-3 font-medium">Caster</th>
+                            <th className="text-left py-2 px-3 font-medium">Color</th>
                             <th className="text-left py-2 px-3 font-medium">Date</th>
                             <th className="text-right py-2 px-3 font-medium">Qty Received</th>
                             <th className="text-right py-2 px-3 font-medium">Qty Rejected</th>
@@ -397,6 +418,9 @@ export default function Batches() {
                                 </td>
                                 <td className="py-3 px-3 text-sm text-muted-foreground">
                                   {batch.caster_name || "-"}
+                                </td>
+                                <td className="py-3 px-3 text-sm">
+                                  {batch.color || <span className="text-muted-foreground">-</span>}
                                 </td>
                                 <td className="py-3 px-3">
                                   {formatDate(batch.received_date)}
@@ -470,6 +494,7 @@ export default function Batches() {
                                 <div className="text-sm text-muted-foreground">
                                   {formatDate(batch.received_date)}
                                   {batch.caster_name && ` • ${batch.caster_name}`}
+                                  {batch.color && ` • ${batch.color}`}
                                 </div>
                               </div>
                               <div className="flex items-center gap-2">

@@ -305,6 +305,11 @@ export interface IStorage {
   createCoatingConversion(data: InsertCoatingConversion): Promise<CoatingConversion>;
   receiveCoatingConversion(id: number, data: { quantity_received: number; quantity_rejected: number; received_date: string; color?: string | null }): Promise<CoatingConversion>;
   deleteCoatingConversion(id: number): Promise<void>;
+  // Deliberately narrow — only color/notes/caster/sent_date are safe to edit
+  // after creation. bare_item_id, coated_item_id, and quantity_sent are not
+  // included here since changing them after stock has already moved would
+  // desync the allocation records that make this reversible.
+  updateCoatingConversionDetails(id: number, data: { color?: string | null; notes?: string | null; caster_id?: number | null; sent_date?: string }): Promise<CoatingConversion | undefined>;
 }
 
 export class DbStorage implements IStorage {
@@ -805,7 +810,7 @@ export class DbStorage implements IStorage {
     return batch;
   }
 
-  async updateBatch(id: number, updates: { batch_number?: string, caster_id?: number | null, received_date?: string, quantity_received?: number, quantity_produced?: number, quantity_rejected?: number, quality_status?: string, notes?: string, is_manual_quantity?: boolean }): Promise<Batch> {
+  async updateBatch(id: number, updates: { batch_number?: string, caster_id?: number | null, received_date?: string, quantity_received?: number, quantity_produced?: number, quantity_rejected?: number, quality_status?: string, color?: string | null, notes?: string, is_manual_quantity?: boolean }): Promise<Batch> {
     // Get current batch
     const [currentBatch] = await db.select().from(batches).where(eq(batches.id, id));
     
@@ -821,6 +826,7 @@ export class DbStorage implements IStorage {
     const newReceivedDate = updates.received_date ?? currentBatch.received_date;
     const newQualityStatus = updates.quality_status ?? currentBatch.quality_status;
     const newNotes = updates.notes !== undefined ? updates.notes : currentBatch.notes;
+    const newColor = updates.color !== undefined ? updates.color : currentBatch.color;
     const newRejected = updates.quantity_rejected ?? currentBatch.quantity_rejected;
     
     // Get quantity_received - use provided value, stored value, or derive from current state
@@ -891,6 +897,7 @@ export class DbStorage implements IStorage {
         quantity_rejected: newRejected,
         quantity_remaining: newRemaining,
         quality_status: newQualityStatus,
+        color: newColor,
         notes: newNotes,
         is_depleted: isDepleted,
         is_manual_quantity: updates.quantity_produced !== undefined ? (newProduced !== (newReceived - newRejected)) : (currentBatch.is_manual_quantity ?? false),
@@ -2228,6 +2235,17 @@ export class DbStorage implements IStorage {
     }
 
     return created;
+  }
+
+  async updateCoatingConversionDetails(
+    id: number,
+    data: { color?: string | null; notes?: string | null; caster_id?: number | null; sent_date?: string }
+  ): Promise<CoatingConversion | undefined> {
+    const [updated] = await db.update(coatingConversions)
+      .set(data)
+      .where(eq(coatingConversions.id, id))
+      .returning();
+    return updated;
   }
 
   /**

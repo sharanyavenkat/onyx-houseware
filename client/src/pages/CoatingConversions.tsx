@@ -22,7 +22,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { formatDate } from "@/lib/dateUtils";
 import type { Item, Caster, CoatingConversion } from "@shared/schema";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Plus } from "lucide-react";
+import { Plus, Pencil } from "lucide-react";
 import { useMemo, useState } from "react";
 import ConfirmDialog from "../components/ConfirmDialog";
 
@@ -38,6 +38,7 @@ export default function CoatingConversions() {
 
   const [isSendModalOpen, setIsSendModalOpen] = useState(false);
   const [receivingConversion, setReceivingConversion] = useState<ConversionWithNames | null>(null);
+  const [editingConversion, setEditingConversion] = useState<ConversionWithNames | null>(null);
   const [deletingConversion, setDeletingConversion] = useState<ConversionWithNames | null>(null);
 
   const { data: conversions = [] } = useQuery<ConversionWithNames[]>({
@@ -104,7 +105,10 @@ export default function CoatingConversions() {
               {pendingConversions.map(c => (
                 <div key={c.id} className="px-4 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2" data-testid={`conversion-pending-${c.id}`}>
                   <div>
-                    <div className="font-medium">{c.bare_item_name} → {c.coated_item_name}</div>
+                    <div className="font-medium">
+                      {c.bare_item_name} → {c.coated_item_name}
+                      {c.color && <Badge variant="outline" className="ml-2">{c.color}</Badge>}
+                    </div>
                     <div className="text-sm text-muted-foreground">
                       Sent {formatDate(c.sent_date)} · {c.quantity_sent} pcs {c.caster_name && `· ${c.caster_name}`}
                     </div>
@@ -114,6 +118,9 @@ export default function CoatingConversions() {
                       <>
                         <Button size="sm" onClick={() => setReceivingConversion(c)}>
                           Receive
+                        </Button>
+                        <Button size="sm" variant="ghost" onClick={() => setEditingConversion(c)}>
+                          <Pencil className="h-4 w-4" />
                         </Button>
                         <Button size="sm" variant="ghost" className="text-destructive" onClick={() => setDeletingConversion(c)}>
                           Delete
@@ -151,9 +158,14 @@ export default function CoatingConversions() {
                     </div>
                   </div>
                   {canMutate && (
-                    <Button size="sm" variant="ghost" className="text-destructive" onClick={() => setDeletingConversion(c)}>
-                      Delete
-                    </Button>
+                    <div className="flex gap-2">
+                      <Button size="sm" variant="ghost" onClick={() => setEditingConversion(c)}>
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                      <Button size="sm" variant="ghost" className="text-destructive" onClick={() => setDeletingConversion(c)}>
+                        Delete
+                      </Button>
+                    </div>
                   )}
                 </div>
               ))}
@@ -174,6 +186,14 @@ export default function CoatingConversions() {
         <ReceiveCoatingModal
           conversion={receivingConversion}
           onClose={() => setReceivingConversion(null)}
+        />
+      )}
+
+      {editingConversion && (
+        <EditConversionModal
+          conversion={editingConversion}
+          coaters={coaters}
+          onClose={() => setEditingConversion(null)}
         />
       )}
 
@@ -217,6 +237,7 @@ function SendForCoatingModal({
   const [casterId, setCasterId] = useState("none");
   const [quantitySent, setQuantitySent] = useState("");
   const [sentDate, setSentDate] = useState(new Date().toISOString().split("T")[0]);
+  const [color, setColor] = useState("");
 
   const coatedOptions = useMemo(
     () => allItems.filter(i => i.is_active && !i.is_kit && i.bare_item_id === parseInt(bareItemId || "0")),
@@ -229,6 +250,7 @@ function SendForCoatingModal({
     setCasterId("none");
     setQuantitySent("");
     setSentDate(new Date().toISOString().split("T")[0]);
+    setColor("");
   };
 
   const createMutation = useMutation({
@@ -259,6 +281,7 @@ function SendForCoatingModal({
       caster_id: casterId === "none" ? null : parseInt(casterId),
       quantity_sent: qty,
       sent_date: sentDate,
+      color: color || null,
     });
   };
 
@@ -316,6 +339,10 @@ function SendForCoatingModal({
               <Label>Sent Date</Label>
               <Input type="date" value={sentDate} onChange={(e) => setSentDate(e.target.value)} data-testid="input-sent-date" />
             </div>
+          </div>
+          <div>
+            <Label>Color / Variant (Optional)</Label>
+            <Input value={color} onChange={(e) => setColor(e.target.value)} placeholder="e.g. Black, Ivory — if known at send time" data-testid="input-send-color" />
           </div>
           <div className="flex justify-end gap-2 pt-2 border-t">
             <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
@@ -410,6 +437,83 @@ function ReceiveCoatingModal({
             <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
             <Button type="submit" disabled={receiveMutation.isPending}>
               {receiveMutation.isPending ? "Saving..." : "Confirm Received"}
+            </Button>
+          </div>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function EditConversionModal({
+  conversion,
+  coaters,
+  onClose,
+}: {
+  conversion: CoatingConversion & { bare_item_name: string; coated_item_name: string; caster_name: string };
+  coaters: Caster[];
+  onClose: () => void;
+}) {
+  const { toast } = useToast();
+  const [color, setColor] = useState(conversion.color || "");
+  const [casterId, setCasterId] = useState(conversion.caster_id ? conversion.caster_id.toString() : "none");
+  const [sentDate, setSentDate] = useState(conversion.sent_date);
+
+  const updateMutation = useMutation({
+    mutationFn: async (data: any) => apiRequest("PATCH", `/api/coating-conversions/${conversion.id}`, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/coating-conversions"] });
+      toast({ title: "Conversion updated" });
+      onClose();
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error updating conversion", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    updateMutation.mutate({
+      color: color || null,
+      caster_id: casterId === "none" ? null : parseInt(casterId),
+      sent_date: sentDate,
+    });
+  };
+
+  return (
+    <Dialog open={true} onOpenChange={(open) => !open && onClose()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Edit — {conversion.bare_item_name} → {conversion.coated_item_name}</DialogTitle>
+        </DialogHeader>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <p className="text-xs text-muted-foreground">
+            Quantity sent and the items involved can't be changed here, since they're already tied to stock that's moved — delete and re-create the conversion if those are wrong. Color, coater, and sent date are safe to edit anytime.
+          </p>
+          <div>
+            <Label>Color / Variant</Label>
+            <Input value={color} onChange={(e) => setColor(e.target.value)} placeholder="e.g. Black, Ivory" data-testid="input-edit-color" />
+          </div>
+          <div>
+            <Label>Coater</Label>
+            <Select value={casterId} onValueChange={setCasterId}>
+              <SelectTrigger data-testid="select-edit-coater"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">Not specified</SelectItem>
+                {coaters.map(c => (
+                  <SelectItem key={c.id} value={c.id.toString()}>{c.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <Label>Sent Date</Label>
+            <Input type="date" value={sentDate} onChange={(e) => setSentDate(e.target.value)} data-testid="input-edit-sent-date" />
+          </div>
+          <div className="flex justify-end gap-2 pt-2 border-t">
+            <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
+            <Button type="submit" disabled={updateMutation.isPending}>
+              {updateMutation.isPending ? "Saving..." : "Save"}
             </Button>
           </div>
         </form>
