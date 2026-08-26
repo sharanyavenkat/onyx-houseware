@@ -40,6 +40,7 @@ const batchEditSchema = z.object({
   quantity_rejected: z.string().optional(),
   quantity_produced: z.string().min(1, "Final quantity is required"),
   quality_status: z.enum(["Good", "Acceptable", "Rejected"]),
+  color: z.string().optional(),
   notes: z.string().optional(),
 });
 
@@ -87,6 +88,7 @@ export default function BatchEditDialog({
       quantity_rejected: "0",
       quantity_produced: "0",
       quality_status: "Good",
+      color: "",
       notes: "",
     },
   });
@@ -129,6 +131,7 @@ export default function BatchEditDialog({
         quantity_rejected: batch.quantity_rejected?.toString() || "0",
         quantity_produced: batch.quantity_produced.toString(),
         quality_status: batch.quality_status as "Good" | "Acceptable" | "Rejected",
+        color: batch.color || "",
         notes: batch.notes || "",
       });
     }
@@ -156,6 +159,7 @@ export default function BatchEditDialog({
       quantity_produced: parseInt(data.quantity_produced) || 0,
       is_manual_quantity: isManualOverrideRef.current,
       quality_status: data.quality_status,
+      color: data.color || null,
       notes: data.notes,
     };
     onSave(payload);
@@ -387,6 +391,24 @@ export default function BatchEditDialog({
                           <SelectItem value="Rejected">Rejected</SelectItem>
                         </SelectContent>
                       </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="color"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Color / Variant</FormLabel>
+                      <FormControl>
+                        <Input
+                          {...field}
+                          placeholder="e.g. Black, Ivory"
+                          data-testid="input-edit-batch-color"
+                        />
+                      </FormControl>
                       <FormMessage />
                     </FormItem>
                   )}

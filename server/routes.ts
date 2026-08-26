@@ -419,11 +419,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Handle purchase_order_id if provided
       const purchase_order_id = req.body.purchase_order_id ? parseInt(req.body.purchase_order_id) : null;
+      const color = req.body.color || null;
 
       // Create batch
       const batch = await storage.createBatch({
         ...batchData,
         purchase_order_id,
+        color,
       });
       
       // Auto-update purchase order received quantities if linked
@@ -1902,6 +1904,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const updated = await storage.receiveCoatingConversion(parseInt(req.params.id), {
         quantity_received, quantity_rejected, received_date, color
       });
+      res.json(updated);
+    } catch (error: any) {
+      res.status(400).json({ message: error.message });
+    }
+  });
+
+  // Editing what can safely change after creation (color, notes, caster,
+  // sent_date) — not the bare/coated item or quantity_sent, since those are
+  // tied to allocations already made against real stock.
+  app.patch("/api/coating-conversions/:id", async (req, res) => {
+    try {
+      const { color, notes, caster_id, sent_date } = req.body;
+      const updated = await storage.updateCoatingConversionDetails(parseInt(req.params.id), {
+        color, notes, caster_id, sent_date
+      });
+      if (!updated) {
+        return res.status(404).json({ message: "Coating conversion not found" });
+      }
       res.json(updated);
     } catch (error: any) {
       res.status(400).json({ message: error.message });
