@@ -305,6 +305,10 @@ export interface IStorage {
   createCoatingConversion(data: InsertCoatingConversion): Promise<CoatingConversion>;
   receiveCoatingConversion(id: number, data: { quantity_received: number; quantity_rejected: number; received_date: string; color?: string | null }): Promise<CoatingConversion>;
   deleteCoatingConversion(id: number): Promise<void>;
+  // How much of each batch has gone to coating, and which conversion(s) —
+  // this is what lets Batches show "150 sent to coating" without anyone
+  // having to remember it, since it's already recorded via allocations.
+  getCoatingAllocationsByBatch(): Promise<Record<number, { totalSent: number; conversions: Array<{ conversionId: number; quantity: number; coatedItemName: string; status: string }> }>>;
   // Deliberately narrow — only color/notes/caster/sent_date are safe to edit
   // after creation. bare_item_id, coated_item_id, and quantity_sent are not
   // included here since changing them after stock has already moved would
@@ -2340,6 +2344,34 @@ export class DbStorage implements IStorage {
     }
 
     await db.delete(coatingConversions).where(eq(coatingConversions.id, id));
+  }
+
+  async getCoatingAllocationsByBatch(): Promise<Record<number, { totalSent: number; conversions: Array<{ conversionId: number; quantity: number; coatedItemName: string; status: string }> }>> {
+    const allAllocations = await db.select().from(coatingConversionAllocations);
+    if (allAllocations.length === 0) return {};
+
+    const conversionIds = Array.from(new Set(allAllocations.map(a => a.coating_conversion_id)));
+    const allConversions = await db.select().from(coatingConversions);
+    const conversionMap = new Map(allConversions.map(c => [c.id, c]));
+    const allItems = await db.select().from(items);
+    const itemMap = new Map(allItems.map(i => [i.id, i.name]));
+
+    const result: Record<number, { totalSent: number; conversions: Array<{ conversionId: number; quantity: number; coatedItemName: string; status: string }> }> = {};
+    for (const a of allAllocations) {
+      if (!a.batch_id) continue;
+      if (!result[a.batch_id]) {
+        result[a.batch_id] = { totalSent: 0, conversions: [] };
+      }
+      result[a.batch_id].totalSent += a.quantity;
+      const conversion = conversionMap.get(a.coating_conversion_id);
+      result[a.batch_id].conversions.push({
+        conversionId: a.coating_conversion_id,
+        quantity: a.quantity,
+        coatedItemName: conversion ? (itemMap.get(conversion.coated_item_id) || '') : '',
+        status: conversion?.status || '',
+      });
+    }
+    return result;
   }
 }
 

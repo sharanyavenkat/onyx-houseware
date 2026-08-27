@@ -226,11 +226,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/batches", async (req, res) => {
     try {
       const batches = await storage.getAllBatches();
+      const coatingAllocations = await storage.getCoatingAllocationsByBatch();
       // Add calculated quantity_shipped field to each batch
       // shipped = produced - remaining (rejections already subtracted from produced during QC)
       const enrichedBatches = batches.map(batch => ({
         ...batch,
-        quantity_shipped: batch.quantity_produced - batch.quantity_remaining
+        quantity_shipped: batch.quantity_produced - batch.quantity_remaining,
+        sent_to_coating: coatingAllocations[batch.id]?.totalSent || 0,
+        coating_details: coatingAllocations[batch.id]?.conversions || [],
       }));
       res.json(enrichedBatches);
     } catch (error: any) {

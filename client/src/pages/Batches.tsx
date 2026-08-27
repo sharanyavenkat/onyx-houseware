@@ -20,6 +20,15 @@ import { useToast } from "@/hooks/use-toast";
 import { formatDate } from "@/lib/dateUtils";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { Batch, Item, Caster } from "@shared/schema";
+
+type EnrichedBatch = Batch & {
+  item_name: string;
+  item_sku: string;
+  caster_name: string | null;
+  quantity_shipped: number;
+  sent_to_coating: number;
+  coating_details: Array<{ conversionId: number; quantity: number; coatedItemName: string; status: string }>;
+};
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import BatchFormModal from "../components/BatchFormModal";
@@ -37,7 +46,7 @@ export default function Batches() {
   const { canMutate } = useAuth();
 
   // Fetch all batches
-  const { data: batches = [] } = useQuery<Batch[]>({
+  const { data: batches = [] } = useQuery<EnrichedBatch[]>({
     queryKey: ["/api/batches"],
   });
 
@@ -318,6 +327,7 @@ export default function Batches() {
             // Calculate summary stats for this item
             const totalRemaining = itemBatches.reduce((sum, b) => sum + b.quantity_remaining, 0);
             const activeBatches = itemBatches.filter(b => !b.is_depleted).length;
+            const totalSentToCoating = itemBatches.reduce((sum, b) => sum + (b.sent_to_coating || 0), 0);
 
             // By-color breakdown of what's actually on hand — this is what
             // lets you tell "how much BLK vs IVY do we have" apart, since
@@ -359,7 +369,17 @@ export default function Batches() {
                     </div>
 
                     {/* Right: Remaining Quantity */}
-                    <div className="flex items-center gap-2 font-mono text-sm">
+                    <div className="flex items-center gap-3 font-mono text-sm">
+                      {totalSentToCoating > 0 && (
+                        <div className="text-center" data-testid={`text-total-sent-to-coating-${item.id}`}>
+                          <div className="text-xs text-muted-foreground mb-1">
+                            Sent to Coating
+                          </div>
+                          <div className="font-bold text-sm sm:text-base text-purple-600 dark:text-purple-400">
+                            {totalSentToCoating.toLocaleString()}
+                          </div>
+                        </div>
+                      )}
                       <div className="text-center">
                         <div className="text-xs text-muted-foreground mb-1">
                           Remaining
@@ -392,6 +412,7 @@ export default function Batches() {
                             <th className="text-right py-2 px-3 font-medium">Qty Rejected</th>
                             <th className="text-right py-2 px-3 font-medium">Final Qty</th>
                             <th className="text-right py-2 px-3 font-medium">Remaining</th>
+                            <th className="text-right py-2 px-3 font-medium">Sent to Coating</th>
                             <th className="text-center py-2 px-3 font-medium">Quality</th>
                             <th className="text-center py-2 px-3 font-medium">Status</th>
                             {canMutate && (
@@ -436,6 +457,19 @@ export default function Batches() {
                                 </td>
                                 <td className="py-3 px-3 text-right font-mono font-semibold">
                                   {batch.quantity_remaining.toLocaleString()}
+                                </td>
+                                <td className="py-3 px-3 text-right font-mono text-sm">
+                                  {batch.sent_to_coating > 0 ? (
+                                    <span
+                                      className="text-purple-600 dark:text-purple-400"
+                                      title={batch.coating_details?.map((c: any) => `${c.quantity} → ${c.coatedItemName} (${c.status})`).join(', ')}
+                                      data-testid={`text-sent-to-coating-${batch.id}`}
+                                    >
+                                      {batch.sent_to_coating.toLocaleString()}
+                                    </span>
+                                  ) : (
+                                    <span className="text-muted-foreground">-</span>
+                                  )}
                                 </td>
                                 <td className="py-3 px-3 text-center">
                                   <Badge
@@ -540,6 +574,12 @@ export default function Batches() {
                                 <div className="font-mono font-semibold">{batch.quantity_remaining.toLocaleString()}</div>
                               </div>
                             </div>
+                            {batch.sent_to_coating > 0 && (
+                              <div className="text-sm mt-1">
+                                <span className="text-muted-foreground text-xs">Sent to Coating: </span>
+                                <span className="font-mono text-purple-600 dark:text-purple-400">{batch.sent_to_coating.toLocaleString()}</span>
+                              </div>
+                            )}
                             <div className="mt-3">
                               <Badge
                                 variant={batch.is_depleted ? "secondary" : "default"}
