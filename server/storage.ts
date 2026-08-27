@@ -43,6 +43,7 @@ import {
   type OrderAccessoryShipment,
   type InsertOrderAccessoryShipment,
   type Projection,
+  type MetalAllocation,
   type InsertProjection,
   type CoatingConversion,
   type InsertCoatingConversion,
@@ -73,6 +74,7 @@ import {
   orderAccessoryItems,
   orderAccessoryShipments,
   projections,
+  metalAllocations,
   coatingConversions,
   coatingConversionAllocations,
   appSettings,
@@ -297,8 +299,21 @@ export interface IStorage {
     accessories: Array<{ accessoryId: number; accessoryName: string; quantity: number }>;
   }>;
 
-  getProjectionsByMonth(month: string): Promise<Projection[]>;
-  upsertProjection(itemId: number, month: string, quantity: number, notes?: string | null): Promise<Projection>;
+  getProjectionsByMonth(month: string): Promise<Array<{ item_id: number; quantity: number }>>;
+  getProjectionsByCustomerForMonth(month: string): Promise<Array<Projection & { item_name: string; customer_name: string | null }>>;
+  upsertProjection(itemId: number, month: string, quantity: number, notes?: string | null, customerId?: number | null): Promise<Projection>;
+  deleteProjection(id: number): Promise<void>;
+  upsertMetalAllocation(itemId: number, casterId: number, month: string, quantity: number): Promise<MetalAllocation>;
+  getVendorMetalSheet(month: string): Promise<{
+    vendors: Array<{
+      casterId: number;
+      casterName: string;
+      items: Array<{ itemId: number; itemName: string; sku: string; projectedQty: number; allocatedQty: number; unitWeightKg: number | null; metalKg: number | null; isManualOverride: boolean }>;
+      subtotalKg: number;
+    }>;
+    unassigned: Array<{ itemId: number; itemName: string; sku: string; projectedQty: number }>;
+    grandTotalKg: number;
+  }>;
 
   getAllCoatingConversions(): Promise<CoatingConversion[]>;
   getCoatingConversionById(id: number): Promise<CoatingConversion | undefined>;
@@ -2175,13 +2190,37 @@ export class DbStorage implements IStorage {
   }
 
   // --- Projections (manual, for casters — not derived from orders/stock) ---
-  async getProjectionsByMonth(month: string): Promise<Projection[]> {
-    return await db.select().from(projections).where(eq(projections.month, month));
+  // Rollup per item (summed across customers) — used by Dashboard's simple
+  // bare-castings comparison view. Same shape as before customer-level
+  // projections existed, so that display doesn't need to change.
+  async getProjectionsByMonth(month: string): Promise<Array<{ item_id: number; quantity: number }>> {
+    const rows = await db.select().from(projections).where(eq(projections.month, month));
+    const totals = new Map<number, number>();
+    for (const r of rows) {
+      totals.set(r.item_id, (totals.get(r.item_id) || 0) + r.quantity);
+    }
+    return Array.from(totals.entries()).map(([item_id, quantity]) => ({ item_id, quantity }));
   }
 
-  async upsertProjection(itemId: number, month: string, quantity: number, notes?: string | null): Promise<Projection> {
-    const [existing] = await db.select().from(projections)
-      .where(and(eq(projections.item_id, itemId), eq(projections.month, month)));
+  // Detailed per-customer rows — this is dad's actual input shape ("Kreme
+  // wants 5000 Tawa"), and what the new Projections page's entry table shows.
+  async getProjectionsByCustomerForMonth(month: string): Promise<Array<Projection & { item_name: string; customer_name: string | null }>> {
+    const rows = await db.select().from(projections).where(eq(projections.month, month));
+    const allItems = await db.select().from(items);
+    const itemMap = new Map(allItems.map(i => [i.id, i.name]));
+    const allCustomers = await db.select().from(customers);
+    const customerMap = new Map(allCustomers.map(c => [c.id, c.company_name]));
+    return rows.map(r => ({
+      ...r,
+      item_name: itemMap.get(r.item_id) || `Item #${r.item_id}`,
+      customer_name: r.customer_id ? (customerMap.get(r.customer_id) || null) : null,
+    }));
+  }
+
+  async upsertProjection(itemId: number, month: string, quantity: number, notes?: string | null, customerId?: number | null): Promise<Projection> {
+    const conditions = [eq(projections.item_id, itemId), eq(projections.month, month)];
+    conditions.push(customerId ? eq(projections.customer_id, customerId) : sql`${projections.customer_id} IS NULL`);
+    const [existing] = await db.select().from(projections).where(and(...conditions));
     if (existing) {
       const [updated] = await db.update(projections)
         .set({ quantity, notes: notes ?? existing.notes })
@@ -2190,9 +2229,114 @@ export class DbStorage implements IStorage {
       return updated;
     }
     const [created] = await db.insert(projections)
-      .values({ item_id: itemId, month, quantity, notes: notes ?? null })
+      .values({ item_id: itemId, customer_id: customerId ?? null, month, quantity, notes: notes ?? null })
       .returning();
     return created;
+  }
+
+  async deleteProjection(id: number): Promise<void> {
+    await db.delete(projections).where(eq(projections.id, id));
+  }
+
+  async upsertMetalAllocation(itemId: number, casterId: number, month: string, quantity: number): Promise<MetalAllocation> {
+    const [existing] = await db.select().from(metalAllocations)
+      .where(and(eq(metalAllocations.item_id, itemId), eq(metalAllocations.caster_id, casterId), eq(metalAllocations.month, month)));
+    if (existing) {
+      const [updated] = await db.update(metalAllocations)
+        .set({ quantity })
+        .where(eq(metalAllocations.id, existing.id))
+        .returning();
+      return updated;
+    }
+    const [created] = await db.insert(metalAllocations)
+      .values({ item_id: itemId, caster_id: casterId, month, quantity })
+      .returning();
+    return created;
+  }
+
+  /**
+   * The printable vendor metal sheet: for each caster, using the casting
+   * dies they hold to know what they cast, pull each item's total projected
+   * quantity for the month (summed across customers), apply any manual
+   * allocation override (or default to an even split across every caster
+   * holding that item's die), and compute metal = quantity × weight × 1.10.
+   * Items with no die-holding caster at all surface in their own bucket
+   * rather than silently vanishing — that's a real gap worth noticing.
+   */
+  async getVendorMetalSheet(month: string): Promise<{
+    vendors: Array<{
+      casterId: number;
+      casterName: string;
+      items: Array<{ itemId: number; itemName: string; sku: string; projectedQty: number; allocatedQty: number; unitWeightKg: number | null; metalKg: number | null; isManualOverride: boolean }>;
+      subtotalKg: number;
+    }>;
+    unassigned: Array<{ itemId: number; itemName: string; sku: string; projectedQty: number }>;
+    grandTotalKg: number;
+  }> {
+    const itemTotals = await this.getProjectionsByMonth(month);
+    const itemTotalMap = new Map(itemTotals.map(t => [t.item_id, t.quantity]));
+
+    const allItems = await db.select().from(items);
+    const itemMap = new Map(allItems.map(i => [i.id, i]));
+    const allCasters = await db.select().from(casters);
+    const casterMap = new Map(allCasters.map(c => [c.id, c]));
+    const allDies = await db.select().from(dies);
+    const activeCastingDies = allDies.filter(d => d.mould_type === 'casting' && d.status === 'active');
+    const allAllocations = await db.select().from(metalAllocations).where(eq(metalAllocations.month, month));
+    const allocationMap = new Map(allAllocations.map(a => [`${a.item_id}-${a.caster_id}`, a.quantity]));
+
+    // Which caster(s) hold each item's die
+    const castersByItem = new Map<number, number[]>();
+    for (const d of activeCastingDies) {
+      if (!castersByItem.has(d.item_id)) castersByItem.set(d.item_id, []);
+      castersByItem.get(d.item_id)!.push(d.caster_id);
+    }
+
+    const vendorMap = new Map<number, { casterId: number; casterName: string; items: any[]; subtotalKg: number }>();
+    const unassigned: Array<{ itemId: number; itemName: string; sku: string; projectedQty: number }> = [];
+    let grandTotalKg = 0;
+
+    for (const [itemId, projectedQty] of Array.from(itemTotalMap.entries())) {
+      if (projectedQty <= 0) continue;
+      const item = itemMap.get(itemId);
+      if (!item || item.is_kit || (item.finish && item.finish !== 'bare')) continue; // metal sheet is for bare castings only
+
+      const holderIds = castersByItem.get(itemId) || [];
+      if (holderIds.length === 0) {
+        unassigned.push({ itemId, itemName: item.name, sku: item.sku, projectedQty });
+        continue;
+      }
+
+      const evenSplit = Math.round(projectedQty / holderIds.length);
+      for (const casterId of holderIds) {
+        const caster = casterMap.get(casterId);
+        if (!caster) continue;
+        const overrideKey = `${itemId}-${casterId}`;
+        const hasOverride = allocationMap.has(overrideKey);
+        const allocatedQty = hasOverride ? allocationMap.get(overrideKey)! : evenSplit;
+        const unitWeightKg = item.unit_weight_kg;
+        const metalKg = unitWeightKg != null ? allocatedQty * unitWeightKg * 1.10 : null;
+
+        if (!vendorMap.has(casterId)) {
+          vendorMap.set(casterId, { casterId, casterName: caster.name, items: [], subtotalKg: 0 });
+        }
+        const vendor = vendorMap.get(casterId)!;
+        vendor.items.push({
+          itemId, itemName: item.name, sku: item.sku, projectedQty, allocatedQty,
+          unitWeightKg, metalKg, isManualOverride: hasOverride,
+        });
+        if (metalKg != null) {
+          vendor.subtotalKg += metalKg;
+          grandTotalKg += metalKg;
+        }
+      }
+    }
+
+    return {
+      vendors: Array.from(vendorMap.values()).sort((a, b) => a.casterName.localeCompare(b.casterName)),
+      unassigned,
+      grandTotalKg,
+    };
   }
 
   // --- Coating conversions ---

@@ -1,4 +1,5 @@
 import DashboardCards from '../components/DashboardCards';
+import { Link } from 'wouter';
 import DataTable from '../components/DataTable';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -98,8 +99,10 @@ export default function Dashboard() {
 
   // Projections: a manual, per-item "what we're telling casters we'll need"
   // figure — deliberately separate from Indent's calculated numbers, shown
-  // alongside them for comparison, not instead of them.
-  const { data: projectionsData = [] } = useQuery<Array<{ item_id: number; item_name: string; sku: string; quantity: number; notes: string | null }>>({
+  // alongside them for comparison, not instead of them. Read-only here
+  // (rolled up across customers) — actual entry happens per-customer on the
+  // dedicated Projections page, since that's dad's real input shape.
+  const { data: projectionsData = [] } = useQuery<Array<{ item_id: number; item_name: string; sku: string; quantity: number }>>({
     queryKey: ['/api/projections', projectionMonth],
     queryFn: async () => {
       const res = await fetch(`/api/projections/${projectionMonth}`, { credentials: 'include' });
@@ -136,30 +139,6 @@ export default function Dashboard() {
       };
     });
   }, [projectionsData, items, onHandStock, pendingByItem, projectionMonthIndents]);
-
-  const [projectionEdits, setProjectionEdits] = useState<Record<number, string>>({});
-  const saveTimeoutsRef = useRef<Record<number, ReturnType<typeof setTimeout>>>({});
-
-  const saveProjectionMutation = useMutation({
-    mutationFn: async ({ item_id, quantity }: { item_id: number; quantity: number }) =>
-      apiRequest('POST', '/api/projections', { item_id, month: projectionMonth, quantity }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/projections', projectionMonth] });
-    },
-  });
-
-  const handleProjectionEdit = (itemId: number, value: string) => {
-    setProjectionEdits(prev => ({ ...prev, [itemId]: value }));
-    if (saveTimeoutsRef.current[itemId]) {
-      clearTimeout(saveTimeoutsRef.current[itemId]);
-    }
-    saveTimeoutsRef.current[itemId] = setTimeout(() => {
-      const qty = parseInt(value);
-      if (!isNaN(qty) && qty >= 0) {
-        saveProjectionMutation.mutate({ item_id: itemId, quantity: qty });
-      }
-    }, 800);
-  };
 
   // Extract unique months from orders based on fulfillment_date
   const availableMonths = useMemo(() => {
@@ -341,8 +320,9 @@ export default function Dashboard() {
           <div>
             <h2 className="text-xl font-semibold">Projections</h2>
             <p className="text-sm text-muted-foreground mt-1">
-              What we're telling casters we'll need — a plain number anyone can set, including for orders that aren't confirmed yet.
+              What we're telling casters we'll need, rolled up from what each customer has told us — bare castings only, since that's what's actually ordered from a caster.
               Shown next to Indent's calculated "required to order" for the same month; the two won't always match, and that gap is useful information.
+              {" "}<Link href="/projections" className="underline">Enter or edit projections by customer →</Link>
             </p>
           </div>
           <Select value={projectionMonth} onValueChange={setProjectionMonth}>
@@ -362,7 +342,7 @@ export default function Dashboard() {
         <div className="border rounded-md divide-y">
           <div className="hidden sm:flex gap-4 px-4 py-2 text-xs font-medium text-muted-foreground bg-muted/20">
             <div className="flex-1">Item</div>
-            <div className="w-40">Projection (manual)</div>
+            <div className="w-40">Projection (all customers)</div>
             <div className="w-40">Required to Order (Indent)</div>
           </div>
           {projectionComparison.map(row => (
@@ -371,19 +351,7 @@ export default function Dashboard() {
                 <div className="font-medium text-sm">{row.item_name}</div>
                 <div className="text-xs text-muted-foreground">{row.sku}</div>
               </div>
-              <div className="w-full sm:w-40">
-                {canMutate ? (
-                  <Input
-                    type="number"
-                    min="0"
-                    value={projectionEdits[row.item_id] ?? row.quantity}
-                    onChange={(e) => handleProjectionEdit(row.item_id, e.target.value)}
-                    data-testid={`input-projection-${row.item_id}`}
-                  />
-                ) : (
-                  <span className="font-mono">{row.quantity}</span>
-                )}
-              </div>
+              <div className="w-full sm:w-40 font-mono">{row.quantity}</div>
               <div className="w-full sm:w-40 font-mono text-sm">{row.requiredToOrder}</div>
             </div>
           ))}
