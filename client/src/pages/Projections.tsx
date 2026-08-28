@@ -386,26 +386,8 @@ function MetalSheetTab({ month, monthLabel, canMutate }: { month: string; monthL
     allocMutation.mutate({ item_id: itemId, caster_id: casterId, month, quantity: qty });
   };
 
-  // Rows = vendors, columns = items — the same pivot shape as the reference
-  // sheet (casters down the side, SKUs across the top), instead of a
-  // separate table per vendor. Computed before any early return, since
-  // hooks must run in the same order on every render — sheet may still be
-  // undefined here while loading, so this is written to handle that safely.
-  const itemColumns = useMemo(() => {
-    const map = new Map<number, { name: string; sku: string }>();
-    (sheet?.vendors || []).forEach(v => v.items.forEach(i => map.set(i.itemId, { name: i.itemName, sku: i.sku })));
-    return Array.from(map.entries()).sort((a, b) => a[1].name.localeCompare(b[1].name));
-  }, [sheet]);
-
   if (isLoading) return <p className="text-sm text-muted-foreground py-8 text-center">Loading...</p>;
   if (!sheet) return null;
-
-  const findCell = (casterId: number, itemId: number) => {
-    const vendor = sheet.vendors.find(v => v.casterId === casterId);
-    return vendor?.items.find(i => i.itemId === itemId);
-  };
-  const columnTotalKg = (itemId: number) =>
-    sheet.vendors.reduce((sum, v) => sum + (v.items.find(i => i.itemId === itemId)?.metalKg || 0), 0);
 
   return (
     <div className="space-y-4">
@@ -416,89 +398,87 @@ function MetalSheetTab({ month, monthLabel, canMutate }: { month: string; monthL
         </Button>
       </div>
 
-      <div id="printable-metal-sheet" className="space-y-4">
-        <div className="hidden print:block mb-4">
+      <div id="printable-metal-sheet" className="space-y-6">
+        <div className="hidden print:block mb-2">
           <h1 className="text-xl font-bold">Metal Requirement Sheet — {monthLabel}</h1>
-          <p className="text-sm text-muted-foreground">Projected quantity × unit weight + 10%, in kg</p>
+          <p className="text-sm text-muted-foreground">Quantity × unit weight + 10%</p>
         </div>
 
         {sheet.vendors.length === 0 && sheet.unassigned.length === 0 && (
           <p className="text-sm text-muted-foreground text-center py-8">No projections entered for this month yet.</p>
         )}
 
-        {sheet.vendors.length > 0 && (
-          <div className="overflow-x-auto border rounded-md">
-            <table className="text-sm w-full">
+        {sheet.vendors.map(vendor => (
+          <div key={vendor.casterId}>
+            <h3 className="font-semibold text-base mb-2">{vendor.casterName}</h3>
+            <table className="text-sm w-full border-collapse border border-foreground/30">
               <thead>
-                <tr className="bg-muted/30">
-                  <th className="text-left px-3 py-2 font-medium sticky left-0 bg-muted/30">Vendor</th>
-                  {itemColumns.map(([iId, info]) => (
-                    <th key={iId} className="text-right px-3 py-2 font-medium whitespace-nowrap">{info.name}</th>
-                  ))}
-                  <th className="text-right px-3 py-2 font-semibold border-l">Total (kg)</th>
+                <tr className="bg-muted/40">
+                  <th className="text-left px-3 py-1.5 border border-foreground/30 font-medium">Item</th>
+                  <th className="text-right px-3 py-1.5 border border-foreground/30 font-medium">Quantity</th>
+                  <th className="text-right px-3 py-1.5 border border-foreground/30 font-medium">Weight (kg/unit)</th>
+                  <th className="text-right px-3 py-1.5 border border-foreground/30 font-medium">Kg to Order</th>
                 </tr>
               </thead>
               <tbody>
-                {sheet.vendors.map(vendor => (
-                  <tr key={vendor.casterId} className="border-t">
-                    <td className="px-3 py-2 font-medium sticky left-0 bg-background">{vendor.casterName}</td>
-                    {itemColumns.map(([iId]) => {
-                      const cell = findCell(vendor.casterId, iId);
-                      const isEditing = editingCell?.itemId === iId && editingCell?.casterId === vendor.casterId;
-                      if (!cell) {
-                        return <td key={iId} className="text-right px-3 py-2 text-muted-foreground">—</td>;
-                      }
-                      return (
-                        <td key={iId} className="text-right px-3 py-2 font-mono">
-                          {isEditing ? (
-                            <div className="flex items-center justify-end gap-1 no-print">
-                              <Input
-                                autoFocus
-                                type="number"
-                                min="0"
-                                className="w-20 h-7 text-right"
-                                value={editValue}
-                                onChange={(e) => setEditValue(e.target.value)}
-                                onKeyDown={(e) => e.key === 'Enter' && handleSaveEdit(iId, vendor.casterId)}
-                                data-testid={`input-allocation-${iId}-${vendor.casterId}`}
-                              />
-                              <Button size="sm" className="h-7" onClick={() => handleSaveEdit(iId, vendor.casterId)}>Save</Button>
-                            </div>
-                          ) : (
-                            <button
-                              type="button"
-                              className={`${canMutate ? 'cursor-pointer hover:underline' : ''} ${cell.isManualOverride ? 'text-purple-600 dark:text-purple-400' : ''}`}
-                              onClick={() => {
-                                if (!canMutate) return;
-                                setEditingCell({ itemId: iId, casterId: vendor.casterId });
-                                setEditValue(cell.allocatedQty.toString());
-                              }}
-                              title={`${cell.allocatedQty.toLocaleString()} units × ${cell.unitWeightKg ?? '?'} kg`}
-                              data-testid={`text-allocation-${iId}-${vendor.casterId}`}
-                            >
-                              {cell.metalKg != null ? cell.metalKg.toFixed(1) : <span className="text-destructive text-xs">no weight</span>}
-                              {cell.isManualOverride && <span className="text-xs ml-1">*</span>}
-                            </button>
-                          )}
-                        </td>
-                      );
-                    })}
-                    <td className="text-right px-3 py-2 font-semibold border-l">{vendor.subtotalKg.toFixed(1)}</td>
-                  </tr>
-                ))}
-                <tr className="border-t-2 bg-muted/20">
-                  <td className="px-3 py-2 font-semibold sticky left-0 bg-muted/20">Total</td>
-                  {itemColumns.map(([iId]) => (
-                    <td key={iId} className="text-right px-3 py-2 font-semibold font-mono">{columnTotalKg(iId).toFixed(1)}</td>
-                  ))}
-                  <td className="text-right px-3 py-2 font-bold border-l">{sheet.grandTotalKg.toFixed(1)}</td>
+                {vendor.items.map(item => {
+                  const isEditing = editingCell?.itemId === item.itemId && editingCell?.casterId === vendor.casterId;
+                  return (
+                    <tr key={item.itemId}>
+                      <td className="px-3 py-1.5 border border-foreground/30">
+                        {item.itemName} <span className="text-xs text-muted-foreground">({item.sku})</span>
+                      </td>
+                      <td className="text-right px-3 py-1.5 border border-foreground/30 font-mono">
+                        {isEditing ? (
+                          <div className="flex items-center justify-end gap-1 no-print">
+                            <Input
+                              autoFocus
+                              type="number"
+                              min="0"
+                              className="w-20 h-7 text-right"
+                              value={editValue}
+                              onChange={(e) => setEditValue(e.target.value)}
+                              onKeyDown={(e) => e.key === 'Enter' && handleSaveEdit(item.itemId, vendor.casterId)}
+                              data-testid={`input-allocation-${item.itemId}-${vendor.casterId}`}
+                            />
+                            <Button size="sm" className="h-7" onClick={() => handleSaveEdit(item.itemId, vendor.casterId)}>Save</Button>
+                          </div>
+                        ) : (
+                          <button
+                            type="button"
+                            className={`${canMutate ? 'cursor-pointer hover:underline' : ''} ${item.isManualOverride ? 'text-purple-600 dark:text-purple-400' : ''}`}
+                            onClick={() => {
+                              if (!canMutate) return;
+                              setEditingCell({ itemId: item.itemId, casterId: vendor.casterId });
+                              setEditValue(item.allocatedQty.toString());
+                            }}
+                            data-testid={`text-allocation-${item.itemId}-${vendor.casterId}`}
+                          >
+                            {item.allocatedQty.toLocaleString()}
+                            {item.isManualOverride && <span className="text-xs ml-1">*</span>}
+                          </button>
+                        )}
+                      </td>
+                      <td className="text-right px-3 py-1.5 border border-foreground/30 font-mono">{item.unitWeightKg ?? '—'}</td>
+                      <td className="text-right px-3 py-1.5 border border-foreground/30 font-mono font-semibold">
+                        {item.metalKg != null ? item.metalKg.toFixed(1) : (
+                          <span className="text-destructive text-xs">no weight</span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+                <tr className="bg-muted/20">
+                  <td className="px-3 py-1.5 border border-foreground/30 font-semibold" colSpan={3}>Subtotal</td>
+                  <td className="text-right px-3 py-1.5 border border-foreground/30 font-bold">{vendor.subtotalKg.toFixed(1)}</td>
                 </tr>
               </tbody>
             </table>
           </div>
-        )}
+        ))}
+
         <p className="text-xs text-muted-foreground no-print">
-          Cells are metal in kg. Click any cell to manually adjust that vendor's allocated quantity — cells marked * have been manually overridden. "—" means that vendor doesn't hold a die for that item.
+          Click any Quantity to manually adjust it — values marked * have been manually overridden. Everything else defaults to an even split across every vendor holding that item's die.
         </p>
 
         {sheet.unassigned.length > 0 && (
@@ -518,6 +498,13 @@ function MetalSheetTab({ month, monthLabel, canMutate }: { month: string; monthL
               <p className="text-xs text-muted-foreground mt-2">Add a die record on the Vendors page to include these here.</p>
             </CardContent>
           </Card>
+        )}
+
+        {sheet.vendors.length > 0 && (
+          <div className="flex justify-between items-center px-2 py-3 border-t-2 font-semibold">
+            <span>Grand Total</span>
+            <span className="font-mono text-lg">{sheet.grandTotalKg.toFixed(1)} kg</span>
+          </div>
         )}
       </div>
     </div>
