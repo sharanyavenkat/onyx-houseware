@@ -226,11 +226,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/batches", async (req, res) => {
     try {
       const batches = await storage.getAllBatches();
+      const coatingAllocations = await storage.getCoatingAllocationsByBatch();
       // Add calculated quantity_shipped field to each batch
       // shipped = produced - remaining (rejections already subtracted from produced during QC)
       const enrichedBatches = batches.map(batch => ({
         ...batch,
-        quantity_shipped: batch.quantity_produced - batch.quantity_remaining
+        quantity_shipped: batch.quantity_produced - batch.quantity_remaining,
+        sent_to_coating: coatingAllocations[batch.id]?.totalSent || 0,
+        coating_details: coatingAllocations[batch.id]?.conversions || [],
       }));
       res.json(enrichedBatches);
     } catch (error: any) {
@@ -1844,7 +1847,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
             sku: item.sku,
             month: req.params.month,
             quantity: existing?.quantity ?? 0,
-            notes: existing?.notes ?? null,
           };
         });
       res.json(response);
@@ -1855,11 +1857,54 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/projections", async (req, res) => {
     try {
-      const { item_id, month, quantity, notes } = req.body;
+      const { item_id, month, quantity, notes, customer_id } = req.body;
       if (!item_id || !month || quantity === undefined) {
         return res.status(400).json({ message: "item_id, month, and quantity are required" });
       }
-      const result = await storage.upsertProjection(item_id, month, quantity, notes);
+      const result = await storage.upsertProjection(item_id, month, quantity, notes, customer_id ?? null);
+      res.json(result);
+    } catch (error: any) {
+      res.status(400).json({ message: error.message });
+    }
+  });
+
+  // Detailed per-customer projection rows — dad's actual input shape
+  app.get("/api/projections/:month/by-customer", async (req, res) => {
+    try {
+      const rows = await storage.getProjectionsByCustomerForMonth(req.params.month);
+      res.json(rows);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.delete("/api/projections/:id", async (req, res) => {
+    try {
+      await storage.deleteProjection(parseInt(req.params.id));
+      res.status(204).send();
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Printable vendor metal sheet — per caster (via their casting dies), how
+  // much metal to send based on this month's projections + 10%
+  app.get("/api/metal-sheet/:month", async (req, res) => {
+    try {
+      const sheet = await storage.getVendorMetalSheet(req.params.month);
+      res.json(sheet);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/metal-allocations", async (req, res) => {
+    try {
+      const { item_id, caster_id, month, quantity } = req.body;
+      if (!item_id || !caster_id || !month || quantity === undefined) {
+        return res.status(400).json({ message: "item_id, caster_id, month, and quantity are required" });
+      }
+      const result = await storage.upsertMetalAllocation(item_id, caster_id, month, quantity);
       res.json(result);
     } catch (error: any) {
       res.status(400).json({ message: error.message });

@@ -814,6 +814,20 @@ export async function bootstrapDatabase() {
         notes TEXT
       )
     `);
+    // Which customer a projection is for — dad's real input is per-customer
+    await addColumnIfNotExists("projections", "customer_id INTEGER REFERENCES customers(id)", "customer_id");
+
+    // Manual allocation of an item's monthly projection across the caster(s)
+    // who hold its casting die
+    await db.run(sql`
+      CREATE TABLE IF NOT EXISTS metal_allocations (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        item_id INTEGER NOT NULL REFERENCES items(id),
+        caster_id INTEGER NOT NULL REFERENCES casters(id),
+        month TEXT NOT NULL,
+        quantity INTEGER NOT NULL DEFAULT 0
+      )
+    `);
 
     // Coating conversion: bare castings sent for coating, coated pieces received back
     await db.run(sql`

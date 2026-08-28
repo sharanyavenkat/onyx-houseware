@@ -579,6 +579,11 @@ export const projections = sqliteTable("projections", {
   item_id: integer("item_id")
     .notNull()
     .references(() => items.id),
+  // Which customer this projection is for — dad's real input is always
+  // per-customer ("Kreme wants X of Tawa"), not a single company-wide
+  // number. Nullable only for safety with any pre-existing generic rows;
+  // every new entry goes through the customer-specific flow.
+  customer_id: integer("customer_id").references(() => customers.id),
   month: text("month").notNull(), // 'YYYY-MM'
   quantity: integer("quantity").notNull().default(0),
   notes: text("notes"),
@@ -590,6 +595,30 @@ export const insertProjectionSchema = createInsertSchema(projections).omit({
 
 export type InsertProjection = z.infer<typeof insertProjectionSchema>;
 export type Projection = typeof projections.$inferSelect;
+
+// Manual allocation of an item's total monthly projection across the
+// caster(s) who hold its casting die — e.g. Tawa's 8000-unit projection
+// might split 5000 to Aruna and 3000 to Rheo. Defaults to an even split
+// across die-holders when nothing's been manually set yet; this table only
+// gets a row once someone actually overrides that default.
+export const metalAllocations = sqliteTable("metal_allocations", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  item_id: integer("item_id")
+    .notNull()
+    .references(() => items.id),
+  caster_id: integer("caster_id")
+    .notNull()
+    .references(() => casters.id),
+  month: text("month").notNull(), // 'YYYY-MM'
+  quantity: integer("quantity").notNull().default(0),
+});
+
+export const insertMetalAllocationSchema = createInsertSchema(metalAllocations).omit({
+  id: true,
+});
+
+export type InsertMetalAllocation = z.infer<typeof insertMetalAllocationSchema>;
+export type MetalAllocation = typeof metalAllocations.$inferSelect;
 
 // Coating conversion: bare castings sent out for coating, coated pieces come
 // back (some rejected at Onyx's own QC on the way back — separate from the
