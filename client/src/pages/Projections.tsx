@@ -386,17 +386,19 @@ function MetalSheetTab({ month, monthLabel, canMutate }: { month: string; monthL
     allocMutation.mutate({ item_id: itemId, caster_id: casterId, month, quantity: qty });
   };
 
-  if (isLoading) return <p className="text-sm text-muted-foreground py-8 text-center">Loading...</p>;
-  if (!sheet) return null;
-
   // Rows = vendors, columns = items — the same pivot shape as the reference
   // sheet (casters down the side, SKUs across the top), instead of a
-  // separate table per vendor.
+  // separate table per vendor. Computed before any early return, since
+  // hooks must run in the same order on every render — sheet may still be
+  // undefined here while loading, so this is written to handle that safely.
   const itemColumns = useMemo(() => {
     const map = new Map<number, { name: string; sku: string }>();
-    sheet.vendors.forEach(v => v.items.forEach(i => map.set(i.itemId, { name: i.itemName, sku: i.sku })));
+    (sheet?.vendors || []).forEach(v => v.items.forEach(i => map.set(i.itemId, { name: i.itemName, sku: i.sku })));
     return Array.from(map.entries()).sort((a, b) => a[1].name.localeCompare(b[1].name));
   }, [sheet]);
+
+  if (isLoading) return <p className="text-sm text-muted-foreground py-8 text-center">Loading...</p>;
+  if (!sheet) return null;
 
   const findCell = (casterId: number, itemId: number) => {
     const vendor = sheet.vendors.find(v => v.casterId === casterId);
