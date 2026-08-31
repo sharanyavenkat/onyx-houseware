@@ -39,6 +39,7 @@ type MetalSheetItem = {
   unitWeightKg: number | null;
   metalKg: number | null;
   isManualOverride: boolean;
+  splitAmong: string[] | null;
 };
 
 type MetalSheet = {
@@ -377,10 +378,29 @@ function MetalSheetTab({ month, monthLabel, canMutate }: { month: string; monthL
     },
   });
 
-  const handleSaveEdit = (itemId: number, casterId: number) => {
+  const clearOverrideMutation = useMutation({
+    mutationFn: async (data: { item_id: number; caster_id: number; month: string }) =>
+      apiRequest('DELETE', '/api/metal-allocations', data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/metal-sheet', month] });
+      toast({ title: 'Reverted to computed default' });
+      setEditingCell(null);
+    },
+    onError: (error: Error) => {
+      toast({ title: 'Error clearing override', description: error.message, variant: 'destructive' });
+    },
+  });
+
+  const handleSaveEdit = (itemId: number, casterId: number, currentValue: number) => {
     const qty = parseInt(editValue);
     if (isNaN(qty) || qty < 0) {
       toast({ title: 'Enter a valid quantity', variant: 'destructive' });
+      return;
+    }
+    if (qty === currentValue) {
+      // Nothing actually changed — close the box without writing a manual
+      // override for a value that's identical to what it already was.
+      setEditingCell(null);
       return;
     }
     allocMutation.mutate({ item_id: itemId, caster_id: casterId, month, quantity: qty });
@@ -427,6 +447,11 @@ function MetalSheetTab({ month, monthLabel, canMutate }: { month: string; monthL
                     <tr key={item.itemId}>
                       <td className="px-3 py-1.5 border border-foreground/30">
                         {item.itemName} <span className="text-xs text-muted-foreground">({item.sku})</span>
+                        {item.splitAmong && (
+                          <div className="text-xs text-muted-foreground no-print" data-testid={`text-split-among-${item.itemId}-${vendor.casterId}`}>
+                            Split among: {item.splitAmong.join(', ')}
+                          </div>
+                        )}
                       </td>
                       <td className="text-right px-3 py-1.5 border border-foreground/30 font-mono">
                         {isEditing ? (
@@ -438,10 +463,21 @@ function MetalSheetTab({ month, monthLabel, canMutate }: { month: string; monthL
                               className="w-20 h-7 text-right"
                               value={editValue}
                               onChange={(e) => setEditValue(e.target.value)}
-                              onKeyDown={(e) => e.key === 'Enter' && handleSaveEdit(item.itemId, vendor.casterId)}
+                              onKeyDown={(e) => e.key === 'Enter' && handleSaveEdit(item.itemId, vendor.casterId, item.allocatedQty)}
                               data-testid={`input-allocation-${item.itemId}-${vendor.casterId}`}
                             />
-                            <Button size="sm" className="h-7" onClick={() => handleSaveEdit(item.itemId, vendor.casterId)}>Save</Button>
+                            <Button size="sm" className="h-7" onClick={() => handleSaveEdit(item.itemId, vendor.casterId, item.allocatedQty)}>Save</Button>
+                            {item.isManualOverride && (
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="h-7 text-xs"
+                                onClick={() => clearOverrideMutation.mutate({ item_id: item.itemId, caster_id: vendor.casterId, month })}
+                                data-testid={`button-clear-override-${item.itemId}-${vendor.casterId}`}
+                              >
+                                Reset to default
+                              </Button>
+                            )}
                           </div>
                         ) : (
                           <button

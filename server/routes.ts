@@ -1911,6 +1911,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Clear a manual override, reverting that cell back to its computed default
+  app.delete("/api/metal-allocations", async (req, res) => {
+    try {
+      const { item_id, caster_id, month } = req.body;
+      if (!item_id || !caster_id || !month) {
+        return res.status(400).json({ message: "item_id, caster_id, and month are required" });
+      }
+      await storage.clearMetalAllocation(item_id, caster_id, month);
+      res.status(204).send();
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
   // Coating conversions
   app.get("/api/coating-conversions", async (req, res) => {
     try {

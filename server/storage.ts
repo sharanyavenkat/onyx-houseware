@@ -304,11 +304,12 @@ export interface IStorage {
   upsertProjection(itemId: number, month: string, quantity: number, notes?: string | null, customerId?: number | null): Promise<Projection>;
   deleteProjection(id: number): Promise<void>;
   upsertMetalAllocation(itemId: number, casterId: number, month: string, quantity: number): Promise<MetalAllocation>;
+  clearMetalAllocation(itemId: number, casterId: number, month: string): Promise<void>;
   getVendorMetalSheet(month: string): Promise<{
     vendors: Array<{
       casterId: number;
       casterName: string;
-      items: Array<{ itemId: number; itemName: string; sku: string; projectedQty: number; allocatedQty: number; unitWeightKg: number | null; metalKg: number | null; isManualOverride: boolean }>;
+      items: Array<{ itemId: number; itemName: string; sku: string; projectedQty: number; allocatedQty: number; unitWeightKg: number | null; metalKg: number | null; isManualOverride: boolean; splitAmong: string[] | null }>;
       subtotalKg: number;
     }>;
     unassigned: Array<{ itemId: number; itemName: string; sku: string; projectedQty: number }>;
@@ -2254,6 +2255,11 @@ export class DbStorage implements IStorage {
     return created;
   }
 
+  async clearMetalAllocation(itemId: number, casterId: number, month: string): Promise<void> {
+    await db.delete(metalAllocations)
+      .where(and(eq(metalAllocations.item_id, itemId), eq(metalAllocations.caster_id, casterId), eq(metalAllocations.month, month)));
+  }
+
   /**
    * The printable vendor metal sheet: for each caster, using the casting
    * dies they hold to know what they cast, pull each item's total projected
@@ -2267,7 +2273,7 @@ export class DbStorage implements IStorage {
     vendors: Array<{
       casterId: number;
       casterName: string;
-      items: Array<{ itemId: number; itemName: string; sku: string; projectedQty: number; allocatedQty: number; unitWeightKg: number | null; metalKg: number | null; isManualOverride: boolean }>;
+      items: Array<{ itemId: number; itemName: string; sku: string; projectedQty: number; allocatedQty: number; unitWeightKg: number | null; metalKg: number | null; isManualOverride: boolean; splitAmong: string[] | null }>;
       subtotalKg: number;
     }>;
     unassigned: Array<{ itemId: number; itemName: string; sku: string; projectedQty: number }>;
@@ -2285,11 +2291,17 @@ export class DbStorage implements IStorage {
     const allAllocations = await db.select().from(metalAllocations).where(eq(metalAllocations.month, month));
     const allocationMap = new Map(allAllocations.map(a => [`${a.item_id}-${a.caster_id}`, a.quantity]));
 
-    // Which caster(s) hold each item's die
-    const castersByItem = new Map<number, number[]>();
+    // Which caster(s) hold each item's die — deduplicated, since a duplicate
+    // active die row for the same caster+item (a data-entry accident, not a
+    // real second vendor) should never be double-counted as two die-holders.
+    const castersByItemSets = new Map<number, Set<number>>();
     for (const d of activeCastingDies) {
-      if (!castersByItem.has(d.item_id)) castersByItem.set(d.item_id, []);
-      castersByItem.get(d.item_id)!.push(d.caster_id);
+      if (!castersByItemSets.has(d.item_id)) castersByItemSets.set(d.item_id, new Set());
+      castersByItemSets.get(d.item_id)!.add(d.caster_id);
+    }
+    const castersByItem = new Map<number, number[]>();
+    for (const [itemId, casterIdSet] of Array.from(castersByItemSets.entries())) {
+      castersByItem.set(itemId, Array.from(casterIdSet));
     }
 
     const vendorMap = new Map<number, { casterId: number; casterName: string; items: any[]; subtotalKg: number }>();
@@ -2307,6 +2319,7 @@ export class DbStorage implements IStorage {
         continue;
       }
 
+      const splitAmongNames = holderIds.map(id => casterMap.get(id)?.name || `#${id}`);
       const evenSplit = Math.round(projectedQty / holderIds.length);
       for (const casterId of holderIds) {
         const caster = casterMap.get(casterId);
@@ -2324,6 +2337,7 @@ export class DbStorage implements IStorage {
         vendor.items.push({
           itemId, itemName: item.name, sku: item.sku, projectedQty, allocatedQty,
           unitWeightKg, metalKg, isManualOverride: hasOverride,
+          splitAmong: holderIds.length > 1 ? splitAmongNames : null,
         });
         if (metalKg != null) {
           vendor.subtotalKg += metalKg;
