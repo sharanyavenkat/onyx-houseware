@@ -304,6 +304,7 @@ export interface IStorage {
   upsertProjection(itemId: number, month: string, quantity: number, notes?: string | null, customerId?: number | null): Promise<Projection>;
   deleteProjection(id: number): Promise<void>;
   upsertMetalAllocation(itemId: number, casterId: number, month: string, quantity: number): Promise<MetalAllocation>;
+  clearMetalAllocation(itemId: number, casterId: number, month: string): Promise<void>;
   getVendorMetalSheet(month: string): Promise<{
     vendors: Array<{
       casterId: number;
@@ -2252,6 +2253,11 @@ export class DbStorage implements IStorage {
       .values({ item_id: itemId, caster_id: casterId, month, quantity })
       .returning();
     return created;
+  }
+
+  async clearMetalAllocation(itemId: number, casterId: number, month: string): Promise<void> {
+    await db.delete(metalAllocations)
+      .where(and(eq(metalAllocations.item_id, itemId), eq(metalAllocations.caster_id, casterId), eq(metalAllocations.month, month)));
   }
 
   /**
