@@ -39,6 +39,7 @@ type MetalSheetItem = {
   unitWeightKg: number | null;
   metalKg: number | null;
   isManualOverride: boolean;
+  splitAmong: string[] | null;
 };
 
 type MetalSheet = {
@@ -427,6 +428,11 @@ function MetalSheetTab({ month, monthLabel, canMutate }: { month: string; monthL
                     <tr key={item.itemId}>
                       <td className="px-3 py-1.5 border border-foreground/30">
                         {item.itemName} <span className="text-xs text-muted-foreground">({item.sku})</span>
+                        {item.splitAmong && (
+                          <div className="text-xs text-muted-foreground no-print" data-testid={`text-split-among-${item.itemId}-${vendor.casterId}`}>
+                            Split among: {item.splitAmong.join(', ')}
+                          </div>
+                        )}
                       </td>
                       <td className="text-right px-3 py-1.5 border border-foreground/30 font-mono">
                         {isEditing ? (
