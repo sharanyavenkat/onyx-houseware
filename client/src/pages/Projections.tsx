@@ -63,6 +63,20 @@ export default function Projections() {
   const { canMutate } = useAuth();
   const monthOptions = useMemo(() => getMonthOptions(), []);
   const [month, setMonth] = useState(monthOptions[1]?.key || monthOptions[0].key); // default to next month
+  const [confirmingClearMonth, setConfirmingClearMonth] = useState(false);
+
+  const clearMonthMutation = useMutation({
+    mutationFn: async () => apiRequest('DELETE', `/api/projections/by-month/${month}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/projections'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/metal-sheet', month] });
+      toast({ title: 'Cleared — start fresh for this month' });
+      setConfirmingClearMonth(false);
+    },
+    onError: (error: Error) => {
+      toast({ title: 'Error clearing month', description: error.message, variant: 'destructive' });
+    },
+  });
 
   return (
     <div className="space-y-6 no-print-margins" data-testid="page-projections">
@@ -81,23 +95,41 @@ export default function Projections() {
             What each customer expects to need, and how much metal that means sending to each caster.
           </p>
         </div>
-        <Select value={month} onValueChange={setMonth}>
-          <SelectTrigger className="w-full sm:w-[200px]" data-testid="select-projections-month">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {monthOptions.map(m => (
-              <SelectItem key={m.key} value={m.key}>{m.label}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <div className="flex items-center gap-2">
+          <Select value={month} onValueChange={setMonth}>
+            <SelectTrigger className="w-full sm:w-[200px]" data-testid="select-projections-month">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {monthOptions.map(m => (
+                <SelectItem key={m.key} value={m.key}>{m.label}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {canMutate && (
+            <Button variant="outline" size="sm" onClick={() => setConfirmingClearMonth(true)} data-testid="button-clear-month">
+              <Trash2 className="h-4 w-4 mr-1" />
+              Clear Month
+            </Button>
+          )}
+        </div>
       </div>
+
+      <ConfirmDialog
+        open={confirmingClearMonth}
+        onOpenChange={setConfirmingClearMonth}
+        onConfirm={() => clearMonthMutation.mutate()}
+        title="Clear this month's projections?"
+        description={`This deletes every projection and manual metal allocation for ${monthOptions.find(m => m.key === month)?.label || month} — both by-customer entries and metal sheet overrides. This can't be undone.`}
+        confirmText="Clear Everything"
+      />
 
       <Tabs defaultValue="customer" className="w-full">
         <TabsList className="no-print">
           <TabsTrigger value="customer">By Customer</TabsTrigger>
           <TabsTrigger value="sheet">Metal Sheet</TabsTrigger>
         </TabsList>
+
 
         <TabsContent value="customer">
           <CustomerProjectionsTab month={month} canMutate={canMutate} />
@@ -180,10 +212,15 @@ function CustomerProjectionsTab({ month, canMutate }: { month: string; canMutate
   // Rows = customers, columns = items — a proper matrix instead of one card
   // per customer, since that stops scaling once there are more than a
   // handful of either.
+  // Rows with no customer attached are legacy data from before per-customer
+  // projections existed — surfaced here under a sentinel id (0) rather than
+  // silently excluded, since an invisible row is exactly what caused a
+  // stale total to double-count on the Metal Sheet without any way to spot
+  // or remove it from this view.
   const customerIds = useMemo(() => {
     const map = new Map<number, string>();
-    rows.forEach(r => { if (r.customer_id) map.set(r.customer_id, r.customer_name || `Customer #${r.customer_id}`); });
-    return Array.from(map.entries()).sort((a, b) => a[1].localeCompare(b[1]));
+    rows.forEach(r => { map.set(r.customer_id || 0, r.customer_id ? (r.customer_name || `Customer #${r.customer_id}`) : 'Unspecified (legacy)'); });
+    return Array.from(map.entries()).sort((a, b) => (a[0] === 0 ? 1 : b[0] === 0 ? -1 : a[1].localeCompare(b[1])));
   }, [rows]);
   const itemIds = useMemo(() => {
     const map = new Map<number, string>();
@@ -192,7 +229,7 @@ function CustomerProjectionsTab({ month, canMutate }: { month: string; canMutate
   }, [rows]);
   const cellMap = useMemo(() => {
     const map = new Map<string, ProjectionDetailRow>();
-    rows.forEach(r => { if (r.customer_id) map.set(`${r.customer_id}-${r.item_id}`, r); });
+    rows.forEach(r => { map.set(`${r.customer_id || 0}-${r.item_id}`, r); });
     return map;
   }, [rows]);
 
@@ -276,11 +313,40 @@ function CustomerProjectionsTab({ month, canMutate }: { month: string; canMutate
             </thead>
             <tbody>
               {customerIds.map(([cId, cName]) => (
-                <tr key={cId} className="border-t">
-                  <td className="px-3 py-2 font-medium sticky left-0 bg-background">{cName}</td>
+                <tr key={cId} className={`border-t ${cId === 0 ? 'bg-destructive/5' : ''}`}>
+                  <td className="px-3 py-2 font-medium sticky left-0 bg-background">
+                    {cName}
+                    {cId === 0 && <div className="text-xs text-muted-foreground font-normal">No customer attached — from before per-customer tracking. Delete these.</div>}
+                  </td>
                   {itemIds.map(([iId]) => {
                     const cell = cellMap.get(`${cId}-${iId}`);
                     const isEditing = editingCell?.customerId === cId && editingCell?.itemId === iId;
+                    if (cId === 0) {
+                      // Unspecified row: delete-only, never editable — these
+                      // are exactly the ghost rows this view exists to surface.
+                      return (
+                        <td key={iId} className="text-right px-3 py-2 font-mono">
+                          {cell ? (
+                            <div className="flex items-center justify-end gap-1">
+                              <span className="text-destructive">{cell.quantity.toLocaleString()}</span>
+                              {canMutate && (
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  className="h-6 w-6 p-0 no-print"
+                                  onClick={() => setDeletingRow(cell)}
+                                  data-testid={`button-delete-unspecified-${iId}`}
+                                >
+                                  <Trash2 className="h-3.5 w-3.5 text-destructive" />
+                                </Button>
+                              )}
+                            </div>
+                          ) : (
+                            <span className="text-muted-foreground">—</span>
+                          )}
+                        </td>
+                      );
+                    }
                     return (
                       <td key={iId} className="text-right px-3 py-2 font-mono">
                         {isEditing ? (

@@ -303,6 +303,7 @@ export interface IStorage {
   getProjectionsByCustomerForMonth(month: string): Promise<Array<Projection & { item_name: string; customer_name: string | null }>>;
   upsertProjection(itemId: number, month: string, quantity: number, notes?: string | null, customerId?: number | null): Promise<Projection>;
   deleteProjection(id: number): Promise<void>;
+  clearProjectionsForMonth(month: string): Promise<void>;
   upsertMetalAllocation(itemId: number, casterId: number, month: string, quantity: number): Promise<MetalAllocation>;
   clearMetalAllocation(itemId: number, casterId: number, month: string): Promise<void>;
   getVendorMetalSheet(month: string): Promise<{
@@ -2237,6 +2238,18 @@ export class DbStorage implements IStorage {
 
   async deleteProjection(id: number): Promise<void> {
     await db.delete(projections).where(eq(projections.id, id));
+  }
+
+  /**
+   * Wipes every projection AND every manual metal allocation for a given
+   * month — a real "start from scratch" for that month, not just the
+   * customer-level numbers. Clearing allocations too matters: leaving them
+   * behind would recreate the exact stale-override confusion where an old
+   * manual number keeps winning over a freshly recomputed default.
+   */
+  async clearProjectionsForMonth(month: string): Promise<void> {
+    await db.delete(projections).where(eq(projections.month, month));
+    await db.delete(metalAllocations).where(eq(metalAllocations.month, month));
   }
 
   async upsertMetalAllocation(itemId: number, casterId: number, month: string, quantity: number): Promise<MetalAllocation> {
