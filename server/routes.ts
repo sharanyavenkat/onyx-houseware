@@ -1887,6 +1887,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Wipes every projection and manual metal allocation for a month — a real
+  // "start from scratch," not just clearing rows one at a time
+  app.delete("/api/projections/by-month/:month", async (req, res) => {
+    try {
+      await storage.clearProjectionsForMonth(req.params.month);
+      res.status(204).send();
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
   // Printable vendor metal sheet — per caster (via their casting dies), how
   // much metal to send based on this month's projections + 10%
   app.get("/api/metal-sheet/:month", async (req, res) => {
