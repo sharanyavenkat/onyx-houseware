@@ -584,23 +584,18 @@ export class DbStorage implements IStorage {
     const [shipment] = await db.insert(shipments).values(shipmentData).returning();
 
     // Update batch quantity_remaining (only if batch_number is provided)
-    // Note: Rejections are now tracked at batch creation (from caster), not at shipment
+    // Uses the safe incremental adjustBatchQuantities — NOT a recompute from
+    // summing this batch's shipments — since that recompute has no
+    // visibility into Coating Conversion deductions on the same batch and
+    // would silently erase them the next time it ran.
     if (shipment.batch_number) {
-      const allShipmentsForBatch = await db.select().from(shipments)
-        .where(eq(shipments.batch_number, shipment.batch_number));
-      
-      const totalShipped = allShipmentsForBatch.reduce((sum, s) => sum + s.quantity_shipped, 0);
-      
-      const [batch] = await db.select().from(batches).where(eq(batches.batch_number, shipment.batch_number));
-      if (batch) {
-        // remaining = produced - shipped (rejections already subtracted from produced during QC)
-        const newRemaining = batch.quantity_produced - totalShipped;
-        await db.update(batches)
-          .set({
-            quantity_remaining: Math.max(0, newRemaining),
-            is_depleted: newRemaining <= 0
-          })
-          .where(eq(batches.batch_number, shipment.batch_number));
+      try {
+        await this.adjustBatchQuantities(shipment.batch_number, { shipped: shipment.quantity_shipped });
+      } catch (err) {
+        // Roll back the shipment record — it doesn't correspond to a real
+        // stock movement if the batch couldn't actually absorb it.
+        await db.delete(shipments).where(eq(shipments.id, shipment.id));
+        throw err;
       }
     } else if (kitItemId !== null) {
       try {
@@ -630,50 +625,46 @@ export class DbStorage implements IStorage {
     const [shipment] = await db.update(shipments).set(updateData).where(eq(shipments.id, id)).returning();
     if (!shipment) return undefined;
     
-    // Recalculate BOTH batches if batch_number was changed
+    // Recalculate batch stock — uses the safe incremental
+    // adjustBatchQuantities/restoreBatchQuantity, not a recompute from
+    // summing this batch's shipments (that recompute is blind to Coating
+    // Conversion deductions on the same batch and would silently erase them).
     const oldBatchNumber = oldShipment.batch_number;
     const newBatchNumber = shipment.batch_number;
-    
-    // Update the OLD batch (if it existed and is different from new batch)
-    if (oldBatchNumber && oldBatchNumber !== newBatchNumber) {
-      const oldBatchShipments = await db.select().from(shipments)
-        .where(eq(shipments.batch_number, oldBatchNumber));
-      
-      const oldTotalShipped = oldBatchShipments.reduce((sum, s) => sum + s.quantity_shipped, 0);
-      
-      const [oldBatch] = await db.select().from(batches).where(eq(batches.batch_number, oldBatchNumber));
-      if (oldBatch) {
-        // remaining = produced - shipped (rejections already subtracted from produced during QC)
-        const oldNewRemaining = oldBatch.quantity_produced - oldTotalShipped;
-        await db.update(batches)
-          .set({
-            quantity_remaining: Math.max(0, oldNewRemaining),
-            is_depleted: oldNewRemaining <= 0
-          })
-          .where(eq(batches.batch_number, oldBatchNumber));
+
+    if (oldBatchNumber && newBatchNumber && oldBatchNumber === newBatchNumber) {
+      // Same batch, quantity may have changed — apply just the delta.
+      const delta = shipment.quantity_shipped - oldShipment.quantity_shipped;
+      if (delta > 0) {
+        await this.adjustBatchQuantities(newBatchNumber, { shipped: delta });
+      } else if (delta < 0) {
+        await this.restoreBatchQuantity(newBatchNumber, -delta);
+      }
+    } else {
+      // Batch changed (or one/both sides are a kit) — fully restore the old
+      // batch's deduction, then apply the new one, rather than trying to
+      // reason about a delta across two different batches.
+      if (oldBatchNumber) {
+        await this.restoreBatchQuantity(oldBatchNumber, oldShipment.quantity_shipped);
+      }
+      if (newBatchNumber) {
+        try {
+          await this.adjustBatchQuantities(newBatchNumber, { shipped: shipment.quantity_shipped });
+        } catch (err) {
+          // The new batch couldn't absorb it — put the old batch's
+          // deduction back and revert the shipment row, so nothing is left
+          // half-applied.
+          if (oldBatchNumber) {
+            await this.adjustBatchQuantities(oldBatchNumber, { shipped: oldShipment.quantity_shipped });
+          }
+          await db.update(shipments)
+            .set({ batch_number: oldShipment.batch_number, quantity_shipped: oldShipment.quantity_shipped })
+            .where(eq(shipments.id, id));
+          throw err;
+        }
       }
     }
-    
-    // Update the NEW batch (if it exists)
-    if (newBatchNumber) {
-      const newBatchShipments = await db.select().from(shipments)
-        .where(eq(shipments.batch_number, newBatchNumber));
-      
-      const newTotalShipped = newBatchShipments.reduce((sum, s) => sum + s.quantity_shipped, 0);
-      
-      const [newBatch] = await db.select().from(batches).where(eq(batches.batch_number, newBatchNumber));
-      if (newBatch) {
-        // remaining = produced - shipped (rejections already subtracted from produced during QC)
-        const newNewRemaining = newBatch.quantity_produced - newTotalShipped;
-        await db.update(batches)
-          .set({
-            quantity_remaining: Math.max(0, newNewRemaining),
-            is_depleted: newNewRemaining <= 0
-          })
-          .where(eq(batches.batch_number, newBatchNumber));
-      }
-    }
-    
+
     // Kit shipment (no batch_number on either side) — since a kit draws from
     // multiple batches via FIFO, we don't compute a delta; we reverse the old
     // allocations fully and reapply at the new quantity/date, which stays
@@ -731,24 +722,11 @@ export class DbStorage implements IStorage {
     // Delete the shipment
     await db.delete(shipments).where(eq(shipments.id, id));
     
-    // Update batch quantity_remaining (only if batch_number exists)
+    // Update batch quantity_remaining (only if batch_number exists) — uses
+    // the safe incremental restore, not a recompute from summing this
+    // batch's shipments, for the same reason as createShipment above.
     if (batchNumber) {
-      const allShipmentsForBatch = await db.select().from(shipments)
-        .where(eq(shipments.batch_number, batchNumber));
-      
-      const totalShipped = allShipmentsForBatch.reduce((sum, s) => sum + s.quantity_shipped, 0);
-      
-      const [batch] = await db.select().from(batches).where(eq(batches.batch_number, batchNumber));
-      if (batch) {
-        // remaining = produced - shipped (rejections already subtracted from produced during QC)
-        const newRemaining = batch.quantity_produced - totalShipped;
-        await db.update(batches)
-          .set({
-            quantity_remaining: Math.max(0, newRemaining),
-            is_depleted: newRemaining <= 0
-          })
-          .where(eq(batches.batch_number, batchNumber));
-      }
+      await this.restoreBatchQuantity(batchNumber, shipmentToDelete.quantity_shipped);
     }
   }
 
@@ -1176,6 +1154,42 @@ export class DbStorage implements IStorage {
         .returning()
         .get();
 
+      return updated;
+    });
+  }
+
+  /**
+   * Adds stock back to a batch — the inverse of adjustBatchQuantities'
+   * 'shipped' delta, used when reversing a shipment. Increments from the
+   * batch's CURRENT quantity_remaining (same safe pattern as
+   * adjustBatchQuantities), rather than recomputing from a sum of some
+   * other table — that recompute pattern is exactly what caused
+   * quantity_remaining to silently diverge from reality whenever a batch
+   * was touched by both a direct order shipment and a Coating Conversion,
+   * since each used a different, mutually-blind source of truth.
+   */
+  async restoreBatchQuantity(batchNumber: string, quantity: number): Promise<Batch> {
+    if (quantity <= 0) {
+      const error: any = new Error('Restore quantity must be positive');
+      error.code = 'INVALID_ADJUSTMENT';
+      throw error;
+    }
+    return db.transaction((tx) => {
+      const batch = tx.select().from(batches).where(eq(batches.batch_number, batchNumber)).get();
+      if (!batch) {
+        const error: any = new Error(`Batch ${batchNumber} not found`);
+        error.code = 'BATCH_NOT_FOUND';
+        throw error;
+      }
+      // Capped at quantity_produced as a sanity ceiling — remaining should
+      // never exceed what the batch actually produced, even if a restore
+      // amount somehow overshoots.
+      const newRemaining = Math.min(batch.quantity_remaining + quantity, batch.quantity_produced);
+      const updated = tx.update(batches)
+        .set({ quantity_remaining: newRemaining, is_depleted: newRemaining === 0 })
+        .where(eq(batches.batch_number, batchNumber))
+        .returning()
+        .get();
       return updated;
     });
   }
@@ -1729,14 +1743,22 @@ export class DbStorage implements IStorage {
     const allItems = await db.select().from(items);
     const itemMap = new Map(allItems.map(i => [i.id, i]));
 
-    // Rework metal is derived from defective-piece weight (quantity_defective x
-    // that SKU's own weight), not a separately-entered dispatch — one source
-    // of truth instead of two logs that can silently disagree.
-    const totalReworkKgSent = casterReworks.reduce((sum, r) => {
+    // Rework metal has two possible sources: the older piece-level Reworks
+    // tracking (defective-piece weight, quantity_defective x that SKU's
+    // weight), and — the current way this is recorded — an Ingot Dispatch
+    // tagged material_type='rework'. That figure is taken at face value with
+    // no wastage applied, since it's an exact 1:1 replacement weight, not
+    // raw metal being cast into new pieces. Both sources are summed so any
+    // existing historical data isn't lost.
+    const totalReworkKgSentFromReworksTable = casterReworks.reduce((sum, r) => {
       const item = itemMap.get(r.item_id);
       if (!item || item.unit_weight_kg === null || item.unit_weight_kg === undefined) return sum;
       return sum + r.quantity_defective * item.unit_weight_kg;
     }, 0);
+    const totalReworkKgSentFromDispatches = dispatches
+      .filter(d => d.material_type === 'rework')
+      .reduce((sum, d) => sum + d.quantity_kg, 0);
+    const totalReworkKgSent = totalReworkKgSentFromReworksTable + totalReworkKgSentFromDispatches;
 
     let totalFinishedWeightKgReceived = 0;
     let expectedMetalConsumedKg = 0;

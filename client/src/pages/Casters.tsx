@@ -144,6 +144,7 @@ const ingotFieldsFor = (casters: Caster[]) => [
     options: [
       { value: 'ingot', label: 'Ingot' },
       { value: 'scrap', label: 'Scrap' },
+      { value: 'rework', label: 'Rework (1:1, no wastage)' },
     ],
   },
   { name: 'alloy_grade', label: 'Alloy Grade', type: 'text' as const, placeholder: 'e.g., LM6, LM24' },
@@ -882,7 +883,11 @@ export default function Casters() {
               below in case a real itemized-order vendor (e.g. a material supplier)
               needs it back later.
               Monthly Report tab hidden — felt redundant with Purchases (ordered vs. received).
-              Content left intact below in case it's wanted back later. */}
+              Content left intact below in case it's wanted back later.
+              Reworks tab hidden — it was built as a 1:1 free replacement excluded from
+              wastage, but that's not how rework actually behaves in practice; the
+              feature doesn't work the way it was meant to. Content left intact below
+              in case it's worth rebuilding correctly later. */}
           <TabsTrigger value="ingots" className="gap-1.5">
             <Scale className="h-4 w-4" />
             Ingots
@@ -894,10 +899,6 @@ export default function Casters() {
           <TabsTrigger value="dies" className="gap-1.5">
             <Package className="h-4 w-4" />
             Dies
-          </TabsTrigger>
-          <TabsTrigger value="reworks" className="gap-1.5">
-            <FileText className="h-4 w-4" />
-            Reworks
           </TabsTrigger>
           <TabsTrigger value="casters" className="gap-1.5">
             <Package className="h-4 w-4" />
