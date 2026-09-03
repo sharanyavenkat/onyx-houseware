@@ -1835,10 +1835,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const items = await storage.getAllItems();
       const projectionsData = await storage.getProjectionsByMonth(req.params.month);
       const projectionMap = new Map(projectionsData.map(p => [p.item_id, p]));
-      // Return one row per castable, non-kit item (bare + coated), so the UI
-      // always has a full list to edit — even for items with no projection yet
+      // Bare castings only — coated items aren't ordered from a caster
+      // directly, so a projection for them wouldn't be actionable the way
+      // it is for what you actually tell a caster to produce.
       const response = items
-        .filter(i => i.is_active && !i.is_kit)
+        .filter(i => i.is_active && !i.is_kit && (!i.finish || i.finish === "bare"))
         .map(item => {
           const existing = projectionMap.get(item.id);
           return {
