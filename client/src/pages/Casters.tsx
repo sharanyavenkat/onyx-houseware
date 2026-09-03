@@ -144,6 +144,7 @@ const ingotFieldsFor = (casters: Caster[]) => [
     options: [
       { value: 'ingot', label: 'Ingot' },
       { value: 'scrap', label: 'Scrap' },
+      { value: 'rework', label: 'Rework (1:1, no wastage)' },
     ],
   },
   { name: 'alloy_grade', label: 'Alloy Grade', type: 'text' as const, placeholder: 'e.g., LM6, LM24' },

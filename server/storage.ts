@@ -1743,14 +1743,22 @@ export class DbStorage implements IStorage {
     const allItems = await db.select().from(items);
     const itemMap = new Map(allItems.map(i => [i.id, i]));
 
-    // Rework metal is derived from defective-piece weight (quantity_defective x
-    // that SKU's own weight), not a separately-entered dispatch — one source
-    // of truth instead of two logs that can silently disagree.
-    const totalReworkKgSent = casterReworks.reduce((sum, r) => {
+    // Rework metal has two possible sources: the older piece-level Reworks
+    // tracking (defective-piece weight, quantity_defective x that SKU's
+    // weight), and — the current way this is recorded — an Ingot Dispatch
+    // tagged material_type='rework'. That figure is taken at face value with
+    // no wastage applied, since it's an exact 1:1 replacement weight, not
+    // raw metal being cast into new pieces. Both sources are summed so any
+    // existing historical data isn't lost.
+    const totalReworkKgSentFromReworksTable = casterReworks.reduce((sum, r) => {
       const item = itemMap.get(r.item_id);
       if (!item || item.unit_weight_kg === null || item.unit_weight_kg === undefined) return sum;
       return sum + r.quantity_defective * item.unit_weight_kg;
     }, 0);
+    const totalReworkKgSentFromDispatches = dispatches
+      .filter(d => d.material_type === 'rework')
+      .reduce((sum, d) => sum + d.quantity_kg, 0);
+    const totalReworkKgSent = totalReworkKgSentFromReworksTable + totalReworkKgSentFromDispatches;
 
     let totalFinishedWeightKgReceived = 0;
     let expectedMetalConsumedKg = 0;
