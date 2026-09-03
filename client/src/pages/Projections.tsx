@@ -62,8 +62,21 @@ export default function Projections() {
   const { toast } = useToast();
   const { canMutate } = useAuth();
   const monthOptions = useMemo(() => getMonthOptions(), []);
-  const [month, setMonth] = useState(monthOptions[1]?.key || monthOptions[0].key); // default to next month
+  const [month, setMonth] = useState(monthOptions[0].key); // default to current month
   const [confirmingClearMonth, setConfirmingClearMonth] = useState(false);
+  const nextMonthKey = monthOptions[1]?.key;
+
+  // A quiet nudge, not an auto-switch — see Dashboard for the same pattern.
+  const { data: nextMonthProjections = [] } = useQuery<Array<{ quantity: number }>>({
+    queryKey: ['/api/projections', nextMonthKey, 'nudge-check'],
+    queryFn: async () => {
+      const res = await fetch(`/api/projections/${nextMonthKey}`, { credentials: 'include' });
+      if (!res.ok) throw new Error('Failed to fetch projections');
+      return res.json();
+    },
+    enabled: !!nextMonthKey && month !== nextMonthKey,
+  });
+  const nextMonthHasData = !!nextMonthKey && month !== nextMonthKey && nextMonthProjections.some(p => p.quantity > 0);
 
   const clearMonthMutation = useMutation({
     mutationFn: async () => apiRequest('DELETE', `/api/projections/by-month/${month}`),
@@ -114,6 +127,17 @@ export default function Projections() {
           )}
         </div>
       </div>
+
+      {nextMonthHasData && nextMonthKey && (
+        <button
+          type="button"
+          className="text-sm text-muted-foreground hover:text-foreground underline no-print -mt-4"
+          onClick={() => setMonth(nextMonthKey)}
+          data-testid="button-next-month-nudge"
+        >
+          {monthOptions.find(m => m.key === nextMonthKey)?.label} already has projections entered →
+        </button>
+      )}
 
       <ConfirmDialog
         open={confirmingClearMonth}

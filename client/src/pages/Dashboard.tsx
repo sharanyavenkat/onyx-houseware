@@ -52,7 +52,7 @@ export default function Dashboard() {
   const nextMonthDate = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 1);
   const nextMonth = `${nextMonthDate.getFullYear()}-${String(nextMonthDate.getMonth() + 1).padStart(2, '0')}`;
   const [selectedMonth, setSelectedMonth] = useState('all');
-  const [projectionMonth, setProjectionMonth] = useState(nextMonth);
+  const [projectionMonth, setProjectionMonth] = useState(currentMonth);
   const { canMutate } = useAuth();
 
   const { data: items = [] } = useQuery<Item[]>({
@@ -117,6 +117,23 @@ export default function Dashboard() {
   const { data: projectionMonthIndents = [] } = useQuery<Indent[]>({
     queryKey: ['/api/indents', projectionMonth],
   });
+
+  // A quiet nudge, not an auto-switch — if next month already has
+  // projections entered, say so next to the selector rather than silently
+  // changing which month the page opens to. Keeps "what will I see when I
+  // open this page" predictable while still surfacing that planning-ahead
+  // has started.
+  const { data: nextMonthProjections = [] } = useQuery<Array<{ quantity: number }>>({
+    queryKey: ['/api/projections', nextMonth, 'nudge-check'],
+    queryFn: async () => {
+      const res = await fetch(`/api/projections/${nextMonth}`, { credentials: 'include' });
+      if (!res.ok) throw new Error('Failed to fetch projections');
+      return res.json();
+    },
+    enabled: projectionMonth !== nextMonth,
+  });
+  const nextMonthHasData = projectionMonth !== nextMonth && nextMonthProjections.some(p => p.quantity > 0);
+  const nextMonthLabel = nextMonthDate.toLocaleString('default', { month: 'long', year: 'numeric' });
 
   const projectionComparison = useMemo(() => {
     return projectionsData.map(p => {
@@ -339,6 +356,16 @@ export default function Dashboard() {
             </SelectContent>
           </Select>
         </div>
+        {nextMonthHasData && (
+          <button
+            type="button"
+            className="text-sm text-muted-foreground hover:text-foreground underline -mt-2"
+            onClick={() => setProjectionMonth(nextMonth)}
+            data-testid="button-next-month-nudge"
+          >
+            {nextMonthLabel} already has projections entered →
+          </button>
+        )}
         <div className="border rounded-md divide-y">
           <div className="hidden sm:flex gap-4 px-4 py-2 text-xs font-medium text-muted-foreground bg-muted/20">
             <div className="flex-1">Item</div>
