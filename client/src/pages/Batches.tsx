@@ -327,7 +327,8 @@ export default function Batches() {
             // Calculate summary stats for this item
             const totalRemaining = itemBatches.reduce((sum, b) => sum + b.quantity_remaining, 0);
             const activeBatches = itemBatches.filter(b => !b.is_depleted).length;
-            const totalSentToCoating = itemBatches.reduce((sum, b) => sum + (b.sent_to_coating || 0), 0);
+            const totalSentToCoating = itemBatches.reduce((sum, b) =>
+              sum + (b.coating_details || []).filter(c => c.status === 'pending').reduce((s, c) => s + c.quantity, 0), 0);
 
             // By-color breakdown of what's actually on hand — this is what
             // lets you tell "how much BLK vs IVY do we have" apart, since
@@ -459,17 +460,16 @@ export default function Batches() {
                                   {batch.quantity_remaining.toLocaleString()}
                                 </td>
                                 <td className="py-3 px-3 text-right font-mono text-sm">
-                                  {batch.sent_to_coating > 0 ? (
-                                    <span
-                                      className="text-purple-600 dark:text-purple-400"
-                                      title={batch.coating_details?.map((c: any) => `${c.quantity} → ${c.coatedItemName} (${c.status})`).join(', ')}
-                                      data-testid={`text-sent-to-coating-${batch.id}`}
-                                    >
-                                      {batch.sent_to_coating.toLocaleString()}
-                                    </span>
-                                  ) : (
-                                    <span className="text-muted-foreground">-</span>
-                                  )}
+                                  {(() => {
+                                    const pendingKg = (batch.coating_details || []).filter(c => c.status === 'pending').reduce((s, c) => s + c.quantity, 0);
+                                    return pendingKg > 0 ? (
+                                      <span className="text-purple-600 dark:text-purple-400" data-testid={`text-sent-to-coating-${batch.id}`}>
+                                        {pendingKg.toLocaleString()}
+                                      </span>
+                                    ) : (
+                                      <span className="text-muted-foreground">-</span>
+                                    );
+                                  })()}
                                 </td>
                                 <td className="py-3 px-3 text-center">
                                   <Badge
@@ -574,12 +574,16 @@ export default function Batches() {
                                 <div className="font-mono font-semibold">{batch.quantity_remaining.toLocaleString()}</div>
                               </div>
                             </div>
-                            {batch.sent_to_coating > 0 && (
-                              <div className="text-sm mt-1">
-                                <span className="text-muted-foreground text-xs">Sent to Coating: </span>
-                                <span className="font-mono text-purple-600 dark:text-purple-400">{batch.sent_to_coating.toLocaleString()}</span>
-                              </div>
-                            )}
+                            {(() => {
+                              const pendingKg = (batch.coating_details || []).filter(c => c.status === 'pending').reduce((s, c) => s + c.quantity, 0);
+                              if (pendingKg <= 0) return null;
+                              return (
+                                <div className="text-sm mt-1">
+                                  <span className="text-muted-foreground text-xs">Sent to Coating: </span>
+                                  <span className="font-mono text-purple-600 dark:text-purple-400">{pendingKg.toLocaleString()}</span>
+                                </div>
+                              );
+                            })()}
                             <div className="mt-3">
                               <Badge
                                 variant={batch.is_depleted ? "secondary" : "default"}
