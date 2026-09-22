@@ -488,7 +488,12 @@ export class DbStorage implements IStorage {
   }
 
   async deleteOrderItems(orderId: number): Promise<void> {
-    await db.delete(orderItems).where(eq(orderItems.order_id, orderId));
+    // Same reasoning as deleteOrderItem — route through it per row rather
+    // than a raw bulk delete, so shipments never get silently cascade-wiped.
+    const items = await db.select().from(orderItems).where(eq(orderItems.order_id, orderId));
+    for (const item of items) {
+      await this.deleteOrderItem(item.id);
+    }
   }
 
   async updateOrderItem(id: number, updates: Partial<InsertOrderItem>): Promise<OrderItem | undefined> {
@@ -497,6 +502,16 @@ export class DbStorage implements IStorage {
   }
 
   async deleteOrderItem(id: number): Promise<void> {
+    // Deleting via a raw delete would cascade-delete any shipments tied to
+    // this order item — shipments.order_item_id is ON DELETE CASCADE —
+    // WITHOUT reversing their stock effect. Same class of bug fixed for
+    // deleteOrder a while back; this path needed the identical treatment
+    // and never got it. Route through deleteShipment() for each one first,
+    // since that already has the correct reversal logic.
+    const itemShipments = await db.select().from(shipments).where(eq(shipments.order_item_id, id));
+    for (const s of itemShipments) {
+      await this.deleteShipment(s.id);
+    }
     await db.delete(orderItems).where(eq(orderItems.id, id));
   }
 
@@ -593,6 +608,14 @@ export class DbStorage implements IStorage {
 
     const [shipment] = await db.insert(shipments).values(shipmentData).returning();
 
+    // A backfilled shipment records something that already physically
+    // happened — stock already left at some earlier point (e.g. recovering
+    // a shipment record lost to a bug) — so it must NOT deduct anything
+    // again. Skip straight past all the stock/accessory/kit logic below.
+    if (shipment.is_backfill) {
+      return shipment;
+    }
+
     // Update batch quantity_remaining (only if batch_number is provided)
     // Uses the safe incremental adjustBatchQuantities — NOT a recompute from
     // summing this batch's shipments — since that recompute has no
@@ -645,6 +668,12 @@ export class DbStorage implements IStorage {
     // Update the shipment
     const [shipment] = await db.update(shipments).set(updateData).where(eq(shipments.id, id)).returning();
     if (!shipment) return undefined;
+
+    // A backfilled shipment never deducted anything, so editing it (e.g.
+    // correcting the quantity) should never touch stock either.
+    if (shipment.is_backfill) {
+      return shipment;
+    }
     
     // Recalculate batch stock — uses the safe incremental
     // adjustBatchQuantities/restoreBatchQuantity, not a recompute from
@@ -760,6 +789,13 @@ export class DbStorage implements IStorage {
     // Get shipment before deleting to know which batch to update
     const [shipmentToDelete] = await db.select().from(shipments).where(eq(shipments.id, id));
     if (!shipmentToDelete) return;
+
+    // A backfilled shipment never deducted anything when it was created, so
+    // there's nothing to restore — just remove the record.
+    if (shipmentToDelete.is_backfill) {
+      await db.delete(shipments).where(eq(shipments.id, id));
+      return;
+    }
     
     const batchNumber = shipmentToDelete.batch_number;
 
