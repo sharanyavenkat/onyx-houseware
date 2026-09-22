@@ -674,3 +674,75 @@ export const insertCoatingConversionAllocationSchema = createInsertSchema(coatin
 
 export type InsertCoatingConversionAllocation = z.infer<typeof insertCoatingConversionAllocationSchema>;
 export type CoatingConversionAllocation = typeof coatingConversionAllocations.$inferSelect;
+
+// Which accessories a finished item requires per unit shipped — e.g. "NS
+// Tawa, Black" needs 1 dark wood long handle; "NS Kadai, Ivory" needs 2
+// light-colored side handles. Optionally color-specific (a batch's color
+// decides which requirement set applies); a null color is a fallback that
+// applies regardless of color, for items where color doesn't change the
+// accessory. Deliberately separate from BOM components, which are kit-only
+// — this is for accessories that go out with a STANDALONE (non-kit) shipped
+// item, not something assembled into a combo pack.
+export const itemAccessoryRequirements = sqliteTable("item_accessory_requirements", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  item_id: integer("item_id")
+    .notNull()
+    .references(() => items.id, { onDelete: "cascade" }),
+  color: text("color"), // null = applies regardless of color
+  accessory_id: integer("accessory_id")
+    .notNull()
+    .references(() => accessories.id),
+  quantity_per_unit: integer("quantity_per_unit").notNull().default(1),
+});
+
+export const insertItemAccessoryRequirementSchema = createInsertSchema(itemAccessoryRequirements).omit({
+  id: true,
+});
+
+export type InsertItemAccessoryRequirement = z.infer<typeof insertItemAccessoryRequirementSchema>;
+export type ItemAccessoryRequirement = typeof itemAccessoryRequirements.$inferSelect;
+
+// Tracks exactly which accessories (and how much) were auto-deducted for a
+// given shipment, so it's precisely reversible on delete — same reasoning
+// as kit_shipment_allocations and coating_conversion_allocations.
+export const shipmentAccessoryAllocations = sqliteTable("shipment_accessory_allocations", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  shipment_id: integer("shipment_id")
+    .notNull()
+    .references(() => shipments.id, { onDelete: "cascade" }),
+  accessory_id: integer("accessory_id")
+    .notNull()
+    .references(() => accessories.id),
+  quantity: integer("quantity").notNull(),
+});
+
+export const insertShipmentAccessoryAllocationSchema = createInsertSchema(shipmentAccessoryAllocations).omit({
+  id: true,
+});
+
+export type InsertShipmentAccessoryAllocation = z.infer<typeof insertShipmentAccessoryAllocationSchema>;
+export type ShipmentAccessoryAllocation = typeof shipmentAccessoryAllocations.$inferSelect;
+
+// Tracks exactly which accessories were auto-deducted when bare castings
+// were sent for coating (e.g. IB circles, already fixed in-house before the
+// castings leave — whether they leave to an OEM customer via a Shipment, or
+// to a coater via a Coating Conversion). Kept as its own table, mirroring
+// shipment_accessory_allocations, since a coating conversion isn't a
+// Shipment record at all.
+export const coatingConversionAccessoryAllocations = sqliteTable("coating_conversion_accessory_allocations", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  coating_conversion_id: integer("coating_conversion_id")
+    .notNull()
+    .references(() => coatingConversions.id, { onDelete: "cascade" }),
+  accessory_id: integer("accessory_id")
+    .notNull()
+    .references(() => accessories.id),
+  quantity: integer("quantity").notNull(),
+});
+
+export const insertCoatingConversionAccessoryAllocationSchema = createInsertSchema(coatingConversionAccessoryAllocations).omit({
+  id: true,
+});
+
+export type InsertCoatingConversionAccessoryAllocation = z.infer<typeof insertCoatingConversionAccessoryAllocationSchema>;
+export type CoatingConversionAccessoryAllocation = typeof coatingConversionAccessoryAllocations.$inferSelect;

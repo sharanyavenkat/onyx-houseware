@@ -858,6 +858,37 @@ export async function bootstrapDatabase() {
       )
     `);
 
+    // Which accessories a finished item requires per unit shipped (optionally color-specific)
+    await db.run(sql`
+      CREATE TABLE IF NOT EXISTS item_accessory_requirements (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        item_id INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+        color TEXT,
+        accessory_id INTEGER NOT NULL REFERENCES accessories(id),
+        quantity_per_unit INTEGER NOT NULL DEFAULT 1
+      )
+    `);
+
+    // Tracks exactly which accessories were auto-deducted for a shipment, for reversal
+    await db.run(sql`
+      CREATE TABLE IF NOT EXISTS shipment_accessory_allocations (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        shipment_id INTEGER NOT NULL REFERENCES shipments(id) ON DELETE CASCADE,
+        accessory_id INTEGER NOT NULL REFERENCES accessories(id),
+        quantity INTEGER NOT NULL
+      )
+    `);
+
+    // Tracks accessories auto-deducted when bare castings are sent for coating
+    await db.run(sql`
+      CREATE TABLE IF NOT EXISTS coating_conversion_accessory_allocations (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        coating_conversion_id INTEGER NOT NULL REFERENCES coating_conversions(id) ON DELETE CASCADE,
+        accessory_id INTEGER NOT NULL REFERENCES accessories(id),
+        quantity INTEGER NOT NULL
+      )
+    `);
+
     console.log("✅ SQLite database tables initialized successfully");
   } catch (error) {
     console.error("❌ Error bootstrapping database:", error);

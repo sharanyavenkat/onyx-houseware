@@ -453,7 +453,12 @@ export default function ShipmentTracking({
                             ) : (
                               availableBatches.map((batch) => (
                                 <SelectItem key={batch.id} value={batch.batch_number}>
-                                  {batch.batch_number} ({batch.quantity_remaining.toLocaleString()} remaining)
+                                  <div className="flex flex-col text-left">
+                                    <span>{batch.batch_number} ({batch.quantity_remaining.toLocaleString()} remaining)</span>
+                                    {batch.color && (
+                                      <span className="text-xs text-muted-foreground">{batch.color}</span>
+                                    )}
+                                  </div>
                                 </SelectItem>
                               ))
                             )}
