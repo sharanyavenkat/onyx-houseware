@@ -823,6 +823,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
         
         const newItemIds = line_items.map((li: any) => li.item_id);
         const existingItemIds = existingItems.map(ei => ei.item_id);
+
+        // Validate first, before touching anything — so a rejected line
+        // (one that already has shipments and would otherwise be silently
+        // deleted) can never leave an earlier line's update half-applied.
+        for (const existingItem of existingItems) {
+          const newLineItem = line_items.find((li: any) => li.item_id === existingItem.item_id);
+          if (!newLineItem) {
+            const existingShipments = await storage.getShipmentsByOrderItemId(existingItem.id);
+            if (existingShipments.length > 0) {
+              const items = await storage.getAllItems();
+              const itemName = items.find(i => i.id === existingItem.item_id)?.name || `item #${existingItem.item_id}`;
+              return res.status(400).json({
+                message: `Can't change or remove the "${itemName}" line — it already has ${existingShipments.length} shipment(s) recorded against it. Remove those shipments first (this correctly restores stock), then edit the order.`
+              });
+            }
+          }
+        }
         
         for (const existingItem of existingItems) {
           const newLineItem = line_items.find((li: any) => li.item_id === existingItem.item_id);
@@ -831,6 +848,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
               await storage.updateOrderItem(existingItem.id, { quantity: newLineItem.quantity, variant_note: newLineItem.variant_note || null });
             }
           } else {
+            // Already confirmed safe to delete (no shipments) in the
+            // validation pass above.
             await storage.deleteOrderItem(existingItem.id);
           }
         }

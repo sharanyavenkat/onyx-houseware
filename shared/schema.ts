@@ -227,6 +227,12 @@ export const shipments = sqliteTable("shipments", {
   quantity_shipped: integer("quantity_shipped").notNull(),
   shipment_date: text("shipment_date").notNull(),
   invoice_id: integer("invoice_id").references(() => invoices.id, { onDelete: "set null" }),
+  // A backfilled shipment records that something already physically
+  // happened (stock already left, elsewhere, at some earlier point — e.g.
+  // recovering a shipment record lost to a bug) without deducting batch
+  // stock again. deleteShipment must NOT attempt to restore stock for one
+  // of these, since none was ever deducted through it.
+  is_backfill: integer("is_backfill", { mode: "boolean" }).notNull().default(false),
 });
 
 export const insertShipmentSchema = createInsertSchema(shipments).omit({

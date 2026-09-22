@@ -467,6 +467,12 @@ export async function bootstrapDatabase() {
         console.log("ℹ️ Shipments rejection columns removal skipped:", error.message);
       }
     }
+    // Deliberately placed AFTER the rebuild above — that migration recreates
+    // the whole shipments table from a hardcoded column list on any database
+    // that still has the old rejection columns (every fresh database
+    // included, since the initial CREATE TABLE above still defines them),
+    // which would silently wipe this column out if added beforehand.
+    await addColumnIfNotExists("shipments", "is_backfill INTEGER NOT NULL DEFAULT 0", "is_backfill");
 
     // Migration: Remove product_type from items table (December 2025)
     // All items are now considered cookware; utensils go to accessories

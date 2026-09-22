@@ -8,6 +8,8 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Badge } from "@/components/ui/badge";
 import {
   Select,
   SelectContent,
@@ -62,6 +64,7 @@ export default function ShipmentTracking({
   const [shipmentToDelete, setShipmentToDelete] = useState<number | null>(null);
   const [batchNumber, setBatchNumber] = useState("");
   const [quantityShipped, setQuantityShipped] = useState("");
+  const [isBackfill, setIsBackfill] = useState(false);
   const [shipmentDate, setShipmentDate] = useState("");
 
   const { data: shipments = [] } = useQuery<Shipment[]>({
@@ -233,6 +236,7 @@ export default function ShipmentTracking({
     setBatchNumber("");
     setQuantityShipped("");
     setShipmentDate("");
+    setIsBackfill(false);
   };
 
   const selectedBatch = useMemo(() => {
@@ -277,7 +281,7 @@ export default function ShipmentTracking({
       return;
     }
 
-    if (!isKit && quantityExceedsBatch) {
+    if (!isKit && !isBackfill && quantityExceedsBatch) {
       toast({
         title: "Quantity exceeds batch remaining",
         description: `Only ${availableRemainingForBatch.toLocaleString()} pieces available in this batch.`,
@@ -291,6 +295,7 @@ export default function ShipmentTracking({
       order_item_id: orderItemId,
       quantity_shipped: parseInt(quantityShipped),
       shipment_date: shipmentDate,
+      is_backfill: isBackfill,
     };
     // Kits have no single batch — the backend decomposes the BOM instead
     // when batch_number is omitted (only for kit order lines).
@@ -508,6 +513,23 @@ export default function ShipmentTracking({
                       </div>
                     </div>
 
+                    {!editingShipment && (
+                      <div className="flex items-start gap-2 rounded-md border border-amber-500/30 bg-amber-500/5 p-3">
+                        <Checkbox
+                          id="is_backfill"
+                          checked={isBackfill}
+                          onCheckedChange={(checked) => setIsBackfill(checked === true)}
+                          data-testid="checkbox-is-backfill"
+                        />
+                        <Label htmlFor="is_backfill" className="text-sm font-normal leading-snug cursor-pointer">
+                          This already happened — record it without changing stock.
+                          <span className="block text-xs text-muted-foreground mt-0.5">
+                            Use this only to recover a shipment record that's missing but whose stock effect already occurred (e.g. correcting a data issue). For a normal shipment, leave this unchecked.
+                          </span>
+                        </Label>
+                      </div>
+                    )}
+
                     <div className="flex gap-2 justify-end">
                       <Button
                         type="button"
@@ -555,6 +577,11 @@ export default function ShipmentTracking({
                         >
                           <TableCell className="font-medium font-mono">
                             {shipment.batch_number || (isKit ? "Kit assembly" : "-")}
+                            {shipment.is_backfill && (
+                              <Badge variant="outline" className="ml-2 text-xs font-normal text-amber-600 border-amber-500/50">
+                                backfilled
+                              </Badge>
+                            )}
                           </TableCell>
                           <TableCell>
                             {formatDate(shipment.shipment_date)}
@@ -599,6 +626,11 @@ export default function ShipmentTracking({
                           <div>
                             <div className="font-mono font-semibold">
                               {shipment.batch_number || (isKit ? "Kit assembly" : "-")}
+                              {shipment.is_backfill && (
+                                <Badge variant="outline" className="ml-2 text-xs font-normal text-amber-600 border-amber-500/50">
+                                  backfilled
+                                </Badge>
+                              )}
                             </div>
                             <div className="text-sm text-muted-foreground">
                               {formatDate(shipment.shipment_date)}
