@@ -48,6 +48,9 @@ import {
   type CoatingConversion,
   type InsertCoatingConversion,
   type CoatingConversionAllocation,
+  type ItemAccessoryRequirement,
+  type InsertItemAccessoryRequirement,
+  type ShipmentAccessoryAllocation,
   type InsertBomComponent,
   type AppSetting,
   type KitShipmentAllocation,
@@ -78,6 +81,9 @@ import {
   coatingConversions,
   coatingConversionAllocations,
   appSettings,
+  itemAccessoryRequirements,
+  shipmentAccessoryAllocations,
+  coatingConversionAccessoryAllocations,
   kitShipmentAllocations,
   SETTINGS_KEYS,
 } from "@shared/schema";
@@ -203,6 +209,10 @@ export interface IStorage {
 
   getAllSettings(): Promise<AppSetting[]>;
   getSetting(key: string): Promise<string | undefined>;
+
+  getItemAccessoryRequirements(itemId: number): Promise<Array<ItemAccessoryRequirement & { accessory_name: string }>>;
+  upsertItemAccessoryRequirement(data: InsertItemAccessoryRequirement): Promise<ItemAccessoryRequirement>;
+  deleteItemAccessoryRequirement(id: number): Promise<void>;
   setSetting(key: string, value: string): Promise<AppSetting>;
   getAllSkuWastageOverrides(): Promise<SkuWastageOverride[]>;
   createSkuWastageOverride(o: InsertSkuWastageOverride): Promise<SkuWastageOverride>;
@@ -589,11 +599,22 @@ export class DbStorage implements IStorage {
     // visibility into Coating Conversion deductions on the same batch and
     // would silently erase them the next time it ran.
     if (shipment.batch_number) {
+      let batchDeductionApplied = false;
       try {
         await this.adjustBatchQuantities(shipment.batch_number, { shipped: shipment.quantity_shipped });
+        batchDeductionApplied = true;
+        await this.deductAccessoriesForShipment(shipment.id, shipment.batch_number, shipment.quantity_shipped);
       } catch (err) {
-        // Roll back the shipment record — it doesn't correspond to a real
-        // stock movement if the batch couldn't actually absorb it.
+        // Roll back everything this shipment managed to touch — if the
+        // batch deduction succeeded but the accessory deduction is what
+        // actually failed, only the batch needs restoring (accessories were
+        // never touched in that case); restoreAccessoriesForShipment is a
+        // harmless no-op either way since it only reverses what's actually
+        // recorded in shipment_accessory_allocations.
+        await this.restoreAccessoriesForShipment(shipment.id);
+        if (batchDeductionApplied) {
+          await this.restoreBatchQuantity(shipment.batch_number, shipment.quantity_shipped);
+        }
         await db.delete(shipments).where(eq(shipments.id, shipment.id));
         throw err;
       }
@@ -665,6 +686,36 @@ export class DbStorage implements IStorage {
       }
     }
 
+    // Accessories: reverse whatever this shipment had deducted before, then
+    // reapply fresh — simplest correct approach whether just the quantity
+    // changed or the batch (and therefore possibly the color/requirements)
+    // changed. Only applies when there's a real batch on the new side —
+    // kits get their accessories from BOM components instead.
+    if (newBatchNumber) {
+      try {
+        await this.restoreAccessoriesForShipment(id);
+        await this.deductAccessoriesForShipment(id, newBatchNumber, shipment.quantity_shipped);
+      } catch (err) {
+        // Put everything back exactly as it was before this update — the
+        // batch-side changes above already succeeded, so those need
+        // reverting too, not just the accessory side that actually failed.
+        if (oldBatchNumber && newBatchNumber && oldBatchNumber === newBatchNumber) {
+          const delta = shipment.quantity_shipped - oldShipment.quantity_shipped;
+          if (delta > 0) await this.restoreBatchQuantity(newBatchNumber, delta);
+          else if (delta < 0) await this.adjustBatchQuantities(newBatchNumber, { shipped: -delta });
+        } else {
+          await this.restoreBatchQuantity(newBatchNumber, shipment.quantity_shipped);
+          if (oldBatchNumber) {
+            await this.adjustBatchQuantities(oldBatchNumber, { shipped: oldShipment.quantity_shipped });
+          }
+        }
+        await db.update(shipments)
+          .set({ batch_number: oldShipment.batch_number, quantity_shipped: oldShipment.quantity_shipped })
+          .where(eq(shipments.id, id));
+        throw err;
+      }
+    }
+
     // Kit shipment (no batch_number on either side) — since a kit draws from
     // multiple batches via FIFO, we don't compute a delta; we reverse the old
     // allocations fully and reapply at the new quantity/date, which stays
@@ -718,7 +769,9 @@ export class DbStorage implements IStorage {
     if (!batchNumber) {
       await this.reverseKitShipmentAllocations(id);
     }
-    
+    // Same reasoning for any auto-deducted accessories on a direct shipment.
+    await this.restoreAccessoriesForShipment(id);
+
     // Delete the shipment
     await db.delete(shipments).where(eq(shipments.id, id));
     
@@ -1655,6 +1708,135 @@ export class DbStorage implements IStorage {
     return created;
   }
 
+  async getItemAccessoryRequirements(itemId: number): Promise<Array<ItemAccessoryRequirement & { accessory_name: string }>> {
+    const rows = await db.select().from(itemAccessoryRequirements).where(eq(itemAccessoryRequirements.item_id, itemId));
+    const allAccessories = await db.select().from(accessories);
+    const accessoryMap = new Map(allAccessories.map(a => [a.id, a.name]));
+    return rows.map(r => ({ ...r, accessory_name: accessoryMap.get(r.accessory_id) || `Accessory #${r.accessory_id}` }));
+  }
+
+  async upsertItemAccessoryRequirement(data: InsertItemAccessoryRequirement): Promise<ItemAccessoryRequirement> {
+    const conditions = [eq(itemAccessoryRequirements.item_id, data.item_id), eq(itemAccessoryRequirements.accessory_id, data.accessory_id)];
+    conditions.push(data.color ? eq(itemAccessoryRequirements.color, data.color) : sql`${itemAccessoryRequirements.color} IS NULL`);
+    const [existing] = await db.select().from(itemAccessoryRequirements).where(and(...conditions));
+    if (existing) {
+      const [updated] = await db.update(itemAccessoryRequirements)
+        .set({ quantity_per_unit: data.quantity_per_unit })
+        .where(eq(itemAccessoryRequirements.id, existing.id))
+        .returning();
+      return updated;
+    }
+    const [created] = await db.insert(itemAccessoryRequirements).values(data).returning();
+    return created;
+  }
+
+  async deleteItemAccessoryRequirement(id: number): Promise<void> {
+    await db.delete(itemAccessoryRequirements).where(eq(itemAccessoryRequirements.id, id));
+  }
+
+  /**
+   * Auto-deducts accessories required by a shipped item, based on that
+   * batch's own color — e.g. shipping 10 units of a black-batch item
+   * correctly pulls the dark-handle requirement, not the light one. Only
+   * runs when the global setting is enabled (off by default, since you may
+   * want configured requirements ready without deduction actually starting
+   * until a clean stock count exists to deduct from). Kit shipments are
+   * untouched — those already get their accessories from BOM components.
+   */
+  /**
+   * Given an item and a color, resolves which accessory requirements apply
+   * — preferring an exact color match over the color-agnostic (null)
+   * fallback, so an accessory is never counted twice for the same event.
+   * Shared by both deduction points (Shipment and Coating Conversion Send),
+   * since the resolution rule is identical either way — only what happens
+   * with the result (which allocation table records it) differs.
+   */
+  private async resolveAccessoryRequirements(itemId: number, color: string | null): Promise<Array<ItemAccessoryRequirement>> {
+    const requirements = await db.select().from(itemAccessoryRequirements).where(eq(itemAccessoryRequirements.item_id, itemId));
+    const resolvedByAccessory = new Map<number, typeof requirements[number]>();
+    for (const r of requirements) {
+      if (r.color !== null && r.color !== color) continue; // specific to a different color — doesn't apply here
+      const existing = resolvedByAccessory.get(r.accessory_id);
+      if (!existing || (existing.color === null && r.color !== null)) {
+        resolvedByAccessory.set(r.accessory_id, r);
+      }
+    }
+    return Array.from(resolvedByAccessory.values());
+  }
+
+  private async deductAccessoriesForShipment(shipmentId: number, batchNumber: string, quantityShipped: number): Promise<void> {
+    const enabled = await this.getSetting('auto_deduct_accessories_enabled');
+    if (enabled !== 'true') return;
+
+    const [batch] = await db.select().from(batches).where(eq(batches.batch_number, batchNumber));
+    if (!batch) return;
+
+    const resolved = await this.resolveAccessoryRequirements(batch.item_id, batch.color);
+    for (const req of resolved) {
+      const quantity = req.quantity_per_unit * quantityShipped;
+      const [acc] = await db.select().from(accessories).where(eq(accessories.id, req.accessory_id));
+      if (!acc) continue;
+      if (acc.stock_on_hand < quantity) {
+        const error: any = new Error(`Not enough stock of "${acc.name}" to ship this: need ${quantity}, have ${acc.stock_on_hand}`);
+        error.code = 'INSUFFICIENT_ACCESSORY_STOCK';
+        throw error;
+      }
+      await db.update(accessories).set({ stock_on_hand: acc.stock_on_hand - quantity }).where(eq(accessories.id, acc.id));
+      await db.insert(shipmentAccessoryAllocations).values({ shipment_id: shipmentId, accessory_id: acc.id, quantity });
+    }
+  }
+
+  /** Reverses whatever deductAccessoriesForShipment did for this shipment. */
+  private async restoreAccessoriesForShipment(shipmentId: number): Promise<void> {
+    const allocations = await db.select().from(shipmentAccessoryAllocations).where(eq(shipmentAccessoryAllocations.shipment_id, shipmentId));
+    for (const a of allocations) {
+      const [acc] = await db.select().from(accessories).where(eq(accessories.id, a.accessory_id));
+      if (acc) {
+        await db.update(accessories).set({ stock_on_hand: acc.stock_on_hand + a.quantity }).where(eq(accessories.id, acc.id));
+      }
+    }
+    await db.delete(shipmentAccessoryAllocations).where(eq(shipmentAccessoryAllocations.shipment_id, shipmentId));
+  }
+
+  /**
+   * Same idea as deductAccessoriesForShipment, but for sending bare castings
+   * to a coater — a Coating Conversion, not a Shipment record at all. This
+   * is where IB circles (fixed in-house before the casting leaves, whether
+   * to an OEM customer or a coater) get deducted on the coating side of
+   * that same "already fixed" moment. Bare castings have no color, so this
+   * will typically match a null-color requirement.
+   */
+  private async deductAccessoriesForCoatingConversion(coatingConversionId: number, bareItemId: number, quantitySent: number): Promise<void> {
+    const enabled = await this.getSetting('auto_deduct_accessories_enabled');
+    if (enabled !== 'true') return;
+
+    const resolved = await this.resolveAccessoryRequirements(bareItemId, null);
+    for (const req of resolved) {
+      const quantity = req.quantity_per_unit * quantitySent;
+      const [acc] = await db.select().from(accessories).where(eq(accessories.id, req.accessory_id));
+      if (!acc) continue;
+      if (acc.stock_on_hand < quantity) {
+        const error: any = new Error(`Not enough stock of "${acc.name}" to send for coating: need ${quantity}, have ${acc.stock_on_hand}`);
+        error.code = 'INSUFFICIENT_ACCESSORY_STOCK';
+        throw error;
+      }
+      await db.update(accessories).set({ stock_on_hand: acc.stock_on_hand - quantity }).where(eq(accessories.id, acc.id));
+      await db.insert(coatingConversionAccessoryAllocations).values({ coating_conversion_id: coatingConversionId, accessory_id: acc.id, quantity });
+    }
+  }
+
+  /** Reverses whatever deductAccessoriesForCoatingConversion did for this conversion. */
+  private async restoreAccessoriesForCoatingConversion(coatingConversionId: number): Promise<void> {
+    const allocations = await db.select().from(coatingConversionAccessoryAllocations).where(eq(coatingConversionAccessoryAllocations.coating_conversion_id, coatingConversionId));
+    for (const a of allocations) {
+      const [acc] = await db.select().from(accessories).where(eq(accessories.id, a.accessory_id));
+      if (acc) {
+        await db.update(accessories).set({ stock_on_hand: acc.stock_on_hand + a.quantity }).where(eq(accessories.id, acc.id));
+      }
+    }
+    await db.delete(coatingConversionAccessoryAllocations).where(eq(coatingConversionAccessoryAllocations.coating_conversion_id, coatingConversionId));
+  }
+
   /**
    * Blends the ingot and scrap wastage rates for a caster+item, weighted by
    * the actual proportion of ingot vs. scrap kg sent (since casters melt both
@@ -2431,6 +2613,24 @@ export class DbStorage implements IStorage {
       remaining -= take;
     }
 
+    try {
+      await this.deductAccessoriesForCoatingConversion(created.id, data.bare_item_id, data.quantity_sent);
+    } catch (err) {
+      // Roll back everything — the bare stock deduction above already
+      // succeeded, so it needs undoing too, not just the conversion record.
+      await this.restoreAccessoriesForCoatingConversion(created.id);
+      const allocations = await db.select().from(coatingConversionAllocations).where(eq(coatingConversionAllocations.coating_conversion_id, created.id));
+      for (const a of allocations) {
+        const [b] = await db.select().from(batches).where(eq(batches.id, a.batch_id));
+        if (b) {
+          await this.restoreBatchQuantity(b.batch_number, a.quantity);
+        }
+      }
+      await db.delete(coatingConversionAllocations).where(eq(coatingConversionAllocations.coating_conversion_id, created.id));
+      await db.delete(coatingConversions).where(eq(coatingConversions.id, created.id));
+      throw err;
+    }
+
     return created;
   }
 
@@ -2531,6 +2731,8 @@ export class DbStorage implements IStorage {
       }
     }
     await db.delete(coatingConversionAllocations).where(eq(coatingConversionAllocations.coating_conversion_id, id));
+    // Same reasoning for any auto-deducted accessories (e.g. IB circles).
+    await this.restoreAccessoriesForCoatingConversion(id);
 
     if (conversion.output_batch_id) {
       await db.delete(batches).where(eq(batches.id, conversion.output_batch_id));

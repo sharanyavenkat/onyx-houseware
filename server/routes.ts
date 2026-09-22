@@ -3,7 +3,7 @@ import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { verifyPassword } from "./auth";
 import { requireAuth, requireAdmin } from "./middleware";
-import { insertItemSchema, insertCustomerSchema, insertOrderSchema, insertOrderItemSchema, insertIndentSchema, insertShipmentSchema, insertBatchSchema, updateBatchSchema, insertInvoiceSchema, insertAccessorySchema, insertCasterSchema, insertPurchaseOrderSchema, insertPurchaseOrderItemSchema, insertIngotDispatchSchema, insertSkuWastageOverrideSchema, insertDieSchema, insertReworkSchema, insertVendorMetalStatementSchema, insertBomComponentSchema, insertOrderAccessoryShipmentSchema, insertCoatingConversionSchema } from "@shared/schema";
+import { insertItemSchema, insertCustomerSchema, insertOrderSchema, insertOrderItemSchema, insertIndentSchema, insertShipmentSchema, insertBatchSchema, updateBatchSchema, insertInvoiceSchema, insertAccessorySchema, insertCasterSchema, insertPurchaseOrderSchema, insertPurchaseOrderItemSchema, insertIngotDispatchSchema, insertSkuWastageOverrideSchema, insertDieSchema, insertReworkSchema, insertVendorMetalStatementSchema, insertBomComponentSchema, insertOrderAccessoryShipmentSchema, insertCoatingConversionSchema, insertItemAccessoryRequirementSchema } from "@shared/schema";
 import { db } from "./db/client";
 import { batches } from "@shared/schema";
 import { eq } from "drizzle-orm";
@@ -1798,6 +1798,34 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(updated);
     } catch (error: any) {
       res.status(400).json({ message: error.message });
+    }
+  });
+
+  // Which accessories a finished item requires per unit shipped (optionally color-specific)
+  app.get("/api/item-accessory-requirements/:itemId", async (req, res) => {
+    try {
+      res.json(await storage.getItemAccessoryRequirements(parseInt(req.params.itemId)));
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/item-accessory-requirements", async (req, res) => {
+    try {
+      const validated = insertItemAccessoryRequirementSchema.parse(req.body);
+      const result = await storage.upsertItemAccessoryRequirement(validated);
+      res.status(201).json(result);
+    } catch (error: any) {
+      res.status(400).json({ message: error.message });
+    }
+  });
+
+  app.delete("/api/item-accessory-requirements/:id", async (req, res) => {
+    try {
+      await storage.deleteItemAccessoryRequirement(parseInt(req.params.id));
+      res.status(204).send();
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
     }
   });
 
