@@ -123,6 +123,12 @@ export default function ShipmentTracking({
       queryClient.invalidateQueries({
         queryKey: ["/api/shipments", "order", orderId],
       });
+      // Broad prefix match — also catches ["/api/shipments", id, "kit-allocations"]
+      // for any kit shipment's batch-allocation dialog, so a re-open shows the
+      // freshly-decomposed allocations rather than a stale cached list.
+      queryClient.invalidateQueries({
+        queryKey: ["/api/shipments"],
+      });
       queryClient.invalidateQueries({
         queryKey: ["/api/batches"],
       });
@@ -164,6 +170,15 @@ export default function ShipmentTracking({
       });
       queryClient.invalidateQueries({
         queryKey: ["/api/shipments", "order", orderId],
+      });
+      // Broad prefix match — also catches ["/api/shipments", id, "kit-allocations"].
+      // Without this, editing a kit shipment's quantity correctly reverses and
+      // reapplies its batch allocations server-side (see updateShipment), but
+      // the open "Batches used" dialog kept showing the OLD allocation rows —
+      // batch dropdowns looked right (they refetch from /api/batches) while
+      // the per-component quantities stayed stale.
+      queryClient.invalidateQueries({
+        queryKey: ["/api/shipments"],
       });
       queryClient.invalidateQueries({
         queryKey: ["/api/batches"],
@@ -207,6 +222,10 @@ export default function ShipmentTracking({
       });
       queryClient.invalidateQueries({
         queryKey: ["/api/shipments", "order", orderId],
+      });
+      // Broad prefix match — also catches ["/api/shipments", id, "kit-allocations"].
+      queryClient.invalidateQueries({
+        queryKey: ["/api/shipments"],
       });
       queryClient.invalidateQueries({
         queryKey: ["/api/batches"],
