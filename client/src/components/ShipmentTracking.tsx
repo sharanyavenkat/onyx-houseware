@@ -31,9 +31,10 @@ import { formatDate, toInputDate } from "@/lib/dateUtils";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { Batch, Shipment } from "@shared/schema";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Edit, Package, Plus } from "lucide-react";
+import { Edit, Layers, Package, Plus } from "lucide-react";
 import { useMemo, useState } from "react";
 import ConfirmDialog from "./ConfirmDialog";
+import KitAllocationsDialog from "./KitAllocationsDialog";
 
 interface ShipmentTrackingProps {
   isOpen: boolean;
@@ -66,6 +67,7 @@ export default function ShipmentTracking({
   const [quantityShipped, setQuantityShipped] = useState("");
   const [isBackfill, setIsBackfill] = useState(false);
   const [shipmentDate, setShipmentDate] = useState("");
+  const [viewingAllocationsForShipment, setViewingAllocationsForShipment] = useState<number | null>(null);
 
   const { data: shipments = [] } = useQuery<Shipment[]>({
     queryKey: ["/api/shipments/order-item", orderItemId],
@@ -592,6 +594,17 @@ export default function ShipmentTracking({
                           {canMutate && (
                             <TableCell>
                               <div className="flex gap-2">
+                                {isKit && !shipment.batch_number && (
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => setViewingAllocationsForShipment(shipment.id)}
+                                    data-testid={`button-view-allocations-${shipment.id}`}
+                                    title="See/edit which batches this kit shipment used"
+                                  >
+                                    <Layers className="h-4 w-4" />
+                                  </Button>
+                                )}
                                 <Button
                                   variant="ghost"
                                   size="sm"
@@ -645,6 +658,17 @@ export default function ShipmentTracking({
                         </div>
                         {canMutate && (
                           <div className="flex gap-2 mt-3 justify-end">
+                            {isKit && !shipment.batch_number && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => setViewingAllocationsForShipment(shipment.id)}
+                                data-testid={`button-view-allocations-mobile-${shipment.id}`}
+                              >
+                                <Layers className="h-4 w-4 mr-1" />
+                                Batches
+                              </Button>
+                            )}
                             <Button
                               variant="outline"
                               size="sm"
@@ -686,6 +710,15 @@ export default function ShipmentTracking({
           description="Are you sure you want to delete this shipment? This action cannot be undone."
           confirmText="Delete"
         />
+
+        {viewingAllocationsForShipment !== null && (
+          <KitAllocationsDialog
+            isOpen={viewingAllocationsForShipment !== null}
+            onClose={() => setViewingAllocationsForShipment(null)}
+            shipmentId={viewingAllocationsForShipment}
+            itemName={itemName}
+          />
+        )}
       </DialogContent>
     </Dialog>
   );
