@@ -276,7 +276,7 @@ export interface IStorage {
   deleteBomComponentsByParentId(parentItemId: number): Promise<void>;
   // For a kit item, ships qty kits' worth of components: FIFO-deducts from each
   // component item's batches, decrements accessory stock for accessory components.
-  shipKitComponents(parentItemId: number, quantityKits: number, shipmentDate: string): Promise<{
+  shipKitComponents(parentItemId: number, quantityKits: number, shipmentDate: string, variantColor?: string | null): Promise<{
     itemDeductions: Array<{ itemId: number; itemName: string; quantityDeducted: number }>;
     accessoryDeductions: Array<{ accessoryId: number; accessoryName: string; quantityDeducted: number }>;
     allocations: Array<{
@@ -290,6 +290,33 @@ export interface IStorage {
   // Restores stock exactly per a shipment's recorded allocations (undoing
   // shipKitComponents), then deletes those allocation records.
   reverseKitShipmentAllocations(shipmentId: number): Promise<void>;
+  // Read-side view of a kit shipment's allocations, joined with item/batch/
+  // accessory names so the UI can show "which batches did this kit draw
+  // from" without the client having to stitch three tables together itself.
+  getKitShipmentAllocationsWithDetails(shipmentId: number): Promise<Array<{
+    id: number;
+    shipment_id: number;
+    component_type: "item" | "accessory";
+    component_item_id: number | null;
+    component_accessory_id: number | null;
+    batch_id: number | null;
+    quantity: number;
+    itemName?: string;
+    accessoryName?: string;
+    batchNumber?: string;
+    batchColor?: string | null;
+  }>>;
+  // Corrects a single item-type allocation row — e.g. it drew from the wrong
+  // color's batch. Restores the old batch, deducts the new one (validating
+  // stock and that it's the same item), updates the allocation row.
+  updateKitShipmentAllocationBatch(allocationId: number, newBatchId: number, newQuantity?: number): Promise<KitShipmentAllocation>;
+  // Removes one allocation row and restores whatever it had deducted —
+  // used together with addKitShipmentAllocation to split a wrongly-merged
+  // allocation across two batches.
+  deleteKitShipmentAllocation(allocationId: number): Promise<void>;
+  // Adds a brand-new item-type allocation row to an existing kit shipment
+  // (deducting the given batch), for splitting a correction across batches.
+  addKitShipmentAllocation(shipmentId: number, batchId: number, quantity: number): Promise<KitShipmentAllocation>;
 
   getOrderAccessoryItemsByOrderId(orderId: number): Promise<OrderAccessoryItem[]>;
   createOrderAccessoryItem(item: InsertOrderAccessoryItem): Promise<OrderAccessoryItem>;
@@ -596,12 +623,14 @@ export class DbStorage implements IStorage {
     // Resolve this BEFORE inserting the shipment row, so a stock shortfall
     // (thrown by shipKitComponents) doesn't leave an orphan shipment record.
     let kitItemId: number | null = null;
+    let kitVariantColor: string | null = null;
     if (!shipmentData.batch_number) {
       const [orderItem] = await db.select().from(orderItems).where(eq(orderItems.id, shipmentData.order_item_id));
       if (orderItem) {
         const [item] = await db.select().from(items).where(eq(items.id, orderItem.item_id));
         if (item?.is_kit) {
           kitItemId = item.id;
+          kitVariantColor = orderItem.variant_note || null;
         }
       }
     }
@@ -643,7 +672,7 @@ export class DbStorage implements IStorage {
       }
     } else if (kitItemId !== null) {
       try {
-        const { allocations } = await this.shipKitComponents(kitItemId, shipment.quantity_shipped, shipment.shipment_date);
+        const { allocations } = await this.shipKitComponents(kitItemId, shipment.quantity_shipped, shipment.shipment_date, kitVariantColor);
         if (allocations.length > 0) {
           await db.insert(kitShipmentAllocations).values(
             allocations.map(a => ({ ...a, shipment_id: shipment.id }))
@@ -754,9 +783,10 @@ export class DbStorage implements IStorage {
       if (orderItem) {
         const [item] = await db.select().from(items).where(eq(items.id, orderItem.item_id));
         if (item?.is_kit) {
+          const variantColor = orderItem.variant_note || null;
           await this.reverseKitShipmentAllocations(id);
           try {
-            const { allocations } = await this.shipKitComponents(item.id, shipment.quantity_shipped, shipment.shipment_date);
+            const { allocations } = await this.shipKitComponents(item.id, shipment.quantity_shipped, shipment.shipment_date, variantColor);
             if (allocations.length > 0) {
               await db.insert(kitShipmentAllocations).values(
                 allocations.map(a => ({ ...a, shipment_id: shipment.id }))
@@ -766,7 +796,7 @@ export class DbStorage implements IStorage {
             // Couldn't reapply at the new quantity — restore at the ORIGINAL
             // quantity so stock isn't left in limbo, then surface the error.
             const { allocations: restoreAllocations } = await this.shipKitComponents(
-              item.id, oldShipment.quantity_shipped, oldShipment.shipment_date
+              item.id, oldShipment.quantity_shipped, oldShipment.shipment_date, variantColor
             );
             if (restoreAllocations.length > 0) {
               await db.insert(kitShipmentAllocations).values(
@@ -2203,7 +2233,7 @@ export class DbStorage implements IStorage {
    * Throws if any component doesn't have enough stock, before making any
    * changes (checked in a first pass) so partial deductions can't happen.
    */
-  async shipKitComponents(parentItemId: number, quantityKits: number, shipmentDate: string): Promise<{
+  async shipKitComponents(parentItemId: number, quantityKits: number, shipmentDate: string, variantColor: string | null = null): Promise<{
     itemDeductions: Array<{ itemId: number; itemName: string; quantityDeducted: number }>;
     accessoryDeductions: Array<{ accessoryId: number; accessoryName: string; quantityDeducted: number }>;
     allocations: Array<{
@@ -2228,11 +2258,20 @@ export class DbStorage implements IStorage {
     for (const c of components) {
       const needed = c.qty_per_kit * quantityKits;
       if (c.component_type === "item" && c.component_item_id) {
-        const activeBatches = await this.getActiveBatchesByItemId(c.component_item_id);
+        let activeBatches = await this.getActiveBatchesByItemId(c.component_item_id);
+        // When the order line specifies a color/variant, only stock of that
+        // exact color may be drawn from — no silent fallback to a different
+        // color's batch. This is what was missing before: kit shipments used
+        // to be pure FIFO across ALL colors, which is how a Black order could
+        // end up deducting an Ivory batch.
+        if (variantColor) {
+          activeBatches = activeBatches.filter(b => b.color === variantColor);
+        }
         const available = activeBatches.reduce((sum, b) => sum + b.quantity_remaining, 0);
         if (available < needed) {
           const name = itemMap.get(c.component_item_id)?.name || `Item #${c.component_item_id}`;
-          throw new Error(`Not enough stock of "${name}" to assemble ${quantityKits} kit(s): need ${needed}, have ${available}`);
+          const colorNote = variantColor ? ` in "${variantColor}"` : "";
+          throw new Error(`Not enough stock of "${name}"${colorNote} to assemble ${quantityKits} kit(s): need ${needed}, have ${available}`);
         }
       } else if (c.component_type === "accessory" && c.component_accessory_id) {
         const acc = accessoryMap.get(c.component_accessory_id);
@@ -2259,8 +2298,12 @@ export class DbStorage implements IStorage {
       const needed = c.qty_per_kit * quantityKits;
       if (c.component_type === "item" && c.component_item_id) {
         let remaining = needed;
-        const activeBatches = (await this.getActiveBatchesByItemId(c.component_item_id))
-          .sort((a, b) => a.received_date.localeCompare(b.received_date)); // FIFO
+        let activeBatches = await this.getActiveBatchesByItemId(c.component_item_id);
+        if (variantColor) {
+          activeBatches = activeBatches.filter(b => b.color === variantColor);
+        }
+        activeBatches = activeBatches
+          .sort((a, b) => a.received_date.localeCompare(b.received_date)); // FIFO within the matching color
         for (const batch of activeBatches) {
           if (remaining <= 0) break;
           const take = Math.min(remaining, batch.quantity_remaining);
@@ -2326,6 +2369,168 @@ export class DbStorage implements IStorage {
     }
 
     await db.delete(kitShipmentAllocations).where(eq(kitShipmentAllocations.shipment_id, shipmentId));
+  }
+
+  async getKitShipmentAllocationsWithDetails(shipmentId: number): Promise<Array<{
+    id: number;
+    shipment_id: number;
+    component_type: "item" | "accessory";
+    component_item_id: number | null;
+    component_accessory_id: number | null;
+    batch_id: number | null;
+    quantity: number;
+    itemName?: string;
+    accessoryName?: string;
+    batchNumber?: string;
+    batchColor?: string | null;
+  }>> {
+    const allocations = await db.select().from(kitShipmentAllocations)
+      .where(eq(kitShipmentAllocations.shipment_id, shipmentId));
+
+    const result = [];
+    for (const a of allocations) {
+      let itemName: string | undefined;
+      let accessoryName: string | undefined;
+      let batchNumber: string | undefined;
+      let batchColor: string | null | undefined;
+
+      if (a.component_item_id) {
+        const [item] = await db.select().from(items).where(eq(items.id, a.component_item_id));
+        itemName = item?.name;
+      }
+      if (a.component_accessory_id) {
+        const [acc] = await db.select().from(accessories).where(eq(accessories.id, a.component_accessory_id));
+        accessoryName = acc?.name;
+      }
+      if (a.batch_id) {
+        const [batch] = await db.select().from(batches).where(eq(batches.id, a.batch_id));
+        batchNumber = batch?.batch_number;
+        batchColor = batch?.color ?? null;
+      }
+
+      result.push({
+        ...a,
+        component_type: a.component_type as "item" | "accessory",
+        itemName,
+        accessoryName,
+        batchNumber,
+        batchColor,
+      });
+    }
+    return result;
+  }
+
+  async updateKitShipmentAllocationBatch(allocationId: number, newBatchId: number, newQuantity?: number): Promise<KitShipmentAllocation> {
+    const [allocation] = await db.select().from(kitShipmentAllocations).where(eq(kitShipmentAllocations.id, allocationId));
+    if (!allocation) {
+      throw new Error("Allocation not found");
+    }
+    if (allocation.component_type !== "item" || !allocation.batch_id) {
+      throw new Error("Only item/batch allocations can be reassigned to a different batch");
+    }
+
+    const quantity = newQuantity ?? allocation.quantity;
+    if (quantity <= 0) {
+      throw new Error("Quantity must be positive");
+    }
+
+    const [targetBatch] = await db.select().from(batches).where(eq(batches.id, newBatchId));
+    if (!targetBatch) {
+      throw new Error("Target batch not found");
+    }
+    if (targetBatch.item_id !== allocation.component_item_id) {
+      throw new Error(`Batch ${targetBatch.batch_number} is not stock of the same item — cannot reassign to it`);
+    }
+
+    // Restore the old batch's stock first (handles the same-batch,
+    // quantity-only-changed case correctly too, since we re-read after).
+    const [oldBatch] = allocation.batch_id
+      ? await db.select().from(batches).where(eq(batches.id, allocation.batch_id))
+      : [undefined];
+    if (oldBatch) {
+      const restored = oldBatch.quantity_remaining + allocation.quantity;
+      await db.update(batches)
+        .set({ quantity_remaining: restored, is_depleted: restored <= 0 })
+        .where(eq(batches.id, oldBatch.id));
+    }
+
+    // Re-fetch the target batch in case it's the same batch we just restored.
+    const [freshTargetBatch] = await db.select().from(batches).where(eq(batches.id, newBatchId));
+    if (!freshTargetBatch || freshTargetBatch.quantity_remaining < quantity) {
+      // Undo the restore above — nothing should change if this fails.
+      if (oldBatch) {
+        await db.update(batches)
+          .set({ quantity_remaining: oldBatch.quantity_remaining, is_depleted: oldBatch.quantity_remaining <= 0 })
+          .where(eq(batches.id, oldBatch.id));
+      }
+      throw new Error(`Not enough stock in batch ${targetBatch.batch_number}: need ${quantity}, have ${freshTargetBatch?.quantity_remaining ?? 0}`);
+    }
+
+    const newRemaining = freshTargetBatch.quantity_remaining - quantity;
+    await db.update(batches)
+      .set({ quantity_remaining: newRemaining, is_depleted: newRemaining <= 0 })
+      .where(eq(batches.id, newBatchId));
+
+    const [updated] = await db.update(kitShipmentAllocations)
+      .set({ batch_id: newBatchId, quantity })
+      .where(eq(kitShipmentAllocations.id, allocationId))
+      .returning();
+    return updated;
+  }
+
+  async deleteKitShipmentAllocation(allocationId: number): Promise<void> {
+    const [allocation] = await db.select().from(kitShipmentAllocations).where(eq(kitShipmentAllocations.id, allocationId));
+    if (!allocation) return;
+
+    if (allocation.component_type === "item" && allocation.batch_id) {
+      const [batch] = await db.select().from(batches).where(eq(batches.id, allocation.batch_id));
+      if (batch) {
+        const restored = batch.quantity_remaining + allocation.quantity;
+        await db.update(batches)
+          .set({ quantity_remaining: restored, is_depleted: restored <= 0 })
+          .where(eq(batches.id, allocation.batch_id));
+      }
+    } else if (allocation.component_type === "accessory" && allocation.component_accessory_id) {
+      const [acc] = await db.select().from(accessories).where(eq(accessories.id, allocation.component_accessory_id));
+      if (acc) {
+        await db.update(accessories)
+          .set({ stock_on_hand: acc.stock_on_hand + allocation.quantity })
+          .where(eq(accessories.id, acc.id));
+      }
+    }
+
+    await db.delete(kitShipmentAllocations).where(eq(kitShipmentAllocations.id, allocationId));
+  }
+
+  async addKitShipmentAllocation(shipmentId: number, batchId: number, quantity: number): Promise<KitShipmentAllocation> {
+    if (quantity <= 0) {
+      throw new Error("Quantity must be positive");
+    }
+    const [shipment] = await db.select().from(shipments).where(eq(shipments.id, shipmentId));
+    if (!shipment) {
+      throw new Error("Shipment not found");
+    }
+    const [batch] = await db.select().from(batches).where(eq(batches.id, batchId));
+    if (!batch) {
+      throw new Error("Batch not found");
+    }
+    if (batch.quantity_remaining < quantity) {
+      throw new Error(`Not enough stock in batch ${batch.batch_number}: need ${quantity}, have ${batch.quantity_remaining}`);
+    }
+
+    const newRemaining = batch.quantity_remaining - quantity;
+    await db.update(batches)
+      .set({ quantity_remaining: newRemaining, is_depleted: newRemaining <= 0 })
+      .where(eq(batches.id, batchId));
+
+    const [created] = await db.insert(kitShipmentAllocations).values({
+      shipment_id: shipmentId,
+      component_type: "item",
+      component_item_id: batch.item_id,
+      batch_id: batchId,
+      quantity,
+    }).returning();
+    return created;
   }
 
   // --- Accessories ordered directly on an order (not via a kit's BOM) ---

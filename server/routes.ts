@@ -1073,6 +1073,57 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Kit shipment allocations — which batch(es) a kit shipment actually
+  // drew from, and the ability to correct them (e.g. it drew from the
+  // wrong color's batch).
+  app.get("/api/shipments/:id/kit-allocations", async (req, res) => {
+    try {
+      const allocations = await storage.getKitShipmentAllocationsWithDetails(parseInt(req.params.id));
+      res.json(allocations);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/shipments/:id/kit-allocations", async (req, res) => {
+    try {
+      const { batch_id, quantity } = req.body;
+      if (!batch_id || !quantity) {
+        return res.status(400).json({ message: "batch_id and quantity are required" });
+      }
+      const allocation = await storage.addKitShipmentAllocation(parseInt(req.params.id), parseInt(batch_id), parseInt(quantity));
+      res.status(201).json(allocation);
+    } catch (error: any) {
+      res.status(400).json({ message: error.message });
+    }
+  });
+
+  app.patch("/api/kit-shipment-allocations/:id", async (req, res) => {
+    try {
+      const { batch_id, quantity } = req.body;
+      if (!batch_id) {
+        return res.status(400).json({ message: "batch_id is required" });
+      }
+      const allocation = await storage.updateKitShipmentAllocationBatch(
+        parseInt(req.params.id),
+        parseInt(batch_id),
+        quantity !== undefined ? parseInt(quantity) : undefined
+      );
+      res.json(allocation);
+    } catch (error: any) {
+      res.status(400).json({ message: error.message });
+    }
+  });
+
+  app.delete("/api/kit-shipment-allocations/:id", async (req, res) => {
+    try {
+      await storage.deleteKitShipmentAllocation(parseInt(req.params.id));
+      res.status(204).send();
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
   // Get next shipment number
   app.get("/api/shipments/next-number", async (req, res) => {
     try {
