@@ -22,7 +22,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { formatDate } from "@/lib/dateUtils";
 import { useQuery } from "@tanstack/react-query";
 import { AlertTriangle } from "lucide-react";
-import { useMemo, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 
 type MovementType = "purchase" | "coating_return" | "rework_replacement" | "sale" | "kit_component" | "coating_send";
 
@@ -93,6 +93,15 @@ const lastDayLabel = (m: string) => {
   const [y, mo] = m.split("-").map(Number);
   return `${new Date(Date.UTC(y, mo, 0)).getUTCDate()} ${MONTH_NAMES[mo - 1]}`;
 };
+// The date a month's closing figure is "as at". A month that hasn't ended yet
+// shows today's date instead, so it never claims a future date like 31 Oct.
+const asAt = (m: string) => {
+  const now = new Date();
+  const thisMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  const [y, mo] = m.split("-").map(Number);
+  if (m === thisMonth) return { text: `${now.getDate()} ${MONTH_NAMES[mo - 1]} ${y}`, live: true };
+  return { text: `${lastDayLabel(m)} ${y}`, live: false };
+};
 const monthLabel = (m: string) => {
   const [y, mo] = m.split("-");
   return `${MONTH_NAMES[Number(mo) - 1]} ${y}`;
@@ -123,12 +132,22 @@ export default function StockLedger() {
     return (data?.rows ?? []).filter((r) => !q || `${r.item_name} ${r.sku} ${r.size_specification}`.toLowerCase().includes(q));
   }, [data, search]);
 
+  // Bare / Non-stick / Ceramic, each with its own total
+  const finishGroups = useMemo(() => {
+    const order = ["Bare (no coating)", "Non-stick (NS)", "Ceramic (CER)", "Other"];
+    const bucket = (finish: string | null) =>
+      !finish || finish === "bare" ? order[0] : finish === "nonstick" ? order[1] : finish === "ceramic" ? order[2] : order[3];
+    return order
+      .map((label) => ({ label, rows: visibleRows.filter((r) => bucket(r.finish) === label) }))
+      .filter((g) => g.rows.length > 0);
+  }, [visibleRows]);
+
   return (
     <div className="space-y-4" data-testid="page-stock-ledger">
       <div>
         <h1 className="text-2xl font-semibold">Stock Ledger</h1>
         <p className="text-sm text-muted-foreground">
-          Closing stock for every SKU at the end of each month (the last day of the month), rebuilt from batches
+          Closing stock for every SKU as at the last day of each month (today's date for the current month), rebuilt from batches
           received, shipments, kit use and coating sends. Hover a number for the quick maths; click it to see who it was
           received from and who it went to.
         </p>
@@ -211,18 +230,34 @@ export default function StockLedger() {
               <TableHeader>
                 <TableRow>
                   <TableHead className="min-w-56 sticky left-0 bg-background z-10">Item</TableHead>
-                  <TableHead className="text-right">Opening</TableHead>
+                  <TableHead className="text-right">
+                    <div>Opening</div>
+                    <div className="text-[11px] font-normal">before 1 {months[0] ? monthLabel(months[0]).split(" ")[0] : ""}</div>
+                  </TableHead>
                   {months.map((m) => (
                     <TableHead key={m} className="text-right whitespace-nowrap">
-                      <div>{monthLabel(m)}</div>
-                      <div className="text-[11px] font-normal">as at {lastDayLabel(m)}</div>
+                      <div>{asAt(m).text}</div>
+                      <div className="text-[11px] font-normal">{asAt(m).live ? "today (month not over)" : "closing stock"}</div>
                     </TableHead>
                   ))}
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {visibleRows.map((r) => (
-                  <ItemRow key={r.key} r={r} months={months} onPick={setSelection} />
+                {finishGroups.map((g) => (
+                  <Fragment key={g.label}>
+                    <TableRow className="bg-muted/50" data-testid="ledger-group">
+                      <TableCell className="font-semibold sticky left-0 bg-muted/50 z-10">{g.label}</TableCell>
+                      <TableCell className="text-right font-medium">{g.rows.reduce((t, r) => t + r.opening, 0)}</TableCell>
+                      {months.map((m) => (
+                        <TableCell key={m} className="text-right font-medium">
+                          {g.rows.reduce((t, r) => t + r.months[m].closing, 0)}
+                        </TableCell>
+                      ))}
+                    </TableRow>
+                    {g.rows.map((r) => (
+                      <ItemRow key={r.key} r={r} months={months} onPick={setSelection} />
+                    ))}
+                  </Fragment>
                 ))}
               </TableBody>
             </Table>
@@ -231,8 +266,8 @@ export default function StockLedger() {
       </Card>
       <p className="text-xs text-muted-foreground">
         Closing = opening + received − sold − used in kits − sent for coating, counted once each. "Opening" is everything before{" "}
-        {shownFrom ? monthLabel(shownFrom) : "the first month"}. Pieces sent for coating leave the bare vendor's stock when
-        sent and appear under the coating vendor's coated item when they come back.
+        {shownFrom ? monthLabel(shownFrom) : "the first month"}. Pieces sent for coating leave the bare item's stock when
+        sent, and are added to the coated item's stock when they come back.
       </p>
 
       {data && data.in_transit.length > 0 && (
@@ -328,7 +363,7 @@ function ItemRow({ r, months, onPick }: { r: LedgerRow; months: string[]; onPick
             <NumberCell
               value={cell.closing}
               sub={cell.in || cell.out ? `${cell.in ? `+${cell.in}` : ""}${cell.in && cell.out ? " " : ""}${cell.out ? `−${cell.out}` : ""}` : undefined}
-              tip={`${monthLabel(m)}: opening ${prev}, received ${cell.in}, went out ${cell.out} → closing ${cell.closing} on ${lastDayLabel(m)}. Click to see who from / who to.`}
+              tip={`${monthLabel(m)}: opening ${prev}, received ${cell.in}, went out ${cell.out} → closing ${cell.closing} as at ${asAt(m).text}. Click to see who from / who to.`}
               onClick={() => onPick({ row: r, month: m })}
             />
           </TableCell>
@@ -402,7 +437,7 @@ function MovementDialog({
               </DialogTitle>
               <DialogDescription>
                 {selection.month
-                  ? `Closing stock on ${lastDayLabel(selection.month)} ${selection.month.slice(0, 4)}`
+                  ? `Closing stock as at ${asAt(selection.month).text}${asAt(selection.month).live ? " (today, month not over)" : ""}`
                   : `Stock carried in from before ${firstMonth ? monthLabel(firstMonth) : "the first month"}`}
               </DialogDescription>
             </DialogHeader>
