@@ -7,6 +7,7 @@ import { insertItemSchema, insertCustomerSchema, insertOrderSchema, insertOrderI
 import { db } from "./db/client";
 import { batches } from "@shared/schema";
 import { eq } from "drizzle-orm";
+import { registerStockLedgerRoutes } from "./stockLedgerRoutes";
 
 export async function registerRoutes(app: Express): Promise<Server> {
   
@@ -2105,6 +2106,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(400).json({ message: error.message });
     }
   });
+
+  registerStockLedgerRoutes(app);
 
   const httpServer = createServer(app);
 

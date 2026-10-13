@@ -20,7 +20,8 @@ import {
   Factory,
   Settings,
   Paintbrush,
-  TrendingUp
+  TrendingUp,
+  BookOpen
 } from "lucide-react";
 import { useState } from "react";
 import { Link, useLocation } from "wouter";
@@ -36,6 +37,7 @@ const menuItems = [
   { icon: FileText, label: "Orders", href: "/orders" },
   { icon: ClipboardList, label: "Indent", href: "/indent" },
   { icon: Box, label: "Batches", href: "/batches" },
+  { icon: BookOpen, label: "Stock Ledger", href: "/stock-ledger" },
   { icon: Paintbrush, label: "Coating", href: "/coating" },
   { icon: TrendingUp, label: "Projections", href: "/projections" },
   { icon: Factory, label: "Vendors", href: "/casters" },

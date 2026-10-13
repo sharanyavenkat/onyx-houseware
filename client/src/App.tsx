@@ -22,6 +22,7 @@ import NotFound from "@/pages/not-found";
 import OrderDetails from "@/pages/OrderDetails";
 import Orders from "@/pages/Orders";
 import Settings from "@/pages/Settings";
+import StockLedger from "@/pages/StockLedger";
 
 function AuthenticatedApp() {
   return (
@@ -41,6 +42,7 @@ function AuthenticatedApp() {
             <Route path="/indent" component={Indent} />
             <Route path="/items" component={Items} />
             <Route path="/batches" component={Batches} />
+            <Route path="/stock-ledger" component={StockLedger} />
             <Route path="/coating" component={CoatingConversions} />
             <Route path="/projections" component={Projections} />
             <Route path="/casters" component={Casters} />
