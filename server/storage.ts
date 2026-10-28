@@ -48,6 +48,7 @@ import {
   type CoatingConversion,
   type InsertCoatingConversion,
   type CoatingConversionAllocation,
+  type CoatingReceipt,
   type ItemAccessoryRequirement,
   type InsertItemAccessoryRequirement,
   type ShipmentAccessoryAllocation,
@@ -80,6 +81,7 @@ import {
   metalAllocations,
   coatingConversions,
   coatingConversionAllocations,
+  coatingReceipts,
   appSettings,
   itemAccessoryRequirements,
   shipmentAccessoryAllocations,
@@ -357,7 +359,10 @@ export interface IStorage {
   getAllCoatingConversions(): Promise<CoatingConversion[]>;
   getCoatingConversionById(id: number): Promise<CoatingConversion | undefined>;
   createCoatingConversion(data: InsertCoatingConversion): Promise<CoatingConversion>;
-  receiveCoatingConversion(id: number, data: { quantity_received: number; quantity_rejected: number; received_date: string; color?: string | null }): Promise<CoatingConversion>;
+  receiveCoatingConversion(id: number, data: { quantity_received: number; quantity_rejected: number; received_date: string; color?: string | null; is_final?: boolean }): Promise<CoatingConversion>;
+  getCoatingReceipts(): Promise<CoatingReceipt[]>;
+  deleteCoatingReceipt(conversionId: number, receiptId: number): Promise<CoatingConversion>;
+  setCoatingConversionClosed(id: number, closed: boolean): Promise<CoatingConversion>;
   deleteCoatingConversion(id: number): Promise<void>;
   // How much of each batch has gone to coating, and which conversion(s) —
   // this is what lets Batches show "150 sent to coating" without anyone
@@ -2886,23 +2891,50 @@ export class DbStorage implements IStorage {
     return updated;
   }
 
+  async getCoatingReceipts(): Promise<CoatingReceipt[]> {
+    return await db.select().from(coatingReceipts).orderBy(coatingReceipts.received_date, coatingReceipts.id);
+  }
+
+  /** Re-derives the conversion's running totals and status from its lots. */
+  private async refreshCoatingConversionTotals(id: number, closed: boolean): Promise<CoatingConversion> {
+    const lots = await db.select().from(coatingReceipts)
+      .where(eq(coatingReceipts.coating_conversion_id, id))
+      .orderBy(coatingReceipts.received_date, coatingReceipts.id);
+    const last = lots[lots.length - 1];
+    const [updated] = await db.update(coatingConversions)
+      .set({
+        quantity_received: lots.length ? lots.reduce((n, l) => n + l.quantity_received, 0) : null,
+        quantity_rejected: lots.length ? lots.reduce((n, l) => n + l.quantity_rejected, 0) : null,
+        received_date: last ? last.received_date : null,
+        output_batch_id: last ? last.batch_id : null,
+        status: lots.length === 0 ? "pending" : closed ? "received" : "partial",
+      })
+      .where(eq(coatingConversions.id, id))
+      .returning();
+    return updated;
+  }
+
   /**
-   * Records what came back from coating: creates a new batch for the coated
-   * item (quantity_received/rejected/produced/remaining, same shape as any
-   * other batch), links it back to the conversion, marks the conversion
-   * 'received'. Rejections here are Onyx's own QC on the way back — separate
-   * from whatever the caster rejected when the bare casting was first made.
+   * Records one lot that came back from coating. A send can return in several
+   * lots: each call creates a new batch of the coated item for just that lot
+   * and adds to the conversion's running totals. The conversion stays open
+   * ('partial') until the final lot is flagged (is_final) or it is closed
+   * later. Rejections here are Onyx's own QC on the way back — separate from
+   * whatever the caster rejected when the bare casting was first made.
    */
   async receiveCoatingConversion(
     id: number,
-    data: { quantity_received: number; quantity_rejected: number; received_date: string; color?: string | null }
+    data: { quantity_received: number; quantity_rejected: number; received_date: string; color?: string | null; is_final?: boolean }
   ): Promise<CoatingConversion> {
     const conversion = await this.getCoatingConversionById(id);
     if (!conversion) {
       throw new Error(`Coating conversion #${id} not found`);
     }
     if (conversion.status === "received") {
-      throw new Error("This conversion has already been received");
+      throw new Error("This send is already closed. Reopen it to record another lot.");
+    }
+    if (!(data.quantity_received > 0)) {
+      throw new Error("Quantity received must be more than 0");
     }
 
     const quantityProduced = data.quantity_received - data.quantity_rejected;
@@ -2910,7 +2942,23 @@ export class DbStorage implements IStorage {
       throw new Error("Rejected quantity cannot exceed received quantity");
     }
 
-    const batchNumber = `CC${conversion.id}-${data.received_date.replace(/-/g, "")}`;
+    const already = await db.select().from(coatingReceipts).where(eq(coatingReceipts.coating_conversion_id, id));
+    const alreadyReceived = already.reduce((n, l) => n + l.quantity_received, 0);
+    if (alreadyReceived + data.quantity_received > conversion.quantity_sent) {
+      throw new Error(
+        `Only ${conversion.quantity_sent - alreadyReceived} pcs are still out with the coater ` +
+        `(sent ${conversion.quantity_sent}, already received ${alreadyReceived}).`
+      );
+    }
+
+    // First lot keeps the original CC<id>-<date> number; later lots get -L2, -L3...
+    const base = `CC${conversion.id}-${data.received_date.replace(/-/g, "")}`;
+    let batchNumber = already.length === 0 ? base : `${base}-L${already.length + 1}`;
+    for (let n = already.length + 2; (await db.select().from(batches).where(eq(batches.batch_number, batchNumber))).length > 0; n++) {
+      batchNumber = `${base}-L${n}`;
+    }
+
+    const color = data.color ?? conversion.color ?? null;
     const [outputBatch] = await db.insert(batches).values({
       item_id: conversion.coated_item_id,
       caster_id: conversion.caster_id,
@@ -2921,37 +2969,73 @@ export class DbStorage implements IStorage {
       quantity_produced: quantityProduced,
       quantity_remaining: quantityProduced,
       quality_status: "Good",
-      color: data.color ?? conversion.color ?? null,
-      notes: `From coating conversion #${conversion.id}`,
+      color,
+      notes: `From coating conversion #${conversion.id}${already.length ? ` (lot ${already.length + 1})` : ""}`,
     }).returning();
 
-    const [updated] = await db.update(coatingConversions)
-      .set({
-        quantity_received: data.quantity_received,
-        quantity_rejected: data.quantity_rejected,
-        received_date: data.received_date,
-        color: data.color ?? conversion.color,
-        output_batch_id: outputBatch.id,
-        status: "received",
-      })
-      .where(eq(coatingConversions.id, id))
-      .returning();
+    await db.insert(coatingReceipts).values({
+      coating_conversion_id: id,
+      batch_id: outputBatch.id,
+      received_date: data.received_date,
+      quantity_received: data.quantity_received,
+      quantity_rejected: data.quantity_rejected,
+      color,
+    });
 
+    const updated = await this.refreshCoatingConversionTotals(id, !!data.is_final);
+    if (!conversion.color && color) {
+      await db.update(coatingConversions).set({ color }).where(eq(coatingConversions.id, id));
+      updated.color = color;
+    }
     return updated;
   }
 
   /**
+   * Undoes a single lot (e.g. typed wrongly): removes its batch, unless some
+   * of that batch has already shipped. The send goes back to open.
+   */
+  async deleteCoatingReceipt(conversionId: number, receiptId: number): Promise<CoatingConversion> {
+    const [receipt] = await db.select().from(coatingReceipts)
+      .where(and(eq(coatingReceipts.id, receiptId), eq(coatingReceipts.coating_conversion_id, conversionId)));
+    if (!receipt) throw new Error("Lot not found");
+    if (receipt.batch_id) {
+      const [b] = await db.select().from(batches).where(eq(batches.id, receipt.batch_id));
+      if (b && b.quantity_remaining !== b.quantity_produced) {
+        throw new Error("Some of this lot has already shipped. Reverse those shipments first.");
+      }
+    }
+    await db.delete(coatingReceipts).where(eq(coatingReceipts.id, receiptId));
+    if (receipt.batch_id) await db.delete(batches).where(eq(batches.id, receipt.batch_id));
+    return await this.refreshCoatingConversionTotals(conversionId, false);
+  }
+
+  /** Close a send even though fewer pieces came back than were sent, or reopen it for more lots. */
+  async setCoatingConversionClosed(id: number, closed: boolean): Promise<CoatingConversion> {
+    const conversion = await this.getCoatingConversionById(id);
+    if (!conversion) throw new Error(`Coating conversion #${id} not found`);
+    if (closed && conversion.status === "pending") {
+      throw new Error("Nothing has been received yet. Record a lot first.");
+    }
+    return await this.refreshCoatingConversionTotals(id, closed);
+  }
+
+  /**
    * Reverses a coating conversion: restores the bare batches it drew from
-   * (via its allocations), and if it was already received, removes the
-   * output batch too — unless some of that output has already shipped, in
-   * which case deletion is blocked rather than silently corrupting stock.
+   * (via its allocations), and removes every lot it produced — unless some of
+   * that output has already shipped, in which case deletion is blocked rather
+   * than silently corrupting stock.
    */
   async deleteCoatingConversion(id: number): Promise<void> {
     const conversion = await this.getCoatingConversionById(id);
     if (!conversion) return;
 
-    if (conversion.output_batch_id) {
-      const [outputBatch] = await db.select().from(batches).where(eq(batches.id, conversion.output_batch_id));
+    const lots = await db.select().from(coatingReceipts).where(eq(coatingReceipts.coating_conversion_id, id));
+    const outputBatchIds = Array.from(new Set([
+      ...lots.map(l => l.batch_id),
+      conversion.output_batch_id,
+    ].filter((x): x is number => x != null)));
+    for (const batchId of outputBatchIds) {
+      const [outputBatch] = await db.select().from(batches).where(eq(batches.id, batchId));
       if (outputBatch && outputBatch.quantity_remaining !== outputBatch.quantity_produced) {
         throw new Error(
           "Cannot delete this conversion — some of the coated stock it produced has already been shipped. " +
@@ -2975,8 +3059,9 @@ export class DbStorage implements IStorage {
     // Same reasoning for any auto-deducted accessories (e.g. IB circles).
     await this.restoreAccessoriesForCoatingConversion(id);
 
-    if (conversion.output_batch_id) {
-      await db.delete(batches).where(eq(batches.id, conversion.output_batch_id));
+    await db.delete(coatingReceipts).where(eq(coatingReceipts.coating_conversion_id, id));
+    for (const batchId of outputBatchIds) {
+      await db.delete(batches).where(eq(batches.id, batchId));
     }
 
     await db.delete(coatingConversions).where(eq(coatingConversions.id, id));

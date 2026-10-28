@@ -11,6 +11,7 @@ import {
   kitShipmentAllocations,
   coatingConversions,
   coatingConversionAllocations,
+  coatingReceipts,
   reworks,
 } from "@shared/schema";
 import { buildStockLedger, listMonths } from "./stockLedger";
@@ -45,6 +46,7 @@ export function registerStockLedgerRoutes(app: Express) {
         shipments: (await db.select().from(shipments)).map((s) => ({ ...s, is_backfill: !!s.is_backfill })),
         kitAllocations: await db.select().from(kitShipmentAllocations),
         coatingConversions: await db.select().from(coatingConversions),
+        coatingReceipts: await db.select().from(coatingReceipts),
         coatingAllocations: await db.select().from(coatingConversionAllocations),
         reworks: await db.select().from(reworks),
       };

@@ -67,6 +67,7 @@ export interface LedgerInput {
     output_batch_id: number | null;
     status: string;
   }>;
+  coatingReceipts: Array<{ id: number; coating_conversion_id: number; batch_id: number | null; received_date: string; quantity_received: number }>;
   coatingAllocations: Array<{ id: number; coating_conversion_id: number; batch_id: number; quantity: number }>;
   reworks: Array<{ replacement_batch_id: number | null }>;
 }
@@ -158,6 +159,7 @@ export function buildStockLedger(input: LedgerInput, from: string, to: string): 
   const reworkBatchIds = new Set(input.reworks.map((r) => r.replacement_batch_id).filter((x): x is number => x != null));
   const coatingOutputBatchIds = new Map<number, number>();
   for (const c of input.coatingConversions) if (c.output_batch_id != null) coatingOutputBatchIds.set(c.output_batch_id, c.id);
+  for (const r of input.coatingReceipts) if (r.batch_id != null) coatingOutputBatchIds.set(r.batch_id, r.coating_conversion_id);
 
   const vendorName = (id: number | null) => (id == null ? NO_VENDOR : casterName.get(id) ?? `Vendor #${id}`);
   const itemName = (id: number) => itemById.get(id)?.name ?? `Item #${id}`;
@@ -324,8 +326,15 @@ export function buildStockLedger(input: LedgerInput, from: string, to: string): 
   for (const c of input.coatingConversions) {
     for (const mo of months) {
       const end = lastDayOf(mo);
-      const pending = c.sent_date <= end && !(c.status === "received" && c.received_date && c.received_date <= end);
-      if (!pending) continue;
+      if (c.sent_date > end) continue;
+      // Closed (even if short) once the final lot date has passed; otherwise
+      // whatever hasn't come back in lots by this month end is still out.
+      if (c.status === "received" && c.received_date && c.received_date <= end) continue;
+      const backByEnd = input.coatingReceipts
+        .filter((r) => r.coating_conversion_id === c.id && r.received_date <= end)
+        .reduce((n, r) => n + r.quantity_received, 0);
+      const stillOut = c.quantity_sent - backByEnd;
+      if (stillOut <= 0) continue;
       const key = `${c.caster_id ?? "none"}:${c.bare_item_id}:${c.coated_item_id}`;
       let row = transitMap.get(key);
       if (!row) {
@@ -340,8 +349,8 @@ export function buildStockLedger(input: LedgerInput, from: string, to: string): 
         };
         transitMap.set(key, row);
       }
-      row.months[mo].quantity += c.quantity_sent;
-      row.months[mo].conversions.push({ id: c.id, sent_date: c.sent_date, quantity: c.quantity_sent, color: c.color });
+      row.months[mo].quantity += stillOut;
+      row.months[mo].conversions.push({ id: c.id, sent_date: c.sent_date, quantity: stillOut, color: c.color });
     }
   }
   const in_transit = Array.from(transitMap.values()).sort(

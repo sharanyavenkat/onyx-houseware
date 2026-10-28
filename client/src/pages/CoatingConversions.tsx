@@ -7,6 +7,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -20,7 +21,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { formatDate } from "@/lib/dateUtils";
-import type { Item, Caster, CoatingConversion } from "@shared/schema";
+import type { Item, Caster, CoatingConversion, CoatingReceipt } from "@shared/schema";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Plus, Pencil } from "lucide-react";
 import { useMemo, useState } from "react";
@@ -30,7 +31,33 @@ type ConversionWithNames = CoatingConversion & {
   bare_item_name: string;
   coated_item_name: string;
   caster_name: string;
+  receipts: CoatingReceipt[];
 };
+
+const stillOut = (c: { quantity_sent: number; quantity_received: number | null }) =>
+  c.quantity_sent - (c.quantity_received ?? 0);
+
+function LotList({ c, onUndo }: { c: ConversionWithNames; onUndo?: (receiptId: number) => void }) {
+  if (!c.receipts?.length) return null;
+  return (
+    <ul className="mt-1 text-xs text-muted-foreground space-y-0.5">
+      {c.receipts.map((r, i) => (
+        <li key={r.id} className="flex items-center gap-2" data-testid={`lot-${c.id}-${r.id}`}>
+          <span>
+            Lot {i + 1}: {formatDate(r.received_date)} · {r.quantity_received} pcs
+            {r.quantity_rejected > 0 && ` (${r.quantity_rejected} rejected at our QC)`}
+            {r.color && ` · ${r.color}`}
+          </span>
+          {onUndo && (
+            <button type="button" className="text-destructive underline" onClick={() => onUndo(r.id)} data-testid={`button-undo-lot-${r.id}`}>
+              undo
+            </button>
+          )}
+        </li>
+      ))}
+    </ul>
+  );
+}
 
 export default function CoatingConversions() {
   const { toast } = useToast();
@@ -73,7 +100,35 @@ export default function CoatingConversions() {
     },
   });
 
-  const pendingConversions = conversions.filter(c => c.status === "pending");
+  const undoLotMutation = useMutation({
+    mutationFn: async ({ id, receiptId }: { id: number; receiptId: number }) =>
+      apiRequest("DELETE", `/api/coating-conversions/${id}/receipts/${receiptId}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/coating-conversions"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/batches"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/batches/on-hand-stock"] });
+      queryClient.invalidateQueries({ predicate: (q) => String(q.queryKey[0]).startsWith("/api/stock-ledger") });
+      toast({ title: "Lot removed" });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Couldn't remove lot", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const closeMutation = useMutation({
+    mutationFn: async ({ id, action }: { id: number; action: "close" | "reopen" }) =>
+      apiRequest("PATCH", `/api/coating-conversions/${id}/${action}`),
+    onSuccess: (_d, v) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/coating-conversions"] });
+      queryClient.invalidateQueries({ predicate: (q) => String(q.queryKey[0]).startsWith("/api/stock-ledger") });
+      toast({ title: v.action === "close" ? "Send closed" : "Send reopened" });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const pendingConversions = conversions.filter(c => c.status !== "received");
   const receivedConversions = conversions.filter(c => c.status === "received");
 
   return (
@@ -95,11 +150,11 @@ export default function CoatingConversions() {
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Pending ({pendingConversions.length})</CardTitle>
+          <CardTitle className="text-base">Out for coating ({pendingConversions.length})</CardTitle>
         </CardHeader>
         <CardContent>
           {pendingConversions.length === 0 ? (
-            <p className="text-sm text-muted-foreground text-center py-6">No pending conversions.</p>
+            <p className="text-sm text-muted-foreground text-center py-6">Nothing is out for coating.</p>
           ) : (
             <div className="border rounded-md divide-y">
               {pendingConversions.map(c => (
@@ -111,14 +166,25 @@ export default function CoatingConversions() {
                     </div>
                     <div className="text-sm text-muted-foreground">
                       Sent {formatDate(c.sent_date)} · {c.quantity_sent} pcs {c.caster_name && `· ${c.caster_name}`}
+                      {c.status === "partial" && (
+                        <Badge variant="secondary" className="ml-2" data-testid={`badge-still-out-${c.id}`}>
+                          {c.quantity_received} back · {stillOut(c)} still out
+                        </Badge>
+                      )}
                     </div>
+                    <LotList c={c} onUndo={canMutate ? (receiptId) => undoLotMutation.mutate({ id: c.id, receiptId }) : undefined} />
                   </div>
                   <div className="flex gap-2">
                     {canMutate && (
                       <>
-                        <Button size="sm" onClick={() => setReceivingConversion(c)}>
-                          Receive
+                        <Button size="sm" onClick={() => setReceivingConversion(c)} data-testid={`button-receive-${c.id}`}>
+                          {c.status === "partial" ? "Receive another lot" : "Receive"}
                         </Button>
+                        {c.status === "partial" && (
+                          <Button size="sm" variant="outline" onClick={() => closeMutation.mutate({ id: c.id, action: "close" })} data-testid={`button-close-${c.id}`}>
+                            Close send
+                          </Button>
+                        )}
                         <Button size="sm" variant="ghost" onClick={() => setEditingConversion(c)}>
                           <Pencil className="h-4 w-4" />
                         </Button>
@@ -152,13 +218,24 @@ export default function CoatingConversions() {
                       {c.color && <Badge variant="outline" className="ml-2">{c.color}</Badge>}
                     </div>
                     <div className="text-sm text-muted-foreground">
-                      Sent {formatDate(c.sent_date)} ({c.quantity_sent} pcs) · Received {c.received_date && formatDate(c.received_date)}
-                      {" "}({c.quantity_received} pcs, {c.quantity_rejected} rejected at our QC)
+                      Sent {formatDate(c.sent_date)} ({c.quantity_sent} pcs) · Last lot {c.received_date && formatDate(c.received_date)}
+                      {" "}({c.quantity_received} pcs back in {Math.max(c.receipts?.length ?? 1, 1)} lot{(c.receipts?.length ?? 1) === 1 ? "" : "s"}, {c.quantity_rejected} rejected at our QC)
                       {c.caster_name && ` · ${c.caster_name}`}
+                      {stillOut(c) > 0 && (
+                        <Badge variant="destructive" className="ml-2" data-testid={`badge-short-${c.id}`}>
+                          {stillOut(c)} not received
+                        </Badge>
+                      )}
                     </div>
+                    <LotList c={c} />
                   </div>
                   {canMutate && (
                     <div className="flex gap-2">
+                      {stillOut(c) > 0 && (
+                        <Button size="sm" variant="outline" onClick={() => closeMutation.mutate({ id: c.id, action: "reopen" })} data-testid={`button-reopen-${c.id}`}>
+                          Reopen
+                        </Button>
+                      )}
                       <Button size="sm" variant="ghost" onClick={() => setEditingConversion(c)}>
                         <Pencil className="h-4 w-4" />
                       </Button>
@@ -208,8 +285,8 @@ export default function CoatingConversions() {
         }}
         title="Delete Coating Conversion"
         description={
-          deletingConversion?.status === "received"
-            ? "This will restore the bare stock sent and remove the coated batch it produced (only allowed if none of that coated stock has shipped yet)."
+          deletingConversion && deletingConversion.status !== "pending"
+            ? "This will restore the bare stock sent and remove every coated lot it produced (only allowed if none of that coated stock has shipped yet)."
             : "This will restore the bare stock that was sent for coating."
         }
         confirmText="Delete"
@@ -364,8 +441,11 @@ function ReceiveCoatingModal({
   onClose: () => void;
 }) {
   const { toast } = useToast();
-  const [quantityReceived, setQuantityReceived] = useState(conversion.quantity_sent.toString());
+  const outstanding = stillOut(conversion);
+  const [quantityReceived, setQuantityReceived] = useState(outstanding.toString());
   const [quantityRejected, setQuantityRejected] = useState("0");
+  const [finalTouched, setFinalTouched] = useState(false);
+  const [isFinal, setIsFinal] = useState(true);
   const [receivedDate, setReceivedDate] = useState(new Date().toISOString().split("T")[0]);
   const [color, setColor] = useState("");
 
@@ -375,7 +455,8 @@ function ReceiveCoatingModal({
       queryClient.invalidateQueries({ queryKey: ["/api/coating-conversions"] });
       queryClient.invalidateQueries({ queryKey: ["/api/batches"] });
       queryClient.invalidateQueries({ queryKey: ["/api/batches/on-hand-stock"] });
-      toast({ title: "Received — new coated batch created" });
+      queryClient.invalidateQueries({ predicate: (q) => String(q.queryKey[0]).startsWith("/api/stock-ledger") });
+      toast({ title: isFinal ? "Received, send closed" : "Lot received, rest still out" });
       onClose();
     },
     onError: (error: Error) => {
@@ -391,6 +472,14 @@ function ReceiveCoatingModal({
       toast({ title: "Please fill all required fields", variant: "destructive" });
       return;
     }
+    if (received <= 0) {
+      toast({ title: "Quantity received must be more than 0", variant: "destructive" });
+      return;
+    }
+    if (received > outstanding) {
+      toast({ title: `Only ${outstanding} pcs are still out`, variant: "destructive" });
+      return;
+    }
     if (rejected > received) {
       toast({ title: "Rejected can't exceed received", variant: "destructive" });
       return;
@@ -400,8 +489,12 @@ function ReceiveCoatingModal({
       quantity_rejected: rejected,
       received_date: receivedDate,
       color: color || null,
+      is_final: isFinal,
     });
   };
+
+  const receivedNum = parseInt(quantityReceived) || 0;
+  const leftAfter = outstanding - receivedNum;
 
   return (
     <Dialog open={true} onOpenChange={(open) => !open && onClose()}>
@@ -412,11 +505,17 @@ function ReceiveCoatingModal({
         <form onSubmit={handleSubmit} className="space-y-4">
           <p className="text-sm text-muted-foreground">
             Sent {conversion.quantity_sent} pcs of {conversion.bare_item_name} on {formatDate(conversion.sent_date)}.
+            {(conversion.quantity_received ?? 0) > 0 && ` ${conversion.quantity_received} already received in earlier lots.`}
+            {" "}<strong>{outstanding} still out</strong> with the coater. Enter just this lot.
           </p>
           <div className="grid grid-cols-2 gap-3">
             <div>
               <Label>Quantity Received</Label>
-              <Input type="number" min="0" value={quantityReceived} onChange={(e) => setQuantityReceived(e.target.value)} data-testid="input-quantity-received" />
+              <Input type="number" min="0" value={quantityReceived} onChange={(e) => {
+                const v = e.target.value;
+                setQuantityReceived(v);
+                if (!finalTouched) setIsFinal((parseInt(v) || 0) >= outstanding);
+              }} data-testid="input-quantity-received" />
             </div>
             <div>
               <Label>Rejected at Our QC</Label>
@@ -432,6 +531,24 @@ function ReceiveCoatingModal({
               <Label>Color (Optional)</Label>
               <Input value={color} onChange={(e) => setColor(e.target.value)} placeholder="e.g. Black, Ivory" data-testid="input-color" />
             </div>
+          </div>
+          <div className="flex items-start gap-2 rounded-md border p-3">
+            <Checkbox
+              id="coating-final-lot"
+              checked={isFinal}
+              onCheckedChange={(v) => { setFinalTouched(true); setIsFinal(v === true); }}
+              data-testid="checkbox-final-lot"
+            />
+            <label htmlFor="coating-final-lot" className="text-sm leading-snug">
+              This is the last lot, close this send
+              <span className="block text-xs text-muted-foreground">
+                {isFinal
+                  ? leftAfter > 0
+                    ? `${leftAfter} pcs will be shown as not received.`
+                    : "Everything sent has come back."
+                  : `${Math.max(leftAfter, 0)} pcs stay out for coating until the next lot.`}
+              </span>
+            </label>
           </div>
           <div className="flex justify-end gap-2 pt-2 border-t">
             <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>

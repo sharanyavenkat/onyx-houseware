@@ -650,9 +650,28 @@ export const coatingConversions = sqliteTable("coating_conversions", {
   quantity_rejected: integer("quantity_rejected"),
   received_date: text("received_date"),
   output_batch_id: integer("output_batch_id").references(() => batches.id, { onDelete: "set null" }),
-  status: text("status").notNull().default("pending"), // 'pending' | 'received'
+  // 'pending' (nothing back yet) | 'partial' (some lots back, more expected) | 'received' (closed)
+  status: text("status").notNull().default("pending"),
   notes: text("notes"),
 });
+
+// One row per lot that came back from coating. A single send (say 1000 pcs)
+// often returns in several lots; the conversion's quantity_received /
+// quantity_rejected are running totals of these rows, and each lot gets its
+// own batch of the coated item.
+export const coatingReceipts = sqliteTable("coating_receipts", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  coating_conversion_id: integer("coating_conversion_id")
+    .notNull()
+    .references(() => coatingConversions.id, { onDelete: "cascade" }),
+  batch_id: integer("batch_id").references(() => batches.id, { onDelete: "set null" }),
+  received_date: text("received_date").notNull(),
+  quantity_received: integer("quantity_received").notNull(),
+  quantity_rejected: integer("quantity_rejected").notNull().default(0),
+  color: text("color"),
+});
+
+export type CoatingReceipt = typeof coatingReceipts.$inferSelect;
 
 export const insertCoatingConversionSchema = createInsertSchema(coatingConversions).omit({
   id: true,
