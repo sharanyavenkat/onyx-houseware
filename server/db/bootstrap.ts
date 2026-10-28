@@ -854,6 +854,27 @@ export async function bootstrapDatabase() {
       )
     `);
 
+    // One row per lot received back from coating (a send can return in several lots)
+    await db.run(sql`
+      CREATE TABLE IF NOT EXISTS coating_receipts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        coating_conversion_id INTEGER NOT NULL REFERENCES coating_conversions(id) ON DELETE CASCADE,
+        batch_id INTEGER REFERENCES batches(id) ON DELETE SET NULL,
+        received_date TEXT NOT NULL,
+        quantity_received INTEGER NOT NULL,
+        quantity_rejected INTEGER NOT NULL DEFAULT 0,
+        color TEXT
+      )
+    `);
+    // Existing received conversions become a single lot (runs once per conversion)
+    await db.run(sql`
+      INSERT INTO coating_receipts (coating_conversion_id, batch_id, received_date, quantity_received, quantity_rejected, color)
+      SELECT c.id, c.output_batch_id, c.received_date, COALESCE(c.quantity_received, 0), COALESCE(c.quantity_rejected, 0), c.color
+      FROM coating_conversions c
+      WHERE c.status = 'received' AND c.received_date IS NOT NULL
+        AND NOT EXISTS (SELECT 1 FROM coating_receipts r WHERE r.coating_conversion_id = c.id)
+    `);
+
     // Tracks exactly which bare batch(es) a coating conversion drew from
     await db.run(sql`
       CREATE TABLE IF NOT EXISTS coating_conversion_allocations (

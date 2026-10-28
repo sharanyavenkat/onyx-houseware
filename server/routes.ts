@@ -2042,10 +2042,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const conversions = await storage.getAllCoatingConversions();
       const items = await storage.getAllItems();
       const allCasters = await storage.getAllCasters();
+      const allReceipts = await storage.getCoatingReceipts();
       const itemMap = new Map(items.map(i => [i.id, i.name]));
       const casterMap = new Map(allCasters.map(c => [c.id, c.name]));
       res.json(conversions.map(c => ({
         ...c,
+        receipts: allReceipts.filter(r => r.coating_conversion_id === c.id),
         bare_item_name: itemMap.get(c.bare_item_id) || '',
         coated_item_name: itemMap.get(c.coated_item_id) || '',
         caster_name: c.caster_id ? (casterMap.get(c.caster_id) || '') : '',
@@ -2067,14 +2069,39 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.patch("/api/coating-conversions/:id/receive", async (req, res) => {
     try {
-      const { quantity_received, quantity_rejected, received_date, color } = req.body;
+      const { quantity_received, quantity_rejected, received_date, color, is_final } = req.body;
       if (quantity_received === undefined || quantity_rejected === undefined || !received_date) {
         return res.status(400).json({ message: "quantity_received, quantity_rejected, and received_date are required" });
       }
       const updated = await storage.receiveCoatingConversion(parseInt(req.params.id), {
-        quantity_received, quantity_rejected, received_date, color
+        quantity_received, quantity_rejected, received_date, color, is_final: !!is_final
       });
       res.json(updated);
+    } catch (error: any) {
+      res.status(400).json({ message: error.message });
+    }
+  });
+
+  // Close a send that came back short, or reopen a closed one for more lots
+  app.patch("/api/coating-conversions/:id/close", async (req, res) => {
+    try {
+      res.json(await storage.setCoatingConversionClosed(parseInt(req.params.id), true));
+    } catch (error: any) {
+      res.status(400).json({ message: error.message });
+    }
+  });
+  app.patch("/api/coating-conversions/:id/reopen", async (req, res) => {
+    try {
+      res.json(await storage.setCoatingConversionClosed(parseInt(req.params.id), false));
+    } catch (error: any) {
+      res.status(400).json({ message: error.message });
+    }
+  });
+
+  // Undo one lot of a send
+  app.delete("/api/coating-conversions/:id/receipts/:receiptId", async (req, res) => {
+    try {
+      res.json(await storage.deleteCoatingReceipt(parseInt(req.params.id), parseInt(req.params.receiptId)));
     } catch (error: any) {
       res.status(400).json({ message: error.message });
     }
