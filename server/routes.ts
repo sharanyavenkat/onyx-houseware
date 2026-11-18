@@ -2043,11 +2043,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const items = await storage.getAllItems();
       const allCasters = await storage.getAllCasters();
       const allReceipts = await storage.getCoatingReceipts();
+      const batchNumberById = new Map((await storage.getAllBatches()).map(b => [b.id, b.batch_number]));
       const itemMap = new Map(items.map(i => [i.id, i.name]));
       const casterMap = new Map(allCasters.map(c => [c.id, c.name]));
       res.json(conversions.map(c => ({
         ...c,
-        receipts: allReceipts.filter(r => r.coating_conversion_id === c.id),
+        receipts: allReceipts
+          .filter(r => r.coating_conversion_id === c.id)
+          .map(r => ({ ...r, batch_number: r.batch_id ? (batchNumberById.get(r.batch_id) || '') : '' })),
         bare_item_name: itemMap.get(c.bare_item_id) || '',
         coated_item_name: itemMap.get(c.coated_item_id) || '',
         caster_name: c.caster_id ? (casterMap.get(c.caster_id) || '') : '',
@@ -2093,6 +2096,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.patch("/api/coating-conversions/:id/reopen", async (req, res) => {
     try {
       res.json(await storage.setCoatingConversionClosed(parseInt(req.params.id), false));
+    } catch (error: any) {
+      res.status(400).json({ message: error.message });
+    }
+  });
+
+  // Edit a lot that was already received; the batch follows
+  app.patch("/api/coating-conversions/:id/receipts/:receiptId", async (req, res) => {
+    try {
+      const { quantity_received, quantity_rejected, received_date, color } = req.body;
+      res.json(await storage.updateCoatingReceipt(parseInt(req.params.id), parseInt(req.params.receiptId), {
+        quantity_received: Number(quantity_received),
+        quantity_rejected: Number(quantity_rejected ?? 0),
+        received_date,
+        color,
+      }));
     } catch (error: any) {
       res.status(400).json({ message: error.message });
     }

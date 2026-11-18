@@ -362,6 +362,7 @@ export interface IStorage {
   receiveCoatingConversion(id: number, data: { quantity_received: number; quantity_rejected: number; received_date: string; color?: string | null; is_final?: boolean }): Promise<CoatingConversion>;
   getCoatingReceipts(): Promise<CoatingReceipt[]>;
   deleteCoatingReceipt(conversionId: number, receiptId: number): Promise<CoatingConversion>;
+  updateCoatingReceipt(conversionId: number, receiptId: number, data: { quantity_received: number; quantity_rejected: number; received_date: string; color?: string | null }): Promise<CoatingConversion>;
   setCoatingConversionClosed(id: number, closed: boolean): Promise<CoatingConversion>;
   deleteCoatingConversion(id: number): Promise<void>;
   // How much of each batch has gone to coating, and which conversion(s) —
@@ -2990,6 +2991,84 @@ export class DbStorage implements IStorage {
     return updated;
   }
 
+  /** Plain-words explanation of why a coated batch can't be removed: how much has left it and where that is recorded. */
+  private async describeTakenOut(batch: { batch_number: string; quantity_produced: number; quantity_remaining: number }): Promise<string> {
+    const taken = batch.quantity_produced - batch.quantity_remaining;
+    const recorded = await db.select().from(shipments).where(eq(shipments.batch_number, batch.batch_number));
+    const recordedQty = recorded.filter(s => !s.is_backfill).reduce((n, s) => n + s.quantity_shipped, 0);
+    const unexplained = taken - recordedQty;
+    let msg = `Batch ${batch.batch_number} has ${taken} pcs taken out of it`;
+    msg += recorded.length
+      ? ` (${recordedQty} pcs on ${recorded.length} shipment record${recorded.length === 1 ? "" : "s"}${unexplained > 0 ? `, ${unexplained} pcs with no shipment record` : ""}).`
+      : " but no shipment record points at it.";
+    return msg;
+  }
+
+  /**
+   * Edits a lot that was already marked received, and carries the change into
+   * its batch: received / rejected / produced quantities, date and colour.
+   * Pieces already shipped from the batch stay shipped, so the batch's
+   * remaining stock becomes (new produced − already taken out); the edit is
+   * refused if it would drop produced below what has already left.
+   */
+  async updateCoatingReceipt(
+    conversionId: number,
+    receiptId: number,
+    data: { quantity_received: number; quantity_rejected: number; received_date: string; color?: string | null }
+  ): Promise<CoatingConversion> {
+    const conversion = await this.getCoatingConversionById(conversionId);
+    if (!conversion) throw new Error(`Coating conversion #${conversionId} not found`);
+    const lots = await db.select().from(coatingReceipts).where(eq(coatingReceipts.coating_conversion_id, conversionId));
+    const lot = lots.find(l => l.id === receiptId);
+    if (!lot) throw new Error("Lot not found");
+
+    const { quantity_received, quantity_rejected, received_date } = data;
+    if (!Number.isInteger(quantity_received) || quantity_received <= 0) throw new Error("Quantity received must be more than 0");
+    if (!Number.isInteger(quantity_rejected) || quantity_rejected < 0) throw new Error("Rejected can't be negative");
+    if (quantity_rejected > quantity_received) throw new Error("Rejected quantity cannot exceed received quantity");
+    if (!received_date) throw new Error("Received date is required");
+
+    const otherLots = lots.filter(l => l.id !== receiptId).reduce((n, l) => n + l.quantity_received, 0);
+    if (otherLots + quantity_received > conversion.quantity_sent) {
+      throw new Error(
+        `That would be more than was sent. Sent ${conversion.quantity_sent}, other lots ${otherLots}, ` +
+        `so this lot can be at most ${conversion.quantity_sent - otherLots}.`
+      );
+    }
+
+    const color = data.color === undefined ? lot.color : (data.color || null);
+    const produced = quantity_received - quantity_rejected;
+
+    if (lot.batch_id) {
+      const [b] = await db.select().from(batches).where(eq(batches.id, lot.batch_id));
+      if (b) {
+        const taken = b.quantity_produced - b.quantity_remaining;
+        if (produced < taken) {
+          throw new Error(
+            `${await this.describeTakenOut(b)} Good pieces in this lot can't be fewer than that (you entered ${produced}). ` +
+            `Fix or reverse those shipments first.`
+          );
+        }
+        const remaining = produced - taken;
+        await db.update(batches).set({
+          quantity_received,
+          quantity_rejected,
+          quantity_produced: produced,
+          quantity_remaining: remaining,
+          is_depleted: remaining <= 0,
+          received_date,
+          color,
+        }).where(eq(batches.id, b.id));
+      }
+    }
+
+    await db.update(coatingReceipts)
+      .set({ quantity_received, quantity_rejected, received_date, color })
+      .where(eq(coatingReceipts.id, receiptId));
+
+    return await this.refreshCoatingConversionTotals(conversionId, conversion.status === "received");
+  }
+
   /**
    * Undoes a single lot (e.g. typed wrongly): removes its batch, unless some
    * of that batch has already shipped. The send goes back to open.
@@ -3001,7 +3080,7 @@ export class DbStorage implements IStorage {
     if (receipt.batch_id) {
       const [b] = await db.select().from(batches).where(eq(batches.id, receipt.batch_id));
       if (b && b.quantity_remaining !== b.quantity_produced) {
-        throw new Error("Some of this lot has already shipped. Reverse those shipments first.");
+        throw new Error(`${await this.describeTakenOut(b)} Reverse those first, or use Edit lot to correct the quantity.`);
       }
     }
     await db.delete(coatingReceipts).where(eq(coatingReceipts.id, receiptId));
@@ -3038,8 +3117,8 @@ export class DbStorage implements IStorage {
       const [outputBatch] = await db.select().from(batches).where(eq(batches.id, batchId));
       if (outputBatch && outputBatch.quantity_remaining !== outputBatch.quantity_produced) {
         throw new Error(
-          "Cannot delete this conversion — some of the coated stock it produced has already been shipped. " +
-          "Reverse those shipments first."
+          `Cannot delete this conversion. ${await this.describeTakenOut(outputBatch)} ` +
+          "Reverse those first, or use Edit lot to correct what was received."
         );
       }
     }
